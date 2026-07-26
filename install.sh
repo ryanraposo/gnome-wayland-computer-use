@@ -109,13 +109,29 @@ if ! $FORCE && [ -f "$EXT_DIR/extension.js" ] && command -v gnome-extensions &>/
   if echo "$STATE" | grep -qi active; then
     ok "Extension installed and active"
     echo -e ""
+    echo -e "  ${B}Remember:${N} log out then back in."
+    echo -e ""
     echo -e "  ${Y}Test:${N} computer_use(action=\"capture\", mode=\"som\")"
+    echo -e "
+     ▄ ▄▄ ▄▄▄▄
+   ▄▀ 0x0 ▀▄
+    █  ───  █
+    █  ███  █
+     ▀▀   ▀▀
+"
     exit 0
   fi
 fi
 
 install_extension
 echo ""
-info "Done. Log out then back in to activate the extension."
-echo -e "  ${Y}Verify:${N} gnome-extensions info winrects@cua"
+echo -e "     ${B}Remember:${N} log out then back in."
 echo ""
+echo -e "  ${Y}Verify:${N} gnome-extensions info winrects@cua"
+echo -e "
+     ▄ ▄▄ ▄▄▄▄
+   ▄▀ 0x0 ▀▄
+    █  ───  █
+    █  ███  █
+     ▀▀   ▀▀
+"
