@@ -1,6 +1,13 @@
 ---
 name: gnome-wayland-computer-use
 description: Enable GNOME Wayland computer_use.
+version: 1.0.0
+platforms: [linux]
+metadata:
+  hermes:
+    tags: [gnome, wayland, cua, computer-use, linux-desktop]
+    category: devops
+    requires_toolsets: [terminal]
 ---
 
 # gnome-wayland-computer-use

@@ -34,7 +34,10 @@ command -v gsettings &>/dev/null || { fail "gsettings not found"; exit 1; }
 # ── Install skill ───────────────────────────────────────────────────────
 install_skill() {
   local src="$SELF/SKILL.md"
-  local dst="${HOME}/.agents/skills/gnome-wayland-computer-use/SKILL.md"
+  local name="gnome-wayland-computer-use"
+
+  # Install to opencode's skill directory
+  local dst="${HOME}/.agents/skills/${name}/SKILL.md"
   mkdir -p "$(dirname "$dst")"
   if [ -f "$src" ]; then
     cp "$src" "$dst"
@@ -42,6 +45,19 @@ install_skill() {
   elif command -v curl &>/dev/null; then
     curl -fsSL -o "$dst" "https://ryanraposo.github.io/gnome-wayland-computer-use/SKILL.md"
     ok "Skill downloaded → ${dst/$HOME/\~}"
+  fi
+
+  # Also install to Hermes skill directory if Hermes is present
+  local hermes_dir="${HOME}/.hermes/skills"
+  if [ -d "$hermes_dir" ]; then
+    local hdst="${hermes_dir}/${name}/SKILL.md"
+    mkdir -p "$(dirname "$hdst")"
+    if [ -f "$src" ]; then
+      cp "$src" "$hdst"
+    else
+      curl -fsSL -o "$hdst" "https://ryanraposo.github.io/gnome-wayland-computer-use/SKILL.md"
+    fi
+    ok "Hermes skill installed → ${hdst/$HOME/\~}"
   fi
 }
 install_skill
