@@ -81,8 +81,11 @@ SESSION="${XDG_SESSION_TYPE:-$(loginctl show-session "$(loginctl list-sessions -
 DESKTOP="${XDG_CURRENT_DESKTOP:-$(loginctl show-session "$(loginctl list-sessions --no-legend | awk '{print $1}')" -p Desktop 2>/dev/null | cut -d= -f2)}"
 
 [ "$SESSION" != "wayland" ] && { fail "Session is '$SESSION' — need Wayland"; exit 1; }
+ok "Session is Wayland"
 [[ "$DESKTOP" != *"GNOME"* ]] && { fail "Desktop is '$DESKTOP' — need GNOME"; exit 1; }
+ok "Desktop is GNOME"
 command -v gsettings &>/dev/null || { fail "gsettings not found"; exit 1; }
+ok "gsettings available"
 
 # ── Install skill (always) ───────────────────────────────────────────────
 install_skill
@@ -92,9 +95,9 @@ EXT_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/gnome-shell/extensions/winrects@cu
 if ! $FORCE && [ -f "$EXT_DIR/extension.js" ] && command -v gnome-extensions &>/dev/null; then
   STATE="$(gnome-extensions info winrects@cua 2>/dev/null | grep -i state || echo 'NEEDS_LOGOUT')"
   if echo "$STATE" | grep -qi active; then
-    echo ""
-    echo -e "     ${G}Already installed and active${N}"
-    echo -e "     ${B}Test:${N} gdbus introspect --session --dest org.cua.WinRects --object-path /org/cua/WinRects"
+    ok "Extension already installed and active"
+    echo -e "     ${B}Test:${N}"
+    echo -e "                gdbus introspect --session --dest org.cua.WinRects --object-path /org/cua/WinRects"
     echo -e "
      ▄ ▄▄ ▄▄▄▄
    ▄▀ 0x0 ▀▄

@@ -1,12 +1,12 @@
-# gnome-wayland-computer-use
-
-```
+<div align="center">
+<pre>
 ▄ ▄▄ ▄▄▄▄
    ▄▀ 0x0 ▀▄
     █  ───  █
-    █  ███  █
-     ▀▀   ▀▀
-```
+</pre>
+</div>
+
+# gnome-wayland-computer-use
 
 **Skill + extension** for enabling `computer_use` on GNOME Wayland.
 
