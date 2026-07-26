@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>gnome-wayland-computer-use — Fix computer_use on GNOME Wayland</title>
+    <style>
+        html,
+        body {
+            font-family: 'Courier New', Courier, monospace;
+            margin: 0;
+            padding: 0;
+            color: black;
+            background-color: white;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            box-sizing: border-box;
+        }
+        .header {
+            text-align: center;
+            padding: 40px 20px 20px;
+        }
+        .header h1 {
+            font-size: 2em;
+            margin: 0;
+            letter-spacing: -0.5px;
+        }
+        .header p {
+            color: #555;
+            margin-top: 6px;
+            font-size: 14px;
+        }
+        .container {
+            max-width: 640px;
+            margin: 0 auto;
+            padding: 10px 20px;
+            flex: 1;
+        }
+        .card {
+            border: 2px solid black;
+            border-radius: 12px;
+            padding: 32px;
+            margin: 16px 0;
+            background: #fff;
+        }
+        .card p,
+        .card ul {
+            font-size: 14px;
+            line-height: 1.6;
+            color: #333;
+        }
+        .card ul {
+            padding-left: 20px;
+        }
+        .card code {
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 13px;
+            border: 1px solid #ddd;
+        }
+        .curl-box {
+            background: #f5f5f5;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            padding: 12px 16px;
+            font-size: 13px;
+            margin: 14px 0;
+            word-break: break-all;
+        }
+        .btn {
+            display: inline-block;
+            border: 2px solid black;
+            border-radius: 8px;
+            padding: 12px 24px;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 14px;
+            font-weight: bold;
+            background: white;
+            color: black;
+            text-decoration: none;
+            transition: all 0.15s;
+        }
+        .btn:hover {
+            background: black;
+            color: white;
+        }
+        .footer {
+            text-align: center;
+            padding: 20px;
+            font-size: 13px;
+            border-top: 1px solid #eee;
+        }
+        .footer a {
+            color: black;
+            text-decoration: none;
+        }
+        .footer a:hover {
+            text-decoration: underline;
+        }
+        @media screen and (max-width: 480px) {
+            .header h1 {
+                font-size: 1.5em;
+            }
+            .card {
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <header class="header">
+        <h1>gnome-wayland-computer-use</h1>
+        <p>Fix <code>computer_use</code> on GNOME Wayland</p>
+    </header>
+
+    <div class="container">
+        <div class="card" style="text-align:center;">
+            <p style="margin:0 0 14px;">
+                Installs the <code>winrects@cua</code> GNOME Shell extension
+                and the agent skill that knows how to use it.
+                One curl, zero hassle.
+            </p>
+            <div class="curl-box">
+                curl -fsSL <a href="install.sh"
+                    style="color:black;text-decoration:underline;">https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh</a>
+                | bash
+            </div>
+            <p style="font-size:13px;color:#555;margin:12px 0 16px;">
+                Then <strong>log out and log back in</strong>.
+            </p>
+            <p style="font-size:13px;color:#555;margin:0 0 16px;">
+                Verify: <code>gnome-extensions info winrects@cua</code> → <strong>State: ACTIVE</strong>
+            </p>
+            <a class="btn" href="install.sh">download install.sh</a>
+        </div>
+    </div>
+
+    <div style="text-align:center;padding:10px 0 0;font-size:13px;line-height:1.4;color:#999;">
+        <pre style="margin:0;font-size:11px;line-height:1.2;color:#ccc;">
+     ▄ ▄▄ ▄▄▄▄
+   ▄▀ 0x0 ▀▄
+    █  ───  █
+    █  ███  █
+     ▀▀   ▀▀
+        </pre>
+    </div>
+
+    <footer class="footer">
+        <a href="https://github.com/ryanraposo/gnome-wayland-computer-use">GitHub</a>
+        &nbsp;·&nbsp;
+        <a href="https://github.com/trycua/cua">trycua/cua</a>
+        &nbsp;·&nbsp;
+        extension by <a href="https://github.com/trycua">trycua</a>,
+        installer by <a href="https://github.com/ryanraposo">ryanraposo</a>
+    </footer>
+</body>
+
+</html>
