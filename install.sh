@@ -18,8 +18,6 @@ ok()  { echo -e "  ${G}✓${N} $1"; }
 info(){ echo -e "  ${Y}→${N} $1"; }
 fail(){ echo -e "  ${R}✗${N} $1"; }
 
-
-# ── Parse args ──────────────────────────────────────────────────────────
 FORCE=false
 [[ "${1:-}" == "--force" ]] && FORCE=true
 
@@ -48,6 +46,25 @@ install_skill() {
 }
 install_skill
 
+# ── Install / update cua-driver ─────────────────────────────────────────
+if ! command -v cua-driver &>/dev/null; then
+  info "cua-driver not found — installing..."
+  curl -fsSL https://raw.githubusercontent.com/trycua/cua/main/libs/cua-driver/install.sh | bash
+  ok "cua-driver installed"
+elif $FORCE; then
+  info "cua-driver found, --force set — running cua-driver update..."
+  cua-driver update --apply 2>/dev/null || \
+    curl -fsSL https://raw.githubusercontent.com/trycua/cua/main/libs/cua-driver/install.sh | bash
+  ok "cua-driver updated"
+else
+  VER=$(cua-driver --version 2>&1 | grep -oP '\d+\.\d+\.\d+' | head -1)
+  if [ -n "$VER" ]; then
+    ok "cua-driver v$VER"
+  else
+    ok "cua-driver found (version unknown)"
+  fi
+fi
+
 # ── Fix Hermes systemd env (if applicable) ──────────────────────────────
 HERMES_UNIT="hermes-webui.service"
 if systemctl --user --type service list-units --all 2>/dev/null | grep -q "$HERMES_UNIT"; then
@@ -66,6 +83,8 @@ EOF
     systemctl --user restart "$HERMES_UNIT"
     sleep 2
     ok "Hermes systemd env fixed"
+  else
+    ok "Hermes systemd env already configured"
   fi
 fi
 
@@ -80,54 +99,75 @@ install_extension() {
   if [ -f "$src/extension.js" ] && [ -f "$src/metadata.json" ]; then
     cp "$src/extension.js" "$dest/extension.js"
     cp "$src/metadata.json" "$dest/metadata.json"
-    ok "Extension files copied"
+    ok "Extension files copied from repo bundle"
   elif command -v curl &>/dev/null; then
-    curl -fsSL -o "$dest/extension.js"   'https://raw.githubusercontent.com/trycua/cua/main/libs/cua-driver/wayland-helper/winrects%40cua/extension.js'
-    curl -fsSL -o "$dest/metadata.json" 'https://raw.githubusercontent.com/trycua/cua/main/libs/cua-driver/wayland-helper/winrects%40cua/metadata.json'
+    curl -fsSL -o "$dest/extension.js" \
+      'https://raw.githubusercontent.com/trycua/cua/main/libs/cua-driver/wayland-helper/winrects%40cua/extension.js'
+    curl -fsSL -o "$dest/metadata.json" \
+      'https://raw.githubusercontent.com/trycua/cua/main/libs/cua-driver/wayland-helper/winrects%40cua/metadata.json'
     ok "Extension files downloaded"
   else
     fail "No bundled files and curl unavailable"
     exit 1
   fi
 
-  local cur
-  cur="$(gsettings get org.gnome.shell enabled-extensions 2>/dev/null || echo '@as []')"
-  python3 - "$cur" "$uuid" <<'PY'
+  # Enable via gnome-extensions (activates immediately via D-Bus)
+  if command -v gnome-extensions &>/dev/null; then
+    gnome-extensions enable "$uuid"
+    sleep 1
+    STATE=$(gnome-extensions info "$uuid" 2>/dev/null | grep -i state | tr -d ' \t')
+    if [ "$STATE" = "State:ACTIVE" ]; then
+      ok "Extension enabled and active"
+    else
+      ok "Extension installed — needs GNOME Shell restart to activate"
+    fi
+  else
+    # Fallback: gsettings directly
+    cur=$(gsettings get org.gnome.shell enabled-extensions 2>/dev/null || echo "@as []")
+    python3 - "$cur" "$uuid" << 'PY'
 import ast, subprocess, sys
-try:    lst = ast.literal_eval(sys.argv[1])
-except: lst = []
-if sys.argv[2] not in lst: lst.append(sys.argv[2])
-subprocess.run(["gsettings","set","org.gnome.shell","enabled-extensions",str(lst)], check=True)
+try:    l = ast.literal_eval(sys.argv[1])
+except: l = []
+if sys.argv[2] not in l: l.append(sys.argv[2])
+subprocess.run(["gsettings", "set", "org.gnome.shell", "enabled-extensions", str(l)])
 PY
-  ok "Extension enabled in gsettings"
+    ok "Extension enabled in gsettings — needs GNOME Shell restart to activate"
+  fi
 }
 
 # ── Check extension state ───────────────────────────────────────────────
 EXT_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/gnome-shell/extensions/winrects@cua"
+NEEDS_RESTART=false
+
 if ! $FORCE && [ -f "$EXT_DIR/extension.js" ] && command -v gnome-extensions &>/dev/null; then
-  STATE="$(gnome-extensions info winrects@cua 2>/dev/null | grep -i state || echo 'NEEDS_LOGOUT')"
+  STATE=$(gnome-extensions info winrects@cua 2>/dev/null | grep -i state || echo 'NEEDS_LOGOUT')
   if echo "$STATE" | grep -qi active; then
-    ok "Extension installed and active"
-    echo -e ""
-    echo -e "  ${B}Remember:${N} log out then back in."
-    echo -e ""
-    echo -e "  ${Y}Test:${N} computer_use(action=\"capture\", mode=\"som\")"
-    echo -e "
-     ▄ ▄▄ ▄▄▄▄
-   ▄▀ 0x0 ▀▄
-    █  ───  █
-    █  ███  █
-     ▀▀   ▀▀
-"
-    exit 0
+    ok "Extension already installed and active"
+  else
+    info "Extension installed but not active — enabling..."
+    install_extension
+    NEEDS_RESTART=true
   fi
+else
+  install_extension
+  NEEDS_RESTART=true
 fi
 
-install_extension
 echo ""
-echo -e "     ${B}Remember:${N} log out then back in."
+
+if $NEEDS_RESTART; then
+  echo -e "  ${Y}→ GNOME Shell restart required to activate the extension.${N}"
+  echo -e "  ${Y}→ Options:${N}"
+  echo -e "    1. Restart now (recommended): busctl call --user org.gnome.Shell /org/gnome/Shell org.gnome.Shell.Eval s 'global.reexec_self()'"
+  echo -e "       (saves work first — restarts Shell in-place, no logout)"
+  echo -e "    2. Log out and back in"
+  echo ""
+fi
+
+echo -e "     ${B}All done. Please restart GNOME Shell or log out/in.${N}"
 echo ""
 echo -e "  ${Y}Verify:${N} gnome-extensions info winrects@cua"
+echo -e "  ${Y}Test:${N}   computer_use(action=\"capture\", mode=\"som\")"
 echo -e "
      ▄ ▄▄ ▄▄▄▄
    ▄▀ 0x0 ▀▄
