@@ -17,6 +17,7 @@ R='\033[0;31m'; G='\033[0;32m'; Y='\033[1;33m'; B='\033[1m'; N='\033[0m'
 ok()  { echo -e "  ${G}✓${N} $1"; }
 info(){ echo -e "  ${Y}→${N} $1"; }
 fail(){ echo -e "  ${R}✗${N} $1"; }
+center_bold() { local msg="$1"; local w=$(tput cols 2>/dev/null || echo 80); printf "%$(( (w-${#msg})/2 ))s${B}%s${N}\n" "" "$msg"; }
 
 
 # ── Parse args ──────────────────────────────────────────────────────────
@@ -96,8 +97,12 @@ if ! $FORCE && [ -f "$EXT_DIR/extension.js" ] && command -v gnome-extensions &>/
   STATE="$(gnome-extensions info winrects@cua 2>/dev/null | grep -i state || echo 'NEEDS_LOGOUT')"
   if echo "$STATE" | grep -qi active; then
     ok "Extension already installed and active"
+    echo -e ""
+    echo -e "     ${B}Remember:${N}"
+    echo -e "               log out then back in."
+    echo -e ""
     echo -e "     ${B}Test:${N}"
-    echo -e "                gdbus introspect --session --dest org.cua.WinRects --object-path /org/cua/WinRects"
+    echo -e "               gdbus introspect --session --dest org.cua.WinRects --object-path /org/cua/WinRects"
     echo -e "
      ▄ ▄▄ ▄▄▄▄
    ▄▀ 0x0 ▀▄
@@ -112,7 +117,8 @@ fi
 install_extension
 
 echo ""
-echo -e "  ${Y}Next step:${N} Log out and log back in"
+center_bold "Remember: log out then back in."
+echo ""
 echo -e "  ${Y}Verify:${N}  gnome-extensions info winrects@cua"
 echo -e "             gdbus introspect --session --dest org.cua.WinRects --object-path /org/cua/WinRects"
 echo ""
