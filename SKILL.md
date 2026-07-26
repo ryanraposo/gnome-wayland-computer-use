@@ -1,111 +1,128 @@
 ---
 name: gnome-wayland-computer-use
 description: |
-  Diagnose Wayland vs X11 and install winrects@cua for GNOME.
-version: 1.0.0
+  Call it once or in place of computer_use. Auto-fixes 0x0 captures on
+  GNOME Wayland by diagnosing and repairing the full stack.
+version: 1.2.0
 platforms: [linux]
 category: desktop-automation
 ---
 
-# Linux Wayland Computer-Use
+# GNOME Wayland Computer-Use
 
-Diagnose, set up, and troubleshoot `computer_use` on Linux Wayland sessions — GNOME Mutter, wlroots compositors (Sway, hyprland, labwc), or KDE KWin. The diagnostic and fix path differs significantly from X11.
+Call it once or in place of `computer_use`. Diagnoses the end-to-end stack, fixes every known failure mode, then calls `computer_use` and returns the result. If the session restart needed for extension activation can't be done, it tells the user.
 
-## Detecting Wayland vs X11
+## 1. Quick environment check
 
-`hermes computer-use doctor` only checks `$WAYLAND_DISPLAY` — which may NOT be inherited by the Hermes shell session even on a Wayland desktop. Never trust a "not Wayland" conclusion from the doctor alone.
+Run this   it determines whether GNOME Wayland is in use and gathers state in one shot:
 
-**To determine the actual display server, check multiple signals:**
-
+```bash
+SESSION=$(loginctl show-session "$(loginctl list-sessions --no-legend | awk '{print $1}')" -p Type 2>/dev/null | cut -d= -f2)
+DESKTOP=$(loginctl show-session "$(loginctl list-sessions --no-legend | awk '{print $1}')" -p Desktop 2>/dev/null | cut -d= -f2)
+echo "session_type=$SESSION"
+echo "desktop=$DESKTOP"
+echo "has_gnome_shell=$(pgrep -x gnome-shell >/dev/null && echo yes || echo no)"
+echo "has_xwayland=$(pgrep -x Xwayland >/dev/null && echo yes || echo no)"
+echo "has_cua_driver=$(command -v cua-driver >/dev/null && echo yes || echo no)"
+if command -v cua-driver &>/dev/null; then
+  echo "cua_version=$(cua-driver --version 2>&1 | grep -oP '\d+\.\d+\.\d+' | head -1)"
+fi
+echo "has_extension_files=$(test -f "${XDG_DATA_HOME:-$HOME/.local/share}/gnome-shell/extensions/winrects@cua/extension.js" && echo yes || echo no)"
+if command -v gnome-extensions &>/dev/null; then
+  echo "ext_state=$(gnome-extensions info winrects@cua 2>/dev/null | grep -i state | tr -d ' \t')"
+fi
+echo "has_hermes_systemd=$(systemctl --user --type service list-units --all 2>/dev/null | grep -q hermes-webui.service && echo yes || echo no)"
+PID=$(pgrep -x cua-driver | head -1)
+if [ -n "$PID" ]; then
+  for v in WAYLAND_DISPLAY XDG_SESSION_TYPE CUA_DRIVER_RS_ENABLE_WAYLAND; do
+    val=$(tr '\0' '\n' < "/proc/$PID/environ" 2>/dev/null | grep "^${v}=" || echo "$v=<unset>")
+    echo "driver_$val"
+  done
+fi
 ```
-echo "DISPLAY=$DISPLAY"
-echo "XDG_SESSION_TYPE=$XDG_SESSION_TYPE"
-loginctl list-sessions --no-legend | while read s rest; do
-  loginctl show-session "$s" -p Type -p Display 2>/dev/null
-done
-ps aux | grep -E "(gdm-wayland|Xwayland|sway|hyprland|kwin_wayland)" | grep -v grep
-```
 
-**Signals:**
-- `XDG_SESSION_TYPE=wayland` or `loginctl` shows `Type=wayland` → Wayland
-- `Xwayland :0` process running → Wayland with XWayland compatibility layer
-- `gdm-wayland-session` running → GNOME on Wayland
-- `DISPLAY=:0` but no Xorg process → XWayland (Wayland underneath)
+- **Not Wayland, not GNOME?** → `computer_use` should work natively. Fall through to step 4.
+- **GNOME Wayland with all checks green?** → Jump to step 4 (the D-Bus capture test), then step 5 (call `computer_use`).
+- **Anything missing?** → Continue below.
 
-## GNOME Wayland — the winrects@cua extension
+## 2. Install winrects@cua (if missing)
 
-On **GNOME Mutter Wayland**, `computer_use` captures return **0x0** with no elements even though the doctor shows `✅ ax_capability` and `✅ screen_capture`. This is because GNOME native Wayland clients are invisible to the XWayland AT-SPI bridge. The fix is installing the `winrects@cua` GNOME Shell extension.
-
-### What winrects@cua provides
-
-| Capability | Without extension | With extension |
-|---|---|---|
-| Window screen coordinates | ❌ | ✅ via D-Bus `org.cua.WinRects` |
-| Compositor stage capture | ❌ | ✅ via Shell screenshot API |
-| Window activation for input targeting | ❌ | ✅ verified focus |
-| Agent cursor rendering | ❌ | ✅ Clutter actor on stage |
-
-### How to install
-
-Download `metadata.json` and `extension.js` from the cua-driver repo and install:
+If `has_extension_files=no` or `ext_state` is not `State:ACTIVE`:
 
 ```bash
 UUID="winrects@cua"
 DEST="${XDG_DATA_HOME:-$HOME/.local/share}/gnome-shell/extensions/$UUID"
 mkdir -p "$DEST"
-
-# Download files
 curl -fsSL -o "$DEST/metadata.json" \
   "https://raw.githubusercontent.com/trycua/cua/main/libs/cua-driver/wayland-helper/winrects%40cua/metadata.json"
 curl -fsSL -o "$DEST/extension.js" \
   "https://raw.githubusercontent.com/trycua/cua/main/libs/cua-driver/wayland-helper/winrects%40cua/extension.js"
-
-# Enable via gsettings (preserves existing extensions)
 cur=$(gsettings get org.gnome.shell enabled-extensions 2>/dev/null || echo "@as []")
 python3 - "$cur" "$UUID" <<'PY'
-import sys, ast, subprocess
-try: l = ast.literal_eval(sys.argv[1])
+import ast, subprocess, sys
+try:    l = ast.literal_eval(sys.argv[1])
 except: l = []
 if sys.argv[2] not in l: l.append(sys.argv[2])
 subprocess.run(["gsettings","set","org.gnome.shell","enabled-extensions",str(l)])
 PY
+echo "INSTALLED"
 ```
 
-**After install: log out and back in.** GNOME Shell loads extensions only at session startup. Verify with:
+If this step ran, tell the user: *"Extension installed. Log out then back in for it to take effect, then run computer_use."* and stop   the extension can't activate without a session restart.
+
+## 3. Fix Hermes systemd env vars (if applicable)
+
+If `has_hermes_systemd=yes` and `driver_WAYLAND_DISPLAY` or `driver_CUA_DRIVER_RS_ENABLE_WAYLAND` is `<unset>`:
 
 ```bash
-gnome-extensions info winrects@cua
-# → State: ACTIVE
+mkdir -p ~/.config/systemd/user/hermes-webui.service.d
+cat > ~/.config/systemd/user/hermes-webui.service.d/wayland-env.conf << 'EOF'
+[Service]
+Environment=XDG_SESSION_TYPE=wayland
+Environment=XDG_CURRENT_DESKTOP=ubuntu:GNOME
+Environment=WAYLAND_DISPLAY=wayland-0
+Environment=DISPLAY=:0
+Environment=CUA_DRIVER_RS_ENABLE_WAYLAND=1
+EOF
+systemctl --user daemon-reload
+systemctl --user restart hermes-webui.service
+sleep 3
 ```
 
-cua-driver auto-detects the extension at runtime via `wayland::shell_helper`. No config changes needed.
+If `driver_CUA_DRIVER_RS_ENABLE_WAYLAND` was missing but the other vars were present, you can skip the restart   just add the missing env var to the existing drop-in instead.
 
-## Wayland compositor differences
+## 4. Verify D-Bus capture works
 
-| Compositor | Helper needed? | Notes |
+Probe `winrects@cua` directly (bypasses Hermes/cua-driver path):
+
+```bash
+rects=$(gdbus call --session --dest org.cua.WinRects --object-path /org/cua/WinRects --method org.cua.WinRects.GetRects 2>&1)
+png=$(gdbus call --session --dest org.cua.WinRects --object-path /org/cua/WinRects --method org.cua.WinRects.Capture 2>&1)
+echo "rects_ok=$([ -n "$rects" ] && echo yes || echo no)"
+echo "png_ok=$([ -n "$png" ] && echo yes || echo no)"
+echo "rects_preview=${rects:0:200}"
+```
+
+- If `rects_ok=no` or `png_ok=no` → Extension isn't loaded by GNOME Shell. User needs to log out/in. Tell them and stop.
+- If both are yes → The D-Bus capture path is healthy. The only remaining issue is cua-driver's ability to find and use it.
+
+## 5. Run computer_use
+
+Everything is fixed or already working. Call `computer_use(action="capture", mode="som")` and return the result directly.
+
+---
+
+## Reference: troubleshooting matrix
+
+Use this when the above automated flow doesn't resolve the issue (e.g. `computer_use` still returns 0x0 after all steps pass).
+
+| Symptom | Likely cause | Manual fix |
 |---|---|---|
-| **GNOME Mutter** | `winrects@cua` | Requires the extension for capture, coords, input targeting |
-| **wlroots (Sway, hyprland, labwc)** | None | cua-driver uses foreign-toplevel activation, virtual-pointer input, and layer-shell natively |
-| **KDE KWin** | Not yet available | Portal reachability alone insufficient; no target-addressable KWin adapter exists yet |
-
-## Doctor tool blind spots
-
-The `hermes computer-use doctor` has these known gaps:
-
-1. **Wayland detection**: Only checks `$WAYLAND_DISPLAY` env var. On GNOME Wayland, this var may not be inherited by the Hermes shell — the doctor says "not Wayland" when it actually is.
-2. **Screen capture on Wayland**: On GNOME Wayland without `winrects@cua`, `screen_capture_capability` returns ✅ because it tests the XWayland X11 path, but the XWayland surface has no windows to capture.
-3. **ax_capability**: Can also return ✅ for X11/XWayland even when real windows are invisible.
-
-Always independently verify with `loginctl`, process inspection, and `XDG_SESSION_TYPE` before concluding the display server type based on doctor output alone.
-
-## Verification after setup
-
-```python
-# Check extension is active
-result = terminal("gnome-extensions info winrects@cua")
-# Expect "State: ACTIVE"
-
-# Try a capture
-# computer_use(action="capture", mode="som")
-# Should return >0 elements with non-zero dimensions
-```
+| D-Bus `GetRects` returns windows, `Capture` returns PNG, but `computer_use` returns 0x0 | cua-driver not using the winrects@cua path (falling back to XWayland) | Check `CUA_DRIVER_RS_ENABLE_WAYLAND=1` is set on the cua-driver process. Restart Hermes after fixing. |
+| `gnome-extensions info` shows `State: ACTIVE` but D-Bus `GetRects` returns nothing | Extension loaded but Shell screenshot API unavailable | Verify GNOME version ≥ 42. Check `journalctl -f` during a capture call for Shell errors. |
+| cua-driver version < 0.12.6 | Old binary lacks Wayland shell-helper support | `cua-driver update --apply` or reinstall: `curl -fsSL https://raw.githubusercontent.com/trycua/cua/main/libs/cua-driver/install.sh | bash` |
+| cua-driver doctor says "No WAYLAND_DISPLAY" but `loginctl` says Wayland | systemd unit strips env vars | Create the drop-in from step 3, restart Hermes |
+| cua-driver doctor shows ❌ wayland_backend (foreign-toplevel=false, etc.) | GNOME Mutter doesn't use wlroots protocols | This is expected. Ignore it   winrects@cua provides the same capabilities via D-Bus. |
+| Chrome / native Wayland apps don't appear in element tree | Chrome uses `--ozone-platform=wayland` | Expected. They're captured by winrects@cua in "som" mode but aren't AT-SPI elements. |
+| `loginctl` shows `Type=unspecified` | systemd-logind session tracking artifact | Still Wayland if gnome-shell + Xwayland are running. |
+| Ubuntu 26.04: `WAYLAND_DISPLAY` unset everywhere | GNOME uses default socket, doesn't export var | Hardcode `WAYLAND_DISPLAY=wayland-0` in the drop-in (step 3 does this). |
