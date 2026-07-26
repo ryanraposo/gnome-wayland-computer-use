@@ -92,13 +92,7 @@ PY
 fi
 ```
 
-If `NEEDS_RESTART`, restart GNOME Shell:
-
-```bash
-notify-send "Restarting GNOME Shell..." && sleep 3
-busctl call --user org.gnome.Shell /org/gnome/Shell org.gnome.Shell.Eval s 'global.reexec_self()'
-sleep 5
-```
+If `NEEDS_RESTART`, log out and back in.
 
 ## 4. Fix Hermes systemd env vars
 

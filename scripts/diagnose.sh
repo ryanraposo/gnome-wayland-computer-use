@@ -185,6 +185,6 @@ if [ "$SCORE" -ne "$TOTAL" ]; then
 else
   echo "  ${G}All checks passed! computer_use should work.${N}"
   echo ""
-  echo "  ${Y}Test:${N} computer_use(action=\"capture\", mode=\"som\")"
+
 fi
 echo ""

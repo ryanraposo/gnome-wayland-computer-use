@@ -173,17 +173,13 @@ echo ""
 
 if $NEEDS_RESTART; then
   echo -e "  ${Y}→ GNOME Shell restart required to activate the extension.${N}"
-  echo -e "  ${Y}→ Options:${N}"
-  echo -e "    1. Restart now (recommended): busctl call --user org.gnome.Shell /org/gnome/Shell org.gnome.Shell.Eval s 'global.reexec_self()'"
-  echo -e "       (saves work first — restarts Shell in-place, no logout)"
-  echo -e "    2. Log out and back in"
+  echo -e "  ${Y}→ Log out and back in to activate the extension.${N}"
   echo ""
 fi
 
 echo -e "     ${B}All done. Please restart GNOME Shell or log out/in.${N}"
 echo ""
 echo -e "  ${Y}Verify:${N} gnome-extensions info winrects@cua"
-echo -e "  ${Y}Test:${N}   computer_use(action=\"capture\", mode=\"som\")"
 echo -e "
      ▄ ▄▄ ▄▄▄▄
    ▄▀ 0x0 ▀▄
