@@ -1,5 +1,12 @@
 # gnome-wayland-computer-use
 
+```
+      __
+ (___()'`;
+ /,    /`
+ "--\
+```
+
 **Skill + extension** for enabling `computer_use` on GNOME Wayland.
 
 - **`SKILL.md`** — ⚕ agent skill (auto-discovered by [Hermes](https://github.com/nousresearch/hermes-agent)): detects Wayland vs X11, installs `winrects@cua`, fixes `computer_use`.
