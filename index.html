@@ -4,159 +4,156 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>gnome-wayland-computer-use — Fix computer_use on GNOME Wayland</title>
+    <title>gnome-wayland-computer-use</title>
     <style>
-        html,
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0
+        }
+
         body {
             font-family: 'Courier New', Courier, monospace;
-            margin: 0;
-            padding: 0;
-            color: black;
-            background-color: white;
-            height: 100%;
+            color: #000;
+            background: #fff;
             display: flex;
             flex-direction: column;
-            box-sizing: border-box;
+            align-items: center;
+            min-height: 100vh;
+            padding: 40px 20px
         }
-        .header {
-            text-align: center;
-            padding: 40px 20px 20px;
+
+        main {
+            max-width: 560px;
+            width: 100%
         }
-        .header h1 {
-            font-size: 2em;
-            margin: 0;
-            letter-spacing: -0.5px;
+
+        h1 {
+            font-size: 1.8em;
+            letter-spacing: -.5px;
+            text-align: center
         }
-        .header p {
+
+        p {
             color: #555;
-            margin-top: 6px;
-            font-size: 14px;
-        }
-        .container {
-            max-width: 640px;
-            margin: 0 auto;
-            padding: 10px 20px;
-            flex: 1;
-        }
-        .card {
-            border: 2px solid black;
-            border-radius: 12px;
-            padding: 32px;
-            margin: 16px 0;
-            background: #fff;
-        }
-        .card p,
-        .card ul {
             font-size: 14px;
             line-height: 1.6;
-            color: #333;
+            text-align: center
         }
-        .card ul {
-            padding-left: 20px;
-        }
-        .card code {
-            background: #f5f5f5;
-            padding: 2px 6px;
-            border-radius: 3px;
-            font-size: 13px;
-            border: 1px solid #ddd;
-        }
-        .curl-box {
+
+        .curl-wrap {
             background: #f5f5f5;
             border: 1px solid #ddd;
-            border-radius: 6px;
-            padding: 12px 16px;
-            font-size: 13px;
-            margin: 14px 0;
-            word-break: break-all;
-        }
-        .btn {
-            display: inline-block;
-            border: 2px solid black;
             border-radius: 8px;
-            padding: 12px 24px;
-            font-family: 'Courier New', Courier, monospace;
-            font-size: 14px;
-            font-weight: bold;
-            background: white;
-            color: black;
-            text-decoration: none;
-            transition: all 0.15s;
+            padding: 14px 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 20px 0
         }
-        .btn:hover {
-            background: black;
-            color: white;
-        }
-        .footer {
-            text-align: center;
-            padding: 20px;
+
+        .curl-code {
+            font-family: inherit;
             font-size: 13px;
-            border-top: 1px solid #eee;
+            white-space: nowrap;
+            flex: 1;
+            overflow-x: auto;
+            scrollbar-width: none
         }
-        .footer a {
-            color: black;
+        .curl-code::-webkit-scrollbar {
+            display: none
+        }
+
+        .curl-btn {
+            flex-shrink: 0;
+            background: none;
+            border: 1px solid #bbb;
+            border-radius: 5px;
+            cursor: pointer;
+            padding: 5px 7px;
+            line-height: 0;
+            color: #666;
+            transition: .15s
+        }
+
+        .curl-btn:hover {
+            background: #eaeaea;
+            border-color: #888;
+            color: #000
+        }
+
+        .btn {
+            border: 2px solid #000;
+            border-radius: 8px;
+            padding: 10px 22px;
+            font-family: inherit;
+            font-size: 14px;
+            font-weight: 700;
+            background: #fff;
+            color: #000;
             text-decoration: none;
+            display: inline-block;
+            transition: .15s
         }
-        .footer a:hover {
-            text-decoration: underline;
+
+        .btn:hover {
+            background: #000;
+            color: #fff
         }
-        @media screen and (max-width: 480px) {
-            .header h1 {
-                font-size: 1.5em;
-            }
-            .card {
-                padding: 20px;
-            }
+
+        .links {
+            text-align: center;
+            font-size: 13px;
+            padding: 32px 0 0;
+            color: #999
+        }
+
+        .links a {
+            color: #000;
+            text-decoration: none
+        }
+
+        .links a:hover {
+            text-decoration: underline
         }
     </style>
 </head>
 
 <body>
-    <header class="header">
+    <main>
         <h1>gnome-wayland-computer-use</h1>
-        <p>Fix <code>computer_use</code> on GNOME Wayland</p>
-    </header>
+        <p style="margin-top:6px">Fix <code>computer_use</code> on GNOME Wayland</p>
 
-    <div class="container">
-        <div class="card" style="text-align:center;">
-            <p style="margin:0 0 14px;">
-                Installs the <code>winrects@cua</code> GNOME Shell extension
-                and the agent skill that knows how to use it.
-                One curl, zero hassle.
-            </p>
-            <div class="curl-box">
-                curl -fsSL <a href="install.sh"
-                    style="color:black;text-decoration:underline;">https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh</a>
-                | bash
-            </div>
-            <p style="font-size:13px;color:#555;margin:12px 0 16px;">
-                Then <strong>log out and log back in</strong>.
-            </p>
-            <p style="font-size:13px;color:#555;margin:0 0 16px;">
-                Verify: <code>gnome-extensions info winrects@cua</code> → <strong>State: ACTIVE</strong>
-            </p>
-            <a class="btn" href="install.sh">download install.sh</a>
+        <div class="curl-wrap">
+            <span class="curl-code" id="curl">curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh | bash</span>
+            <button class="curl-btn" id="copy" onclick="copyCurl()" title="Copy to clipboard">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="3" width="10" height="12" rx="1" />
+                    <path d="M5 1h6a1 1 0 0 1 1 1v2" />
+                </svg>
+            </button>
         </div>
-    </div>
 
-    <div style="text-align:center;padding:10px 0 0;font-size:13px;line-height:1.4;color:#999;">
-        <pre style="margin:0;font-size:11px;line-height:1.2;color:#ccc;">
-     ▄ ▄▄ ▄▄▄▄
-   ▄▀ 0x0 ▀▄
-    █  ───  █
-    █  ███  █
-     ▀▀   ▀▀
-        </pre>
-    </div>
+        <p style="font-size:13px;color:#555">Then <strong>log out and log back in</strong>.</p>
 
-    <footer class="footer">
-        <a href="https://github.com/ryanraposo/gnome-wayland-computer-use">GitHub</a>
-        &nbsp;·&nbsp;
-        <a href="https://github.com/trycua/cua">trycua/cua</a>
-        &nbsp;·&nbsp;
-        extension by <a href="https://github.com/trycua">trycua</a>,
-        installer by <a href="https://github.com/ryanraposo">ryanraposo</a>
-    </footer>
+        <div class="links">
+            <a href="https://github.com/ryanraposo/gnome-wayland-computer-use">GitHub</a> ·
+            extension by <a href="https://github.com/trycua">trycua</a> ·
+            installer by <a href="https://github.com/ryanraposo">ryanraposo</a>
+        </div>
+    </main>
+
+    <script>
+        function copyCurl() {
+            navigator.clipboard.writeText(document.getElementById('curl').textContent);
+            const b = document.getElementById('copy');
+            b.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5 6 11.5 13 4.5"/></svg>';
+            setTimeout(() => {
+                b.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="10" height="12" rx="1"/><path d="M5 1h6a1 1 0 0 1 1 1v2"/></svg>';
+            }, 1500);
+        }
+    </script>
 </body>
 
 </html>
