@@ -2,7 +2,7 @@
 
 **Skill + extension** for enabling `computer_use` on GNOME Wayland.
 
-- **`SKILL.md`** — auto-discovered agent skill: detects Wayland vs X11, installs `winrects@cua`, fixes `computer_use`.
+- **`SKILL.md`** — ⚕ agent skill (auto-discovered by [Hermes](https://github.com/nousresearch/hermes-agent)): detects Wayland vs X11, installs `winrects@cua`, fixes `computer_use`.
 - **`install.sh` + `extension/`** — standalone installer + bundled `winrects@cua` GNOME Shell extension (zero external deps).
 
 ```bash
