@@ -23,5 +23,6 @@ curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh | 
 - **`SKILL.md`** — agent skill with concrete D-Bus commands for capture, text entry, and clicks
 - **`lib/checks.sh`** — shared validation library sourced by all scripts
 - **`install.sh`** — one-shot installer (4 steps)
+- **`scripts/capture.sh`** — screenshot capture with 3-tier fallback chain (gnome-screenshot → portal/PipeWire → ydotool)
 - **`scripts/diagnose.sh`** — CLI diagnostic with `--json` output for programmatic use
 - **`scripts/teardown.sh`** — full uninstall

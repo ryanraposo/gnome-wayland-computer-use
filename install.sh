@@ -118,7 +118,21 @@ fi
 if command -v gnome-screenshot &>/dev/null; then
     success "Screenshot capture ready (gnome-screenshot)"
 else
-    warn "gnome-screenshot not found — install: sudo apt install gnome-screenshot"
+    info "Installing gnome-screenshot..."
+    sudo apt-get install -y gnome-screenshot 2>/dev/null || \
+        warn "Install manually: sudo apt install gnome-screenshot"
+fi
+
+if python3 -c "import gi; gi.require_version('Gst','1.0'); from gi.repository import Gst" 2>/dev/null; then
+    success "Portal/PipeWire capture ready (python3-gi + GStreamer)"
+else
+    info "Installing portal capture dependencies..."
+    sudo apt-get install -y python3-gi gir1.2-gstreamer-1.0 gir1.2-gst-plugins-base-1.0 gstreamer1.0-plugins-good 2>/dev/null || \
+        warn "Install manually: sudo apt install python3-gi gir1.2-gstreamer-1.0"
+fi
+
+if [ -x "$SELF/scripts/capture.sh" ]; then
+    success "Capture script ready (scripts/capture.sh)"
 fi
 
 # ── 3. Skill Installation ────────────────────────────────────────────────

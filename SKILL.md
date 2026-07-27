@@ -53,19 +53,28 @@ command -v ydotool &>/dev/null && echo "px_rung=ready" || echo "px_rung=dead"
 
 AX Rung does not support capture. Use PX Rung for screenshots.
 
-`org.gnome.Shell.Screenshot` D-Bus returns "Access Denied" (polkit restricts it
-to interactive use). Use `gnome-screenshot` CLI instead:
+The capture script handles the fallback chain automatically:
 
 ```bash
-gnome-screenshot --file /tmp/screen.png 2>/dev/null && base64 /tmp/screen.png
+scripts/capture.sh /tmp/screen.png && base64 /tmp/screen.png
 ```
 
-If `gnome-screenshot` is unavailable, install it or use an alternative:
+The fallback chain (first success wins):
 
-```bash
-# grim (wlroots-based, works on GNOME with pipewire)
-grim /tmp/screen.png && base64 /tmp/screen.png
-```
+1. **`gnome-screenshot --file`** — Works on GNOME < 49 (Ubuntu ≤ 26.04, Fedora ≤ 42).
+   Registers the allowlisted bus name `org.gnome.Screenshot`.
+2. **Portal via PipeWire** — Python + GStreamer driving `org.freedesktop.portal.ScreenCast`.
+   First run shows a consent dialog (one-time). No flash, no focus steal.
+   GNOME 46+ supports restore tokens → subsequent runs are silent.
+3. **`ydotool` fake PrintScreen** — Presses the PrintScreen key via `/dev/uinput`.
+   GNOME saves the screenshot; we read it from `~/Pictures/Screenshots/` and
+   clean up. Shows the screenshot UI briefly but works everywhere.
+
+If all fail, check the troubleshooting table below.
+
+**On GNOME 49+**: `gnome-screenshot` returns `ACCESS_DENIED` (it was removed from
+the allowlist). Install the `allow-gnome-screenshot` GNOME Shell extension to
+restore it, or rely on the portal/PipeWire fallback (preferred — no flash).
 
 ## 4. Text Entry
 
@@ -121,10 +130,11 @@ ydotool click 1  # left click
 | Symptom | Cause | Fix |
 |---|---|---|
 | org.a11y.Bus D-Bus error | Bus not started | `systemctl --user start at-spi-bus-launcher.service` |
-| org.gnome.Shell.Screenshot "Access Denied" | polkit blocks non-interactive use | Use `gnome-screenshot --file /tmp/s.png` |
+| `gnome-screenshot` ACCESS_DENIED | GNOME 49+ removed it from allowlist | Use portal fallback or install `allow-gnome-screenshot` extension |
+| Portal consent loop | No restore token (GNOME < 46) | Accept once per session; upgrade to GNOME 46+ |
 | ydotool does nothing | User not in input group | `sudo usermod -aG input $USER` then re-login |
-| 0x0 capture | `gnome-screenshot` not installed | `sudo apt install gnome-screenshot` |
-| X11Error 8 | XWayland blocks root grabs | Use D-Bus screenshot path |
+| All capture methods fail | Missing dependencies | `sudo apt install gnome-screenshot python3-gi gir1.2-gstreamer-1.0` |
+| X11Error 8 | XWayland blocks root grabs | Use portal/PipeWire capture path |
 
 ## 7. Agent Integration
 
