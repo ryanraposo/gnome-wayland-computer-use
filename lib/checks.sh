@@ -28,7 +28,7 @@ check_version_ge() {
 
 # ── Data functions (silent) ──
 check_get_session() {
-    local s="${XDG_SESSION_TYPE:-}"
+    s="${XDG_SESSION_TYPE:-}"
     if [ -z "$s" ]; then
         s=$(loginctl show-session "$(loginctl list-sessions --no-legend | awk '{print $1}')" -p Type 2>/dev/null | cut -d= -f2)
     fi
@@ -36,7 +36,7 @@ check_get_session() {
 }
 
 check_get_desktop() {
-    local d="${XDG_CURRENT_DESKTOP:-}"
+    d="${XDG_CURRENT_DESKTOP:-}"
     if [ -z "$d" ]; then
         d=$(loginctl show-session "$(loginctl list-sessions --no-legend | awk '{print $1}')" -p Desktop 2>/dev/null | cut -d= -f2)
     fi
@@ -50,7 +50,7 @@ check_is_gnome_shell_running() { pgrep -x gnome-shell &>/dev/null; }
 check_is_xwayland_running()    { pgrep -x Xwayland &>/dev/null; }
 
 check_is_toolkit_accessibility_enabled() {
-    local val
+    val
     val=$(gsettings get org.gnome.desktop.interface toolkit-accessibility 2>/dev/null) || return 1
     [ "$val" = "true" ]
 }
@@ -90,39 +90,39 @@ check_is_ydotoold_enabled()     { systemctl --user is-enabled ydotoold.service &
 check_is_ydotoold_running()     { systemctl --user is-active ydotoold.service &>/dev/null; }
 
 check_is_env_in_bashrc() {
-    local var="$1"
+    var="$1"
     grep -Fq "$var" "$HOME/.bashrc" 2>/dev/null
 }
 
 check_is_service_enabled() {
-    local name="$1"
+    name="$1"
     systemctl --user is-enabled "$name" &>/dev/null
 }
 
 check_is_service_running() {
-    local name="$1"
+    name="$1"
     systemctl --user is-active "$name" &>/dev/null
 }
 
 check_has_systemd_service() {
-    local name="$1"
+    name="$1"
     systemctl --user --type service list-units --all 2>/dev/null | grep -q "$name"
 }
 
 check_skill_installed() {
-    local name="gnome-wayland-computer-use"
+    name="gnome-wayland-computer-use"
     [ -f "${HOME}/.agents/skills/${name}/SKILL.md" ]
 }
 
 check_hermes_skill_installed() {
-    local name="gnome-wayland-computer-use"
+    name="gnome-wayland-computer-use"
     [ -f "${HOME}/.hermes/skills/${name}/SKILL.md" ]
 }
 
 # ── Check functions (print result, return 0/1) ──
 
 check_session() {
-    local s; s=$(check_get_session)
+    s; s=$(check_get_session)
     if [ "$s" = "wayland" ]; then
         check_ok "Session: Wayland"; check_pass; return 0
     else
@@ -131,7 +131,7 @@ check_session() {
 }
 
 check_desktop() {
-    local d; d=$(check_get_desktop)
+    d; d=$(check_get_desktop)
     if [[ "$d" == *"GNOME"* ]]; then
         check_ok "Desktop: $d"; check_pass; return 0
     else
@@ -215,7 +215,7 @@ check_ydotoold() {
     if ! check_is_ydotoold_installed; then
         check_info "ydotoold not installed (PX Rung fallback degraded)"; check_xfail; return 1
     fi
-    local ok=0
+    ok=0
     if check_is_ydotoold_enabled; then check_ok "ydotoold.service enabled"; ((ok++)) || true
     else check_fail "ydotoold.service not enabled"; fi
     if check_is_ydotoold_running; then check_ok "ydotoold.service running"; ((ok++)) || true
