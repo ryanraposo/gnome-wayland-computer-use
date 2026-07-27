@@ -2,7 +2,45 @@
 set -euo pipefail
 
 SELF="$(cd "$(dirname "$0")" && pwd)"
-. "$SELF/lib/checks.sh"
+
+# ── Inlined from lib/checks.sh (self-contained for curl | bash) ──
+check_get_session() {
+    local s="${XDG_SESSION_TYPE:-}"
+    if [ -z "$s" ]; then
+        s=$(loginctl show-session "$(loginctl list-sessions --no-legend | awk '{print $1}')" -p Type 2>/dev/null | cut -d= -f2)
+    fi
+    echo "${s:-unknown}"
+}
+check_get_desktop() {
+    local d="${XDG_CURRENT_DESKTOP:-}"
+    if [ -z "$d" ]; then
+        d=$(loginctl show-session "$(loginctl list-sessions --no-legend | awk '{print $1}')" -p Desktop 2>/dev/null | cut -d= -f2)
+    fi
+    echo "${d:-unknown}"
+}
+check_is_atspi_bus_alive() {
+    gdbus introspect --session --dest org.a11y.Bus --object-path /org/a11y/bus 2>/dev/null | grep -q "interface org.a11y.Bus"
+}
+check_get_atspi_socket() {
+    echo "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/at-spi/bus"
+}
+check_is_atspi_socket_exists() {
+    [ -S "$(check_get_atspi_socket)" ]
+}
+check_start_atspi_service() {
+    systemctl --user start at-spi-bus-launcher.service 2>/dev/null || {
+        /usr/libexec/at-spi-bus-launcher --launch-immediately 2>/dev/null &
+        disown
+    }
+    for _ in 1 2 3; do
+        check_is_atspi_socket_exists && return 0
+        sleep 1
+    done
+    return 1
+}
+check_is_input_group_member() {
+    groups "$USER" 2>/dev/null | grep -q "\binput\b"
+}
 
 info()    { echo -e "\e[34m[INFO]\e[0m $*"; }
 warn()    { echo -e "\e[33m[WARN]\e[0m $*"; }
