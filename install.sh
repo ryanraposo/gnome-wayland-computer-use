@@ -65,12 +65,12 @@ install_skill
 # ── Install / update cua-driver ─────────────────────────────────────────
 if ! command -v cua-driver &>/dev/null; then
   info "cua-driver not found — installing..."
-  curl -fsSL https://raw.githubusercontent.com/trycua/cua/main/libs/cua-driver/install.sh | bash
+  curl -fsSL https://cua.ai/driver/install.sh | bash
   ok "cua-driver installed"
 elif $FORCE; then
   info "cua-driver found, --force set — running cua-driver update..."
   cua-driver update --apply 2>/dev/null || \
-    curl -fsSL https://raw.githubusercontent.com/trycua/cua/main/libs/cua-driver/install.sh | bash
+    curl -fsSL https://cua.ai/driver/install.sh | bash
   ok "cua-driver updated"
 else
   VER=$(cua-driver --version 2>&1 | grep -oP '\d+\.\d+\.\d+' | head -1)

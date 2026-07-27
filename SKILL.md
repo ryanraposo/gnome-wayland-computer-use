@@ -54,7 +54,7 @@ fi
 If `has_cua_driver=no` or version < 0.12.6:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/trycua/cua/main/libs/cua-driver/install.sh | bash
+curl -fsSL https://cua.ai/driver/install.sh | bash
 ```
 
 ## 3. Install & enable winrects@cua
