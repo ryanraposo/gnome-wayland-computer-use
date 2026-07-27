@@ -53,19 +53,18 @@ command -v ydotool &>/dev/null && echo "px_rung=ready" || echo "px_rung=dead"
 
 AX Rung does not support capture. Use PX Rung for screenshots.
 
-```bash
-# Preferred: org.gnome.Shell.Screenshot D-Bus (GNOME 42+)
-gdbus call --session \
-  --dest org.gnome.Shell \
-  --object-path /org/gnome/Shell/Screenshot \
-  --method org.gnome.Shell.Screenshot.Screenshot \
-  "false" "false" "false" \
-  | grep -oP "'[^']*'" | head -1 | tr -d "'"
-```
+`org.gnome.Shell.Screenshot` D-Bus returns "Access Denied" (polkit restricts it
+to interactive use). Use `gnome-screenshot` CLI instead:
 
 ```bash
-# Fallback: gnome-screenshot CLI
 gnome-screenshot --file /tmp/screen.png 2>/dev/null && base64 /tmp/screen.png
+```
+
+If `gnome-screenshot` is unavailable, install it or use an alternative:
+
+```bash
+# grim (wlroots-based, works on GNOME with pipewire)
+grim /tmp/screen.png && base64 /tmp/screen.png
 ```
 
 ## 4. Text Entry
@@ -122,9 +121,9 @@ ydotool click 1  # left click
 | Symptom | Cause | Fix |
 |---|---|---|
 | org.a11y.Bus D-Bus error | Bus not started | `systemctl --user start at-spi-bus-launcher.service` |
-| org.gnome.Shell.Screenshot refuses | GNOME < 42 | `gnome-screenshot --file /tmp/s.png` |
+| org.gnome.Shell.Screenshot "Access Denied" | polkit blocks non-interactive use | Use `gnome-screenshot --file /tmp/s.png` |
 | ydotool does nothing | User not in input group | `sudo usermod -aG input $USER` then re-login |
-| 0x0 capture | No screenshot source | Use `gnome-screenshot` fallback |
+| 0x0 capture | `gnome-screenshot` not installed | `sudo apt install gnome-screenshot` |
 | X11Error 8 | XWayland blocks root grabs | Use D-Bus screenshot path |
 
 ## 7. Agent Integration

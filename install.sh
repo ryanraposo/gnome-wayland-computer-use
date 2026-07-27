@@ -115,10 +115,10 @@ else
     warn "  Expected socket: $sock"
 fi
 
-if gdbus introspect --session --dest org.gnome.Shell --object-path /org/gnome/Shell/Screenshot 2>/dev/null | grep -q "Screenshot"; then
-    success "Screenshot capture ready (org.gnome.Shell.Screenshot)"
+if command -v gnome-screenshot &>/dev/null; then
+    success "Screenshot capture ready (gnome-screenshot)"
 else
-    warn "org.gnome.Shell.Screenshot unavailable — capture may fall back to gnome-screenshot"
+    warn "gnome-screenshot not found — install: sudo apt install gnome-screenshot"
 fi
 
 # ── 3. Skill Installation ────────────────────────────────────────────────
