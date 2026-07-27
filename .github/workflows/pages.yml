@@ -15,7 +15,19 @@ permissions:
   id-token: write
 
 jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Shell syntax check
+        run: |
+          for f in install.sh lib/checks.sh scripts/diagnose.sh scripts/fix-hermes-env.sh scripts/teardown.sh; do
+            if [ -f "$f" ]; then
+              bash -n "$f" && echo "$f: OK" || { echo "$f: FAIL"; exit 1; }
+            fi
+          done
   deploy:
+    needs: validate
     runs-on: ubuntu-latest
     environment:
       name: github-pages

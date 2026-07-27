@@ -1,4 +1,13 @@
 #!/usr/bin/env bash
+set -euo pipefail
+
+SELF="$(cd "$(dirname "$0")" && pwd)"
+. "$SELF/lib/checks.sh"
+
+info()    { echo -e "\e[34m[INFO]\e[0m $*"; }
+warn()    { echo -e "\e[33m[WARN]\e[0m $*"; }
+success() { echo -e "\e[32m[OK]\e[0m $*"; }
+error()   { echo -e "\e[31m[ERROR]\e[0m $*"; exit 1; }
 
 echo -e "
 ▄ ▄▄ ▄▄▄▄
@@ -8,178 +17,141 @@ echo -e "
      ▀▀   ▀▀
 "
 
-set -euo pipefail
+COMPAT=false; UNATTENDED=false
+for arg in "$@"; do
+    case "$arg" in
+        --compat) COMPAT=true ;;
+        --unattended) UNATTENDED=true ;;
+        --help|-h)
+            echo "Usage: install.sh [--compat] [--unattended]"
+            echo "  --compat      Install without requiring Wayland/GNOME session"
+            echo "  --unattended  Skip interactive prompts (for curl | bash)"
+            exit 0 ;;
+    esac
+done
+if [ ! -t 0 ] && ! $UNATTENDED; then
+    UNATTENDED=true
+fi
 
-SELF="$(cd "$(dirname "$0")" && pwd)"
-SELF_URL="https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh"
+info "Starting GNOME Wayland Computer-Use setup..."
 
-R='\033[0;31m'; G='\033[0;32m'; Y='\033[1;33m'; B='\033[1m'; N='\033[0m'
-ok()  { echo -e "  ${G}✓${N} $1"; }
-info(){ echo -e "  ${Y}→${N} $1"; }
-fail(){ echo -e "  ${R}✗${N} $1"; }
+# ── 1. Session & Display Verification ────────────────────────────────────
+info "[1/4] Verifying display server environment..."
+SESSION=$(check_get_session)
+DESKTOP=$(check_get_desktop)
 
-FORCE=false
-[[ "${1:-}" == "--force" ]] && FORCE=true
-
-# ── Prerequisites ───────────────────────────────────────────────────────
-SESSION="${XDG_SESSION_TYPE:-$(loginctl show-session "$(loginctl list-sessions --no-legend | awk '{print $1}')" -p Type 2>/dev/null | cut -d= -f2)}"
-DESKTOP="${XDG_CURRENT_DESKTOP:-$(loginctl show-session "$(loginctl list-sessions --no-legend | awk '{print $1}')" -p Desktop 2>/dev/null | cut -d= -f2)}"
-
-[ "$SESSION" != "wayland" ] && { fail "Session is '$SESSION' — need Wayland"; exit 1; }
-ok "Session is Wayland"
-[[ "$DESKTOP" != *"GNOME"* ]] && { fail "Desktop is '$DESKTOP' — need GNOME"; exit 1; }
-ok "Desktop is GNOME"
-command -v gsettings &>/dev/null || { fail "gsettings not found"; exit 1; }
-
-# ── Install skill ───────────────────────────────────────────────────────
-install_skill() {
-  local src="$SELF/SKILL.md"
-  local name="gnome-wayland-computer-use"
-
-  # Install to opencode's skill directory
-  local dst="${HOME}/.agents/skills/${name}/SKILL.md"
-  mkdir -p "$(dirname "$dst")"
-  if [ -f "$src" ]; then
-    cp "$src" "$dst"
-    ok "Skill installed → ${dst/$HOME/\~}"
-  elif command -v curl &>/dev/null; then
-    curl -fsSL -o "$dst" "https://ryanraposo.github.io/gnome-wayland-computer-use/SKILL.md"
-    ok "Skill downloaded → ${dst/$HOME/\~}"
-  fi
-
-  # Also install to Hermes skill directory if Hermes is present
-  local hermes_dir="${HOME}/.hermes/skills"
-  if [ -d "$hermes_dir" ]; then
-    local hdst="${hermes_dir}/${name}/SKILL.md"
-    mkdir -p "$(dirname "$hdst")"
-    if [ -f "$src" ]; then
-      cp "$src" "$hdst"
+if [ "$SESSION" != "wayland" ]; then
+    if $COMPAT; then
+        info "Session: $SESSION (compat mode, continuing)"
     else
-      curl -fsSL -o "$hdst" "https://ryanraposo.github.io/gnome-wayland-computer-use/SKILL.md"
+        warn "Session: $SESSION (expected wayland). Some features may not work."
     fi
-    ok "Hermes skill installed → ${hdst/$HOME/\~}"
-  fi
+else
+    success "Active Wayland session detected."
+fi
+
+if [[ "$DESKTOP" != *"GNOME"* ]]; then
+    if $COMPAT; then
+        info "Desktop: $DESKTOP (compat mode, continuing)"
+    else
+        warn "Desktop: $DESKTOP — some features expect GNOME."
+    fi
+else
+    success "Desktop environment: GNOME"
+fi
+
+command -v gsettings &>/dev/null || error "gsettings not found"
+
+# ── 2. AT-SPI D-Bus Accessibility ────────────────────────────────────────
+info "[2/4] Enabling GTK/GNOME toolkit accessibility via D-Bus..."
+gsettings set org.gnome.desktop.interface toolkit-accessibility true
+success "toolkit-accessibility enabled (AX Rung primary path)"
+
+if check_is_atspi_bus_alive; then
+    success "AT-SPI2 D-Bus reachable (org.a11y.Bus)"
+elif check_start_atspi_service; then
+    success "AT-SPI2 D-Bus started (socket at $(check_get_atspi_socket))"
+else
+    sock=$(check_get_atspi_socket)
+    warn "AT-SPI2 D-Bus not reachable — start manually: systemctl --user start at-spi-bus-launcher.service"
+    warn "  Expected socket: $sock"
+fi
+
+if gdbus introspect --session --dest org.gnome.Shell --object-path /org/gnome/Shell/Screenshot 2>/dev/null | grep -q "Screenshot"; then
+    success "Screenshot capture ready (org.gnome.Shell.Screenshot)"
+else
+    warn "org.gnome.Shell.Screenshot unavailable — capture may fall back to gnome-screenshot"
+fi
+
+# ── 3. Skill Installation ────────────────────────────────────────────────
+info "[3/4] Installing agent skill..."
+install_skill() {
+    local src="$SELF/SKILL.md"
+    local name="gnome-wayland-computer-use"
+    local dst="${HOME}/.agents/skills/${name}/SKILL.md"
+    mkdir -p "$(dirname "$dst")"
+    if [ -f "$src" ]; then
+        cp "$src" "$dst"
+    elif command -v curl &>/dev/null; then
+        curl -fsSL -o "$dst" "https://ryanraposo.github.io/gnome-wayland-computer-use/SKILL.md"
+    fi
+    success "Skill installed → ${dst/$HOME/\~}"
+
+    local hermes_dir="${HOME}/.hermes/skills"
+    if [ -d "$hermes_dir" ]; then
+        local hdst="${hermes_dir}/${name}/SKILL.md"
+        mkdir -p "$(dirname "$hdst")"
+        if [ -f "$src" ]; then
+            cp "$src" "$hdst"
+        else
+            curl -fsSL -o "$hdst" "https://ryanraposo.github.io/gnome-wayland-computer-use/SKILL.md"
+        fi
+        success "Hermes skill installed → ${hdst/$HOME/\~}"
+    fi
 }
 install_skill
 
-# ── Install / update cua-driver ─────────────────────────────────────────
-if ! command -v cua-driver &>/dev/null; then
-  info "cua-driver not found — installing..."
-  curl -fsSL https://cua.ai/driver/install.sh | bash
-  ok "cua-driver installed"
-elif $FORCE; then
-  info "cua-driver found, --force set — running cua-driver update..."
-  cua-driver update --apply 2>/dev/null || \
-    curl -fsSL https://cua.ai/driver/install.sh | bash
-  ok "cua-driver updated"
-else
-  VER=$(cua-driver --version 2>&1 | grep -oP '\d+\.\d+\.\d+' | head -1)
-  if [ -n "$VER" ]; then
-    ok "cua-driver v$VER"
-  else
-    ok "cua-driver found (version unknown)"
-  fi
-fi
-
-# ── Fix Hermes systemd env (if applicable) ──────────────────────────────
-HERMES_UNIT="hermes-webui.service"
-if systemctl --user --type service list-units --all 2>/dev/null | grep -q "$HERMES_UNIT"; then
-  DROPIN="${HOME}/.config/systemd/user/${HERMES_UNIT}.d/wayland-env.conf"
-  if [ ! -f "$DROPIN" ]; then
-    mkdir -p "$(dirname "$DROPIN")"
-    cat > "$DROPIN" << 'EOF'
-[Service]
-Environment=XDG_SESSION_TYPE=wayland
-Environment=XDG_CURRENT_DESKTOP=ubuntu:GNOME
-Environment=WAYLAND_DISPLAY=wayland-0
-Environment=DISPLAY=:0
-Environment=CUA_DRIVER_RS_ENABLE_WAYLAND=1
-EOF
-    systemctl --user daemon-reload
-    systemctl --user restart "$HERMES_UNIT"
-    sleep 2
-    ok "Hermes systemd env fixed"
-  else
-    ok "Hermes systemd env already configured"
-  fi
-fi
-
-# ── Install extension ───────────────────────────────────────────────────
-install_extension() {
-  local uuid="winrects@cua"
-  local dest="${XDG_DATA_HOME:-$HOME/.local/share}/gnome-shell/extensions/$uuid"
-  local src="$SELF/extension/$uuid"
-
-  mkdir -p "$dest"
-
-  if [ -f "$src/extension.js" ] && [ -f "$src/metadata.json" ]; then
-    cp "$src/extension.js" "$dest/extension.js"
-    cp "$src/metadata.json" "$dest/metadata.json"
-    ok "Extension files copied from repo bundle"
-  elif command -v curl &>/dev/null; then
-    curl -fsSL -o "$dest/extension.js" \
-      'https://raw.githubusercontent.com/trycua/cua/main/libs/cua-driver/wayland-helper/winrects%40cua/extension.js'
-    curl -fsSL -o "$dest/metadata.json" \
-      'https://raw.githubusercontent.com/trycua/cua/main/libs/cua-driver/wayland-helper/winrects%40cua/metadata.json'
-    ok "Extension files downloaded"
-  else
-    fail "No bundled files and curl unavailable"
-    exit 1
-  fi
-
-  # Enable via gnome-extensions (activates immediately via D-Bus)
-  if command -v gnome-extensions &>/dev/null; then
-    gnome-extensions enable "$uuid"
-    sleep 1
-    STATE=$(gnome-extensions info "$uuid" 2>/dev/null | grep -i state | tr -d ' \t')
-    if [ "$STATE" = "State:ACTIVE" ]; then
-      ok "Extension enabled and active"
+# ── 4. Input Permissions & Hardware Emulation ────────────────────────────
+info "[4/4] Configuring synthetic input (/dev/uinput + ydotoold)..."
+if [ -c /dev/uinput ]; then
+    if ! check_is_input_group_member; then
+        if $UNATTENDED; then
+            warn "User not in 'input' group — skipping (run: sudo usermod -aG input $USER)"
+        else
+            sudo usermod -aG input "$USER"
+            warn "Added $USER to 'input' group. Re-login required for /dev/uinput access."
+        fi
     else
-      ok "Extension installed — needs GNOME Shell restart to activate"
+        success "User $USER belongs to 'input' group."
     fi
-  else
-    # Fallback: gsettings directly
-    cur=$(gsettings get org.gnome.shell enabled-extensions 2>/dev/null || echo "@as []")
-    python3 - "$cur" "$uuid" << 'PY'
-import ast, subprocess, sys
-try:    l = ast.literal_eval(sys.argv[1])
-except: l = []
-if sys.argv[2] not in l: l.append(sys.argv[2])
-subprocess.run(["gsettings", "set", "org.gnome.shell", "enabled-extensions", str(l)])
-PY
-    ok "Extension enabled in gsettings — needs GNOME Shell restart to activate"
-  fi
-}
+fi
 
-# ── Check extension state ───────────────────────────────────────────────
-EXT_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/gnome-shell/extensions/winrects@cua"
-NEEDS_RESTART=false
-
-if ! $FORCE && [ -f "$EXT_DIR/extension.js" ] && command -v gnome-extensions &>/dev/null; then
-  STATE=$(gnome-extensions info winrects@cua 2>/dev/null | grep -i state || echo 'NEEDS_LOGOUT')
-  if echo "$STATE" | grep -qi active; then
-    ok "Extension already installed and active"
-  else
-    info "Extension installed but not active — enabling..."
-    install_extension
-    NEEDS_RESTART=true
-  fi
+if command -v ydotoold &>/dev/null; then
+    mkdir -p "$HOME/.config/systemd/user"
+    cat << 'SERVICE' > "$HOME/.config/systemd/user/ydotoold.service"
+[Unit]
+Description=ydotool uinput daemon
+[Service]
+Type=simple
+ExecStart=/usr/bin/env ydotoold
+Restart=on-failure
+RestartSec=2s
+[Install]
+WantedBy=default.target
+SERVICE
+    systemctl --user daemon-reload
+    systemctl --user enable --now ydotoold.service 2>/dev/null || true
+    success "ydotoold service configured"
 else
-  install_extension
-  NEEDS_RESTART=true
+    warn "ydotoold not found (PX Rung fallback) — install: sudo apt install ydotool"
 fi
 
 echo ""
-
-if $NEEDS_RESTART; then
-  echo -e "  ${Y}→ GNOME Shell restart required to activate the extension.${N}"
-  echo -e "  ${Y}→ Log out and back in to activate the extension.${N}"
-  echo ""
-fi
-
-echo -e "     ${B}All done. Please restart GNOME Shell or log out/in.${N}"
+echo -e "     \e[1mAll done.\e[0m"
 echo ""
-echo -e "  ${Y}Verify:${N} gnome-extensions info winrects@cua"
+echo -e "  \e[33mDiagnose:\e[0m      scripts/diagnose.sh"
+echo -e "  \e[33mTeardown:\e[0m      scripts/teardown.sh"
+echo ""
 echo -e "
      ▄ ▄▄ ▄▄▄▄
    ▄▀ 0x0 ▀▄

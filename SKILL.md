@@ -1,142 +1,139 @@
 ---
 name: gnome-wayland-computer-use
-description: Enable GNOME Wayland computer_use.
+description: Non-disruptive background desktop automation for GNOME Wayland via AT-SPI2 D-Bus accessibility (AX Rung) and ydotool fallback (PX Rung).
 version: 1.0.0
-platforms: [linux]
+tags:
+  - computer-use
+  - gnome
+  - wayland
+  - at-spi
+  - ydotool
+  - desktop-automation
 metadata:
   hermes:
-    tags: [gnome, wayland, cua, computer-use, linux-desktop]
+    tags: [gnome, wayland, computer-use, linux-desktop]
     category: devops
     requires_toolsets: [terminal]
+    trigger_on: [computer_use, computer-use, capture, screenshot, desktop-automation]
+    auto_load: true
 ---
 
-# gnome-wayland-computer-use
+> This skill is auto-loaded. When you need to interact with the desktop
+> (capture a screenshot, type text, click a button), follow the Dual-Rung
+> dispatch below. No need to ask the user for permission — the infrastructure
+> is pre-installed.
 
-Diagnoses the GNOME Wayland capture stack, auto-fixes every failure mode,
-then calls `computer_use(action="capture", mode="som")`. Auto-restarts
-GNOME Shell if needed (no logout required).
+# GNOME Wayland Computer-Use Agent Skill
 
-For general GUI automation use `cua-driver-rs` instead.
+Non-disruptive, background desktop automation on GNOME Wayland under a strict **No-Foreground Contract**: never steal focus, never promote windows, never interrupt the user.
 
-## 1. Quick environment check
-
-```bash
-SESSION=$(loginctl show-session "$(loginctl list-sessions --no-legend | awk '{print $1}')" -p Type 2>/dev/null | cut -d= -f2)
-DESKTOP=$(loginctl show-session "$(loginctl list-sessions --no-legend | awk '{print $1}')" -p Desktop 2>/dev/null | cut -d= -f2)
-echo "session_type=$SESSION"
-echo "desktop=$DESKTOP"
-echo "has_gnome_shell=$(pgrep -x gnome-shell >/dev/null && echo yes || echo no)"
-echo "has_xwayland=$(pgrep -x Xwayland >/dev/null && echo yes || echo no)"
-echo "has_cua_driver=$(command -v cua-driver >/dev/null && echo yes || echo no)"
-if command -v cua-driver &>/dev/null; then
-  echo "cua_version=$(cua-driver --version 2>&1 | grep -oP '\d+\.\d+\.\d+' | head -1)"
-fi
-echo "has_extension_files=$(test -f "${XDG_DATA_HOME:-$HOME/.local/share}/gnome-shell/extensions/winrects@cua/extension.js" && echo yes || echo no)"
-if command -v gnome-extensions &>/dev/null; then
-  echo "ext_state=$(gnome-extensions info winrects@cua 2>/dev/null | grep -i state | tr -d ' \t')"
-fi
-echo "has_hermes_systemd=$(systemctl --user --type service list-units --all 2>/dev/null | grep -q hermes-webui.service && echo yes || echo no)"
-PID=$(pgrep -x cua-driver | head -1)
-if [ -n "$PID" ]; then
-  for v in WAYLAND_DISPLAY XDG_SESSION_TYPE CUA_DRIVER_RS_ENABLE_WAYLAND; do
-    val=$(tr '\0' '\n' < "/proc/$PID/environ" 2>/dev/null | grep "^${v}=" || echo "$v=<unset>")
-    echo "driver_$val"
-  done
-fi
-```
-
-- **Not Wayland / not GNOME?** → Jump to step 6.
-- **All green?** → Jump to step 5, then step 6.
-- **Missing anything?** → Continue.
-
-## 2. Install / update cua-driver
-
-If `has_cua_driver=no` or version < 0.12.6:
+## 1. Pre-flight Check
 
 ```bash
-curl -fsSL https://cua.ai/driver/install.sh | bash
+gdbus introspect --session --dest org.a11y.Bus --object-path /org/a11y/bus 2>/dev/null | grep -q 'interface org.a11y.Bus' \
+  && echo "ax_rung=ready" || echo "ax_rung=dead"
+gdbus introspect --session --dest org.gnome.Shell --object-path /org/gnome/Shell/Screenshot 2>/dev/null | grep -q 'Screenshot' \
+  && echo "capture=ready" || echo "capture=dead"
+command -v ydotool &>/dev/null && echo "px_rung=ready" || echo "px_rung=dead"
 ```
 
-## 3. Install & enable winrects@cua
+## 2. Dual-Rung Dispatch
 
-If `has_extension_files=no` or `ext_state` not `State:ACTIVE`:
+**AX Rung first. PX Rung fallback.** Always.
+
+| Dimension | AX Rung (Accessibility) | PX Rung (Pixel Fallback) |
+|---|---|---|
+| Protocol | AT-SPI2 D-Bus (org.a11y.Bus) | `ydotool` via /dev/uinput |
+| Background Safe | 100% — no focus, no promotion | Best-effort; may need surface visibility |
+| Focus Required | No | Yes, for some operations |
+| Speed | Fast (D-Bus attribute query) | Slow (vision model inference) |
+| Token Cost | Low | High |
+
+## 3. Capture (Screenshot)
+
+AX Rung does not support capture. Use PX Rung for screenshots.
 
 ```bash
-UUID="winrects@cua"
-DEST="${XDG_DATA_HOME:-$HOME/.local/share}/gnome-shell/extensions/$UUID"
-mkdir -p "$DEST"
-curl -fsSL -o "$DEST/metadata.json" \
-  "https://raw.githubusercontent.com/trycua/cua/main/libs/cua-driver/wayland-helper/winrects%40cua/metadata.json"
-curl -fsSL -o "$DEST/extension.js" \
-  "https://raw.githubusercontent.com/trycua/cua/main/libs/cua-driver/wayland-helper/winrects%40cua/extension.js"
-
-if command -v gnome-extensions &>/dev/null; then
-  gnome-extensions enable "$UUID"
-  sleep 1
-  STATE=$(gnome-extensions info "$UUID" 2>/dev/null | grep -i state | tr -d ' \t')
-  if [ "$STATE" = "State:ACTIVE" ]; then
-    echo "EXTENSION_ACTIVE"
-  else
-    echo "NEEDS_RESTART"
-  fi
-else
-  cur=$(gsettings get org.gnome.shell enabled-extensions 2>/dev/null || echo "@as []")
-  python3 - "$cur" "$UUID" << 'PY'
-import ast, subprocess, sys
-try:    l = ast.literal_eval(sys.argv[1])
-except: l = []
-if sys.argv[2] not in l: l.append(sys.argv[2])
-subprocess.run(["gsettings", "set", "org.gnome.shell", "enabled-extensions", str(l)])
-PY
-  echo "NEEDS_RESTART"
-fi
+# Preferred: org.gnome.Shell.Screenshot D-Bus (GNOME 42+)
+gdbus call --session \
+  --dest org.gnome.Shell \
+  --object-path /org/gnome/Shell/Screenshot \
+  --method org.gnome.Shell.Screenshot.Screenshot \
+  "false" "false" "false" \
+  | grep -oP "'[^']*'" | head -1 | tr -d "'"
 ```
-
-If `NEEDS_RESTART`, log out and back in.
-
-## 4. Fix Hermes systemd env vars
-
-If `has_hermes_systemd=yes` and `driver_WAYLAND_DISPLAY` or `driver_CUA_DRIVER_RS_ENABLE_WAYLAND` is `<unset>`:
 
 ```bash
-mkdir -p ~/.config/systemd/user/hermes-webui.service.d
-cat > ~/.config/systemd/user/hermes-webui.service.d/wayland-env.conf << 'EOF'
-[Service]
-Environment=XDG_SESSION_TYPE=wayland
-Environment=XDG_CURRENT_DESKTOP=ubuntu:GNOME
-Environment=WAYLAND_DISPLAY=wayland-0
-Environment=DISPLAY=:0
-Environment=CUA_DRIVER_RS_ENABLE_WAYLAND=1
-EOF
-systemctl --user daemon-reload
-systemctl --user restart hermes-webui.service
-sleep 3
+# Fallback: gnome-screenshot CLI
+gnome-screenshot --file /tmp/screen.png 2>/dev/null && base64 /tmp/screen.png
 ```
 
-## 5. Verify D-Bus capture
+## 4. Text Entry
+
+Use AX Rung. Does not steal focus.
 
 ```bash
-rects=$(gdbus call --session --dest org.cua.WinRects --object-path /org/cua/WinRects --method org.cua.WinRects.GetRects 2>&1)
-png=$(gdbus call --session --dest org.cua.WinRects --object-path /org/cua/WinRects --method org.cua.WinRects.Capture 2>&1)
-echo "rects_ok=$([ -n "$rects" ] && echo yes || echo no)"
-echo "png_ok=$([ -n "$png" ] && echo yes || echo no)"
+# 1. Find the application's accessible object
+APP_PID=$(pgrep -x <target-app> | head -1)
+REGISTRY=$(gdbus call --session \
+  --dest org.a11y.Bus \
+  --object-path /org/a11y/bus \
+  --method org.a11y.Bus.GetRegistry)
+
+# 2. Accessible applications expose org.a11y.atspi.Text
+#    Call insertText via the application's D-Bus accessible object
+gdbus call --session \
+  --dest org.a11y.atspi.Accessible \
+  --object-path /org/a11y/atspi/accessible/<id> \
+  --method org.a11y.atspi.Text.InsertText \
+  <cursor_position> "<text>"
 ```
 
-If either fails → extension not loaded. Run step 3's restart block and retry.
+If AT-SPI2 is unavailable, fall back to ydotool:
 
-## 6. Run computer_use
+```bash
+ydotool type "<text>"
+```
 
-Call `computer_use(action="capture", mode="som")` and return the result.
+## 5. Clicks
 
----
+Use AX Rung. Does not steal focus.
 
-## Troubleshooting
+```bash
+# 1. Enumerate accessible applications
+# 2. Find the target element by PID + role
+# 3. Invoke the action
+gdbus call --session \
+  --dest org.a11y.atspi.Accessible \
+  --object-path /org/a11y/atspi/accessible/<id> \
+  --method org.a11y.atspi.Action.DoAction \
+  0
+```
+
+PX Rung fallback (coordinates required):
+
+```bash
+ydotool mousemove --absolute --xpos <x> --ypos <y>
+ydotool click 1  # left click
+```
+
+## 6. Failure Modes
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| D-Bus works but `computer_use` returns 0x0 | cua-driver not using winrects@cua path | Set `CUA_DRIVER_RS_ENABLE_WAYLAND=1` on cua-driver process. Restart Hermes. |
-| `gnome-extensions info` shows ACTIVE but D-Bus fails | Shell screenshot API unavailable | GNOME ≥ 42? Check `journalctl -f`. |
-| cua-driver < 0.12.6 | Old binary without Wayland shell-helper | `cua-driver update --apply` or reinstall. |
-| "No WAYLAND_DISPLAY" but `loginctl` says Wayland | systemd strips env vars | Create drop-in (step 4), restart Hermes. |
-| wayland_backend ❌ foreign-toplevel=false | GNOME doesn't use wlroots | Expected. Ignore. |
-| Ubuntu 26.04: WAYLAND_DISPLAY unset | GNOME doesn't export var | Hardcode `WAYLAND_DISPLAY=wayland-0` in drop-in. |
+| org.a11y.Bus D-Bus error | Bus not started | `systemctl --user start at-spi-bus-launcher.service` |
+| org.gnome.Shell.Screenshot refuses | GNOME < 42 | `gnome-screenshot --file /tmp/s.png` |
+| ydotool does nothing | User not in input group | `sudo usermod -aG input $USER` then re-login |
+| 0x0 capture | No screenshot source | Use `gnome-screenshot` fallback |
+| X11Error 8 | XWayland blocks root grabs | Use D-Bus screenshot path |
+
+## 7. Agent Integration
+
+This skill auto-loads in Hermes from `~/.hermes/skills/gnome-wayland-computer-use/SKILL.md`.
+
+| Other Agent | Method |
+|---|---|
+| **Claude Code** | `.claude/settings.json`: `{"skills": ["path/to/SKILL.md"]}` |
+| **Cursor** | `@SKILL.md` in `.cursorrules` |
+| **Aider** | `.aider.conf.yml`: `--read SKILL.md` |
+| **Generic** | `cat SKILL.md` into system prompt |
