@@ -18,8 +18,8 @@ paths. One installer for the full stack.
 
 ---
 
-Agents have variable success using Linux. This project makes that foundation
-dependable on the most popular Linux desktop out there, Ubuntu 26:
+Agents have variable success using linux. This project makes that foundation
+dependable on the most popular linux desktop out there, **Ubuntu 26**:
 
 - AT-SPI actions target accessible widgets and editable text without raising
   windows when the application supports it.
@@ -29,8 +29,8 @@ dependable on the most popular Linux desktop out there, Ubuntu 26:
   focus, workspace, and window state did not change.
 - Compatibility input is explicit, last-resort, and backed by `/dev/uinput`
   through Ubuntu's `ydotool`.
-- Existing Hermes `computer-use` and learned screenshot skills are archived
-  before replacement and can be restored by teardown.
+- Existing Hermes computer-use and learned screenshot skills are archived before
+  replacement and can be restored by teardown.
 
 > [!IMPORTANT]
 > The no-foreground guarantee applies to supported AT-SPI actions and the primary
@@ -42,11 +42,11 @@ dependable on the most popular Linux desktop out there, Ubuntu 26:
 
 You need:
 
-- Ubuntu 26.04 with an active GNOME Wayland session
-- `sudo` access for Ubuntu packages, the uinput rule, and input-group setup
+- An active GNOME Wayland session
+- `sudo` access for Ubuntu packages, the `uinput` rule, and input-group setup
 - a network connection
 
-Run the installer as your normal desktop user—not with `sudo`:
+Run the installer as your normal desktop user—**not with `sudo`**:
 
 ```bash
 curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh | bash
@@ -62,10 +62,10 @@ bash install.sh
 
 The installer is idempotent and accepts:
 
-| Option | Effect |
-|---|---|
-| `--unattended` | Mark automated execution; implied when input is piped |
-| `--compat` | Continue when the current session is not GNOME Wayland |
+```text
+--unattended  Mark automated execution; implied when input is piped
+--compat      Continue when the current session is not GNOME Wayland
+```
 
 `--compat` relaxes the environment check; it does not make the GNOME-specific
 capture extension portable to other desktops. `sudo` may still request a
@@ -74,8 +74,8 @@ password during unattended installation.
 ### First-run handoff
 
 The installer prints the exact next step. If it added input-group membership or
-could not hot-load the Shell extension, sign out of the GNOME session and sign
-back in once, then start a new Hermes session. Until that reload, desktop
+could not hot-load the Shell extension, sign out of the **GNOME session** and
+sign back in once, then start a new Hermes session. Until that reload, desktop
 capture can use the verified Show Desktop → capture → restore compatibility
 path.
 
@@ -113,8 +113,8 @@ The installer configures five layers:
    desktop-versus-screen routing rule.
 4. **Input recovery** — installs the Ubuntu capture dependencies, loads
    `/dev/uinput`, grants the desktop user access, and starts `ydotoold`.
-5. **Backend** — installs `cua-driver` if necessary and keeps it running as a
-   user service with native Wayland support.
+5. **Backend** — installs `cua-driver` if necessary and keeps it running
+   as a user service with native Wayland support.
 
 ### Capture order
 
@@ -191,7 +191,8 @@ Use `--force` only when you want every managed teardown prompt accepted.
 | Path | Purpose |
 |---|---|
 | `install.sh` | Self-contained local and curl-pipe installer |
-| `SKILL.md` | Sole source for the reusable agent skill and installed Hermes `computer-use` override |
+| `SKILL.md` | Reusable GNOME Wayland agent guidance |
+| `hermes/SKILL.md` | Hermes `computer-use` override |
 | `gnome-shell-extension/` | Focus-free desktop-layer capture service |
 | `lib/checks.sh` | Shared environment and health checks |
 | `scripts/capture.sh` | Atomic desktop/screen capture router |
