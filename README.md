@@ -9,7 +9,7 @@
 
 # gnome-wayland-computer-use
 
-**Hermes computer use, built for GNOME Wayland.**
+**Computer use for GNOME Wayland.**
 
 Background-safe actions. Desktop-aware screenshots. Fallbacks that prove they
 put everything back. One command installs the stack.
