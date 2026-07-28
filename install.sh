@@ -337,7 +337,7 @@ generate_agent_skill() {
     cat > "$next" <<'SKILL_FRONTMATTER'
 ---
 name: gnome-wayland-computer-use
-description: Make computer use reliable on Ubuntu GNOME Wayland with AT-SPI accessibility, focus-free desktop-layer capture, and verified fallbacks. Use when an agent needs to operate or capture a GNOME Wayland desktop, or diagnose the installed computer-use stack.
+description: Drive Ubuntu GNOME and capture its full Wayland desktop.
 ---
 
 # GNOME Wayland Computer Use
