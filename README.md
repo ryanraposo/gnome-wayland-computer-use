@@ -12,7 +12,7 @@
 Reliable accessibility actions. Desktop-aware screenshots. Verified recovery
 paths. One installer for the full stack.
 
-[Install](#install) · [How it works](#how-it-works) ·
+[Install](#install) · [How it works](#how-it-works) ⚕
 [Diagnose](#diagnose) · [Uninstall](#uninstall)
 </div>
 
