@@ -1,0 +1,7 @@
+{
+  "uuid": "desktop-capture@gnome-wayland-computer-use",
+  "name": "GNOME Wayland Desktop Capture",
+  "description": "Capture the GNOME desktop layer without changing focus, workspace, or window state.",
+  "shell-version": ["45", "46", "47", "48", "49", "50"],
+  "version": 1
+}

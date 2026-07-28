@@ -3,12 +3,24 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck disable=SC1091  # Resolved from the installed bundle at runtime.
 . "$SCRIPT_DIR/lib/checks.sh"
 
 JSON=false
+FAILED=0
 for arg in "$@"; do
     [ "$arg" = "--json" ] && JSON=true
 done
+
+json_escape() {
+    local value="$1"
+    value=${value//\\/\\\\}
+    value=${value//\"/\\\"}
+    value=${value//$'\n'/\\n}
+    value=${value//$'\r'/\\r}
+    value=${value//$'\t'/\\t}
+    printf '%s' "$value"
+}
 
 check_and_report() {
     local name="$1" detail="${2:-}"; shift 2
@@ -16,11 +28,16 @@ check_and_report() {
     if $JSON; then
         "$@" > /dev/null 2>&1 || rc=$?
         printf '{"check":"%s","pass":%s,"detail":"%s"}\n' \
-            "$name" "$([ "$rc" -eq 0 ] && echo true || echo false)" "$detail"
+            "$(json_escape "$name")" \
+            "$([ "$rc" -eq 0 ] && echo true || echo false)" \
+            "$(json_escape "$detail")"
     else
         "$@" || rc=$?
     fi
-    return "$rc"
+    if [ "$rc" -ne 0 ]; then
+        ((FAILED++)) || true
+    fi
+    return 0
 }
 
 if ! $JSON; then
@@ -47,6 +64,8 @@ check_and_report atspi_socket "" check_atspi_socket
 $JSON || { echo ""; check_hr; echo "── 3. Skill"; }
 check_and_report skill "" check_skill
 check_and_report hermes_skill "" check_hermes_skill
+check_and_report desktop_capture_extension "" check_desktop_capture_extension
+check_and_report cua_driver "" check_cua_driver
 
 # ── 4. Input Permissions ───────────────────────────────────────────────
 $JSON || { echo ""; check_hr; echo "── 4. Input"; }
@@ -60,5 +79,8 @@ if ! $JSON; then
     echo ""
 fi
 if $JSON; then
-    printf '{"check":"summary","pass":true,"detail":"%d/%d"}\n' "$CK_SCORE" "$CK_TOTAL"
+    printf '{"check":"summary","pass":%s,"detail":"%d/%d"}\n' \
+        "$([ "$FAILED" -eq 0 ] && echo true || echo false)" "$CK_SCORE" "$CK_TOTAL"
 fi
+
+[ "$FAILED" -eq 0 ]
