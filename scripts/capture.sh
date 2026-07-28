@@ -35,19 +35,27 @@ OUTDIR=$(dirname "$OUT")
 mkdir -p "$OUTDIR"
 TMP=$(mktemp "$OUTDIR/.capture.XXXXXX.png")
 MARKER=$(mktemp "$OUTDIR/.capture-marker.XXXXXX")
-trap 'rm -f "$TMP" "$MARKER"' EXIT
+SHELL_TMP=
+trap 'rm -f "$TMP" "$MARKER" ${SHELL_TMP:+"$SHELL_TMP"}' EXIT
 
 capture_gnome_shell_desktop() {
-    local result
+    local result runtime_dir
     command -v gdbus >/dev/null 2>&1 || return 1
+    runtime_dir="${XDG_RUNTIME_DIR:-/tmp}"
+    [ -d "$runtime_dir" ] && [ -w "$runtime_dir" ] || runtime_dir=/tmp
+    SHELL_TMP=$(mktemp "$runtime_dir/gnome-wayland-desktop.XXXXXX.png") || return 1
     result=$(timeout 10 gdbus call --session \
         --dest io.github.ryanraposo.GnomeWaylandDesktopCapture \
         --object-path /io/github/ryanraposo/GnomeWaylandDesktopCapture \
         --method io.github.ryanraposo.GnomeWaylandDesktopCapture.CaptureDesktop \
-        "$TMP" 2>/dev/null) || return 1
-    [ -s "$TMP" ] || return 1
+        "$SHELL_TMP" 2>/dev/null) || return 1
+    [ -s "$SHELL_TMP" ] || return 1
     case "$result" in
         "(true,"*)
+            cp "$SHELL_TMP" "$TMP" || return 1
+            [ -s "$TMP" ] || return 1
+            rm -f "$SHELL_TMP"
+            SHELL_TMP=
             CAPTURE_PROOF="$result"
             return 0
             ;;
@@ -396,7 +404,8 @@ capture_ydotool_desktop() {
     mkdir -p "$ss_dir"
 
     before_state=$(get_window_rects || true)
-    if [ -z "$before_state" ] || [[ "$before_state" == *'"visible":true'* ]]; then
+    [ -n "$before_state" ] || return 1
+    if [[ "$before_state" == *'"visible":true'* ]]; then
         toggle_show_desktop || return 1
         toggled=true
         sleep 0.4
@@ -411,13 +420,9 @@ capture_ydotool_desktop() {
         sleep 0.2
     fi
     [ "$capture_rc" -eq 0 ] || return 1
-    if [ -n "$before_state" ]; then
-        after_state=$(get_window_rects || true)
-        [ "$after_state" = "$before_state" ] || return 1
-        CAPTURE_PROOF="show-desktop-restored=true"
-    else
-        CAPTURE_PROOF="show-desktop-restored=unverified"
-    fi
+    after_state=$(get_window_rects || true)
+    [ "$after_state" = "$before_state" ] || return 1
+    CAPTURE_PROOF="show-desktop-restored=true"
 
     latest=$(find "$ss_dir" -maxdepth 1 -type f -newer "$MARKER" -printf '%T@ %p\n' \
         | sort -nr | head -1 | cut -d' ' -f2-)

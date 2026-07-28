@@ -62,16 +62,20 @@ mkdir -p "$mock_bin"
 cat > "$mock_bin/gdbus" <<'SH'
 #!/usr/bin/env bash
 for last; do :; done
+[ "$(dirname "$last")" = "$XDG_RUNTIME_DIR" ] || exit 1
 printf 'png' > "$last"
 printf "(true, '%s', '{\"focus_unchanged\":true,\"window_state_unchanged\":true}')\n" "$last"
 SH
 chmod +x "$mock_bin/gdbus"
-capture_out="$TEST_TMP/desktop.png"
-capture_method=$(HOME="$capture_home" PATH="$mock_bin:/usr/bin:/bin" \
+mkdir -p "$capture_home/output"
+capture_out="$capture_home/output/desktop.png"
+capture_method=$(HOME="$capture_home" XDG_RUNTIME_DIR="$TEST_TMP" PATH="$mock_bin:/usr/bin:/bin" \
     "$ROOT/scripts/capture.sh" --desktop "$capture_out")
 assert "desktop capture prefers the focus-free compositor rung" \
     test "$capture_method" = "capture_method=gnome-shell-desktop"
 assert "compositor desktop capture produces a nonempty output" test -s "$capture_out"
+assert "compositor capture supports output outside its restricted staging directory" \
+    test "$(dirname "$capture_out")" != "$TEST_TMP"
 
 # Desktop capture: compatibility mode reveals, captures, then restores desktop.
 mock_bin="$TEST_TMP/capture-desktop-compat-bin"
@@ -105,6 +109,31 @@ assert "compatibility rung restores show-desktop state" \
     test "$(grep -cx 'key 125:1 32:1 32:0 125:0' "$capture_home/desktop-ydotool-args")" -eq 2
 assert "compatibility rung takes one full-screen image" \
     test "$(grep -cx 'key 42:1 99:1 99:0 42:0' "$capture_home/desktop-ydotool-args")" -eq 1
+
+# Desktop capture must not claim recovery when compositor state is unavailable.
+mock_bin="$TEST_TMP/capture-desktop-unverified-bin"
+mkdir -p "$mock_bin"
+cat > "$mock_bin/gdbus" <<'SH'
+#!/usr/bin/env bash
+exit 1
+SH
+cat > "$mock_bin/ydotool" <<'SH'
+#!/usr/bin/env bash
+touch "$HOME/unverified-ydotool-was-called"
+exit 0
+SH
+chmod +x "$mock_bin/"*
+capture_out="$TEST_TMP/desktop-unverified.png"
+printf 'original' > "$capture_out"
+capture_rc=0
+HOME="$capture_home" PATH="$mock_bin:/usr/bin:/bin" \
+    "$ROOT/scripts/capture.sh" --desktop "$capture_out" >/dev/null 2>&1 || capture_rc=$?
+assert "desktop fallback fails closed without compositor state proof" \
+    test "$capture_rc" -ne 0
+assert "unverified desktop fallback does not synthesize input" \
+    test ! -e "$capture_home/unverified-ydotool-was-called"
+assert "unverified desktop fallback preserves existing output" \
+    test "$(cat "$capture_out")" = original
 
 # Capture: successful first rung writes the requested output.
 mock_bin="$TEST_TMP/capture-success-bin"
@@ -259,12 +288,40 @@ cat > "$mock_bin/gst-inspect-1.0" <<'SH'
 exit 0
 SH
 chmod +x "$mock_bin/"*
+wrong_env_rc=0
+HOME="$install_home" USER=tester XDG_SESSION_TYPE=x11 XDG_CURRENT_DESKTOP=KDE \
+    GNOME_WAYLAND_UINPUT_DEVICE=/dev/null \
+    PATH="$mock_bin:/usr/bin:/bin" \
+    "$ROOT/install.sh" --unattended >/dev/null 2>&1 || wrong_env_rc=$?
+assert "installer rejects a non-GNOME-Wayland session by default" \
+    test "$wrong_env_rc" -ne 0
+assert "failed environment preflight does not install files" \
+    test ! -e "$install_home/.agents/skills/gnome-wayland-computer-use"
+
 HOME="$install_home" USER=tester XDG_SESSION_TYPE=wayland XDG_CURRENT_DESKTOP=GNOME \
     GNOME_WAYLAND_UINPUT_DEVICE=/dev/null \
     PATH="$mock_bin:/usr/bin:/bin" \
     "$ROOT/install.sh" --unattended >/dev/null
 installed="$install_home/.agents/skills/gnome-wayland-computer-use"
 assert "installer copies the skill" test -f "$installed/SKILL.md"
+assert "shared skill name matches its Agent Skills directory" \
+    grep -qx 'name: gnome-wayland-computer-use' "$installed/SKILL.md"
+assert "shared skill description includes capability and activation cues" \
+    grep -qx 'description: .*Use when .*' "$installed/SKILL.md"
+assert "shared skill uses only universally required frontmatter" \
+    awk '
+        /^---$/ { delimiters++; next }
+        delimiters == 1 && /^[^[:space:]]/ {
+            key = $0
+            sub(/:.*/, "", key)
+            if (key != "name" && key != "description") bad = 1
+        }
+        END { exit bad || delimiters < 2 }
+    ' "$installed/SKILL.md"
+assert "shared skill preserves the sole Hermes instruction body" \
+    diff -q \
+        <(awk 'delimiters < 2 && /^---$/ { delimiters++; next } delimiters >= 2 { print }' "$ROOT/SKILL.md") \
+        <(awk 'delimiters < 2 && /^---$/ { delimiters++; next } delimiters >= 2 { print }' "$installed/SKILL.md")
 assert "installer copies shared checks" test -f "$installed/lib/checks.sh"
 assert "installer copies capture helper" test -x "$installed/scripts/capture.sh"
 assert "installer copies diagnostic helper" test -x "$installed/scripts/diagnose.sh"
@@ -277,7 +334,7 @@ assert "installer activates the desktop capture extension" \
 assert "installer always copies the Hermes skill" \
     test -f "$install_home/.hermes/skills/computer-use/SKILL.md"
 assert "Hermes override shadows the built-in computer-use skill" \
-    cmp -s "$ROOT/hermes/SKILL.md" "$install_home/.hermes/skills/computer-use/SKILL.md"
+    cmp -s "$ROOT/SKILL.md" "$install_home/.hermes/skills/computer-use/SKILL.md"
 assert "installer archives a pre-existing computer-use skill" \
     grep -q 'stock Hermes skill' "$install_home/.hermes/backups/gnome-wayland-computer-use/"*/computer-use/SKILL.md
 assert "installer quarantines conflicting learned screenshot skills" \
@@ -285,7 +342,7 @@ assert "installer quarantines conflicting learned screenshot skills" \
 assert "quarantined screenshot skill remains recoverable" \
     test -f "$install_home/.hermes/backups/gnome-wayland-computer-use/"*/screenshot/SKILL.md
 assert "Hermes skill routes whole-desktop capture through the helper" \
-    grep -q '\.hermes/skills/computer-use/scripts/capture\.sh' "$ROOT/hermes/SKILL.md"
+    grep -q '\.hermes/skills/computer-use/scripts/capture\.sh' "$ROOT/SKILL.md"
 assert "installer activates always-loaded desktop routing" \
     grep -q 'gnome-wayland-computer-use:start' "$install_home/.hermes/SOUL.md"
 assert "installer preserves the existing Hermes identity" \
@@ -340,7 +397,7 @@ remote_skill="$remote_home/.hermes/skills/computer-use"
 assert "curl-pipe mode downloads the complete Hermes bundle" \
     test -x "$remote_skill/scripts/serve.sh"
 assert "curl-pipe mode installs the published skill content" \
-    cmp -s "$ROOT/hermes/SKILL.md" "$remote_skill/SKILL.md"
+    cmp -s "$ROOT/SKILL.md" "$remote_skill/SKILL.md"
 
 printf '\n%d passed, %d failed\n' "$passed" "$failed"
 [ "$failed" -eq 0 ]

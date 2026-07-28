@@ -70,12 +70,15 @@ for arg in "$@"; do
         --help|-h)
             echo "Usage: install.sh [--compat] [--unattended]"
             echo "  --compat      Install without requiring Wayland/GNOME session"
-            echo "  --unattended  Skip interactive prompts (for curl | bash)"
+            echo "  --unattended  Mark piped/automated execution (sudo may still prompt)"
             exit 0 ;;
     esac
 done
 if [ ! -t 0 ] && ! $UNATTENDED; then
     UNATTENDED=true
+fi
+if [ "$EUID" -eq 0 ]; then
+    error "Run this installer as the logged-in desktop user, not with sudo"
 fi
 
 info "Starting GNOME Wayland Computer-Use setup for Hermes..."
@@ -89,7 +92,7 @@ if [ "$SESSION" != "wayland" ]; then
     if $COMPAT; then
         info "Session: $SESSION (compat mode, continuing)"
     else
-        warn "Session: $SESSION (expected wayland). Some features may not work."
+        error "Session: $SESSION (expected wayland). Re-run with --compat to install anyway."
     fi
 else
     success "Active Wayland session detected."
@@ -99,7 +102,7 @@ if [[ "$DESKTOP" != *"GNOME"* ]]; then
     if $COMPAT; then
         info "Desktop: $DESKTOP (compat mode, continuing)"
     else
-        warn "Desktop: $DESKTOP — some features expect GNOME."
+        error "Desktop: $DESKTOP (expected GNOME). Re-run with --compat to install anyway."
     fi
 else
     success "Desktop environment: GNOME"
@@ -261,7 +264,6 @@ SOUL
 
 install_bundle() {
     local dst="$1"
-    local skill_source="${2:-SKILL.md}"
     local files=(
         "lib/checks.sh"
         "scripts/capture.sh"
@@ -274,12 +276,12 @@ install_bundle() {
     local file
 
     mkdir -p "$dst/lib" "$dst/scripts" "$dst/gnome-shell-extension"
-    if [ -n "$SELF" ] && [ -f "$SELF/$skill_source" ]; then
-        cp "$SELF/$skill_source" "$dst/SKILL.md"
+    if [ -n "$SELF" ] && [ -f "$SELF/SKILL.md" ]; then
+        cp "$SELF/SKILL.md" "$dst/SKILL.md"
     else
         command -v curl &>/dev/null || error "curl is required for remote installation"
-        curl -fsSL --retry 3 -o "$dst/SKILL.md" "$BASE_URL/$skill_source" || \
-            error "Could not download $skill_source"
+        curl -fsSL --retry 3 -o "$dst/SKILL.md" "$BASE_URL/SKILL.md" || \
+            error "Could not download SKILL.md"
     fi
     for file in "${files[@]}"; do
         if [ -n "$SELF" ] && [ -f "$SELF/$file" ]; then
@@ -294,13 +296,40 @@ install_bundle() {
     : > "$dst/$MANAGED_MARKER"
 }
 
+standardize_agent_skill() {
+    local skill_file="$1/SKILL.md"
+    local next
+    next=$(mktemp "${skill_file}.next.XXXXXX")
+
+    cat > "$next" <<'SKILL_FRONTMATTER'
+---
+name: gnome-wayland-computer-use
+description: Make computer use reliable on Ubuntu GNOME Wayland with AT-SPI accessibility, focus-free desktop-layer capture, and verified fallbacks. Use when an agent needs to operate or capture a GNOME Wayland desktop, or diagnose the installed computer-use stack.
+---
+SKILL_FRONTMATTER
+
+    # Keep the single repository skill's Hermes-tuned instructions verbatim;
+    # only its discovery frontmatter differs in the cross-agent location.
+    awk '
+        delimiters < 2 && /^---[[:space:]]*$/ {
+            delimiters++
+            next
+        }
+        delimiters >= 2 { print }
+    ' "$skill_file" >> "$next"
+
+    chmod 644 "$next"
+    mv "$next" "$skill_file"
+}
+
 install_skill() {
     install_bundle "$PRIMARY_DIR"
+    standardize_agent_skill "$PRIMARY_DIR"
 
     if [ -d "$HERMES_DIR" ] && [ ! -f "$HERMES_DIR/$MANAGED_MARKER" ]; then
         archive_hermes_skill "$HERMES_DIR" "pre-existing computer-use skill"
     fi
-    install_bundle "$HERMES_DIR" "hermes/SKILL.md"
+    install_bundle "$HERMES_DIR"
 
     if [ -d "$LEGACY_HERMES_DIR" ] &&
        grep -q '^name: gnome-wayland-computer-use$' "$LEGACY_HERMES_DIR/SKILL.md" 2>/dev/null; then
@@ -422,7 +451,8 @@ fi
 
 # ── 5. Hermes computer_use backend ───────────────────────────────────────
 info "[5/5] Connecting Hermes computer_use..."
-command -v hermes &>/dev/null || error "Hermes is not on PATH"
+command -v hermes &>/dev/null || \
+    error "Hermes is not on PATH. Install the target runtime first; the invoking assistant does not need to be Hermes."
 if ! command -v cua-driver &>/dev/null; then
     info "Installing Hermes's computer_use driver..."
     hermes computer-use install || error "Hermes could not install cua-driver"

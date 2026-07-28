@@ -3,32 +3,34 @@ name: Pages
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 
 concurrency:
-  group: pages
+  group: pages-${{ github.ref }}
   cancel-in-progress: true
-
-permissions:
-  contents: read
-  pages: write
-  id-token: write
 
 jobs:
   validate:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - name: Shell syntax check
-        run: |
-          for f in install.sh lib/checks.sh scripts/diagnose.sh scripts/teardown.sh; do
-            if [ -f "$f" ]; then
-              bash -n "$f" && echo "$f: OK" || { echo "$f: FAIL"; exit 1; }
-            fi
-          done
+        run: bash -n install.sh lib/*.sh scripts/*.sh tests/*.sh
+      - name: Regression suite
+        run: ./tests/run.sh
   deploy:
+    if: github.event_name != 'pull_request'
     needs: validate
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
