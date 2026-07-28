@@ -42,7 +42,7 @@ dependable on the most popular linux desktop out there, **Ubuntu 26**:
 
 You need:
 
-- Ubuntu 26.04 with an active GNOME Wayland session
+- An active GNOME Wayland session
 - `sudo` access for Ubuntu packages, the `uinput` rule, and input-group setup
 - a network connection
 
@@ -156,9 +156,9 @@ From a repository checkout:
 ./tests/run.sh
 ```
 
-The regression suite covers routing, capture order, portal cancellation,
-atomic failure behavior, local and curl-pipe installation, skill preservation,
-and teardown restoration.
+The regression suite covers routing, capture order, portal cancellation, atomic
+failure behavior, local and curl-pipe installation, skill preservation, and
+teardown restoration.
 
 ## Operational notes
 
