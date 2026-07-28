@@ -4,6 +4,8 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description"
+        content="Reliable Hermes computer use for Ubuntu 26.04 GNOME Wayland, with AT-SPI automation and verified desktop capture." />
     <title>gnome-wayland-computer-use</title>
     <style>
         * {
@@ -24,7 +26,7 @@
         }
 
         main {
-            max-width: 600px;
+            max-width: 680px;
             width: 100%
         }
 
@@ -51,19 +53,61 @@
             text-align: center
         }
 
-        .features {
-            text-align: left;
+        .learn-more {
+            display: block;
+            width: max-content;
+            max-width: 100%;
             font-size: 13px;
-            line-height: 1.7;
-            color: #555;
-            margin: 18px 0 20px;
-            padding: 12px 18px;
-            background: #f9f9f9;
-            border-radius: 8px;
-            border: 1px solid #eee
+            color: #000;
+            margin: 14px auto 20px;
+            text-decoration: none
         }
 
-        .features strong {
+        .learn-more:hover {
+            text-decoration: underline
+        }
+
+        .modes {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin: 0 0 20px
+        }
+
+        .mode {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 13px 14px;
+            color: #555;
+            font-size: 12px;
+            line-height: 1.55
+        }
+
+        .mode strong {
+            display: block;
+            color: #000;
+            font-size: 13px;
+            margin-bottom: 3px
+        }
+
+        .mode.centered {
+            grid-column: 1 / -1;
+            width: calc(50% - 5px);
+            justify-self: center
+        }
+
+        .note {
+            margin: 0 0 20px;
+            padding: 10px 14px;
+            border-left: 3px solid #000;
+            background: #f9f9f9;
+            color: #555;
+            font-size: 12px;
+            line-height: 1.55
+        }
+
+        code {
+            font-family: inherit;
             color: #000
         }
 
@@ -144,6 +188,16 @@
         .links a:hover {
             text-decoration: underline
         }
+
+        @media (max-width: 560px) {
+            .modes {
+                grid-template-columns: 1fr
+            }
+
+            .mode.centered {
+                width: 100%
+            }
+        }
     </style>
 </head>
 
@@ -155,23 +209,44 @@
     █  ───  █
     █  ███  █
      ▀▀   ▀▀</pre>
-        <p style="margin-top:6px">Background desktop automation for <strong>GNOME Wayland</strong></p>
+        <p style="margin-top:6px">Reliable Hermes computer use for <strong>Ubuntu 26.04 GNOME Wayland</strong></p>
 
-        <div class="features">
-            <strong>AX Rung</strong> — AT-SPI2 D-Bus accessibility (100% background-safe, no focus required)<br>
-            <strong>PX Rung</strong> — ydotool /dev/uinput (pixel fallback)<br>
-            <strong>Dual-rung dispatch</strong> — AX first, PX fallback, with structured failure handling
+        <a class="learn-more"
+            href="https://github.com/ryanraposo/gnome-wayland-computer-use#how-does-it-work">How does it work? →</a>
+
+        <div class="modes">
+            <div class="mode">
+                <strong>“Capture my desktop”</strong>
+                Captures wallpaper and desktop icons through the compositor, without including covering app windows.
+            </div>
+            <div class="mode">
+                <strong>“Capture my screen”</strong>
+                Captures the visible display, including windows, through the non-interactive Screenshot portal.
+            </div>
+            <div class="mode centered">
+                <strong>“Debug the app”</strong>
+                A reliable computer-use foundation for GUI development: screenshots, accessibility-tree inspection,
+                stable widget targeting, and verified clicks or text entry.
+            </div>
         </div>
 
         <div class="curl-wrap">
             <span class="curl-code" id="curl">curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh | bash</span>
-            <button class="curl-btn" id="copy" onclick="copyCurl()" title="Copy to clipboard">
+            <button class="curl-btn" id="copy" onclick="copyCurl()" title="Copy to clipboard"
+                aria-label="Copy install command">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"
                     stroke-linecap="round" stroke-linejoin="round">
                     <rect x="3" y="3" width="10" height="12" rx="1" />
                     <path d="M5 1h6a1 1 0 0 1 1 1v2" />
                 </svg>
             </button>
+        </div>
+
+        <div class="note">
+            <strong>First install:</strong> sign out of the GNOME session and sign back in once. This loads the
+            desktop-capture extension and applies input-group membership if needed. Then start a new Hermes session.
+            Until the GNOME session reload, the verified compatibility rung briefly runs Show Desktop → capture →
+            restore.
         </div>
 
         <pre class="dog" style="margin-bottom:0">     ▄ ▄▄ ▄▄▄▄

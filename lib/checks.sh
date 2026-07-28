@@ -1,11 +1,12 @@
+#!/usr/bin/env bash
 # lib/checks.sh — shared validation library for gnome-wayland-computer-use
 # Source with: . "$(dirname "$0")/lib/checks.sh"
 
 # ── Styling ──
-CK_R='\033[0;31m'; CK_G='\033[0;32m'; CK_Y='\033[1;33m'; CK_B='\033[1m'; CK_N='\033[0m'
-check_ok()   { echo -e "  ${CK_G}✓${CK_N} $*"; }
-check_fail() { echo -e "  ${CK_R}✗${CK_N} $*"; }
-check_info() { echo -e "  ${CK_Y}→${CK_N} $*"; }
+CK_R='\033[0;31m'; CK_G='\033[0;32m'; CK_Y='\033[1;33m'; CK_N='\033[0m'
+check_ok()   { printf "  ${CK_G}✓${CK_N} %s\n" "$*"; }
+check_fail() { printf "  ${CK_R}✗${CK_N} %s\n" "$*"; }
+check_info() { printf "  ${CK_Y}→${CK_N} %s\n" "$*"; }
 check_hr()   { echo "────────────────────────────────────────"; }
 
 CK_SCORE=0; CK_TOTAL=0
@@ -28,19 +29,19 @@ check_version_ge() {
 
 # ── Data functions (silent) ──
 check_get_session() {
-    s="${XDG_SESSION_TYPE:-}"
+    local s="${XDG_SESSION_TYPE:-}"
     if [ -z "$s" ]; then
-        s=$(loginctl show-session "$(loginctl list-sessions --no-legend | awk '{print $1}')" -p Type 2>/dev/null | cut -d= -f2)
+        s=$(loginctl show-session "${XDG_SESSION_ID:-self}" -p Type --value 2>/dev/null || true)
     fi
-    echo "${s:-unknown}"
+    printf '%s\n' "${s:-unknown}"
 }
 
 check_get_desktop() {
-    d="${XDG_CURRENT_DESKTOP:-}"
+    local d="${XDG_CURRENT_DESKTOP:-}"
     if [ -z "$d" ]; then
-        d=$(loginctl show-session "$(loginctl list-sessions --no-legend | awk '{print $1}')" -p Desktop 2>/dev/null | cut -d= -f2)
+        d=$(loginctl show-session "${XDG_SESSION_ID:-self}" -p Desktop --value 2>/dev/null || true)
     fi
-    echo "${d:-unknown}"
+    printf '%s\n' "${d:-unknown}"
 }
 
 # ── Predicate functions (silent, return 0/1) ──
@@ -50,7 +51,7 @@ check_is_gnome_shell_running() { pgrep -x gnome-shell &>/dev/null; }
 check_is_xwayland_running()    { pgrep -x Xwayland &>/dev/null; }
 
 check_is_toolkit_accessibility_enabled() {
-    val
+    local val
     val=$(gsettings get org.gnome.desktop.interface toolkit-accessibility 2>/dev/null) || return 1
     [ "$val" = "true" ]
 }
@@ -60,7 +61,7 @@ check_is_atspi_bus_alive() {
 }
 
 check_get_atspi_socket() {
-    echo "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/at-spi/bus"
+    printf '%s\n' "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/at-spi/bus"
 }
 
 check_is_atspi_socket_exists() {
@@ -82,47 +83,69 @@ check_start_atspi_service() {
 check_has_uinput_device() { [ -c /dev/uinput ]; }
 
 check_is_input_group_member() {
-    groups "$USER" 2>/dev/null | grep -q "\binput\b"
+    id -nG 2>/dev/null | tr ' ' '\n' | grep -qx input
 }
 
 check_is_ydotoold_installed()   { command -v ydotoold &>/dev/null; }
-check_is_ydotoold_enabled()     { systemctl --user is-enabled ydotoold.service &>/dev/null; }
-check_is_ydotoold_running()     { systemctl --user is-active ydotoold.service &>/dev/null; }
+check_is_ydotoold_enabled()     {
+    systemctl --user is-enabled ydotool.service &>/dev/null ||
+        systemctl --user is-enabled ydotoold.service &>/dev/null
+}
+check_is_ydotoold_running()     {
+    systemctl --user is-active ydotool.service &>/dev/null ||
+        systemctl --user is-active ydotoold.service &>/dev/null
+}
+check_is_ydotoold_process_up()  { pgrep -x ydotoold &>/dev/null; }
+check_is_cua_driver_installed() { command -v cua-driver &>/dev/null; }
+check_is_cua_driver_running()   {
+    systemctl --user is-active gnome-wayland-computer-use.service &>/dev/null &&
+        timeout 3 cua-driver status &>/dev/null
+}
 
 check_is_env_in_bashrc() {
-    var="$1"
+    local var="$1"
     grep -Fq "$var" "$HOME/.bashrc" 2>/dev/null
 }
 
 check_is_service_enabled() {
-    name="$1"
+    local name="$1"
     systemctl --user is-enabled "$name" &>/dev/null
 }
 
 check_is_service_running() {
-    name="$1"
+    local name="$1"
     systemctl --user is-active "$name" &>/dev/null
 }
 
 check_has_systemd_service() {
-    name="$1"
+    local name="$1"
     systemctl --user --type service list-units --all 2>/dev/null | grep -q "$name"
 }
 
 check_skill_installed() {
-    name="gnome-wayland-computer-use"
+    local name="gnome-wayland-computer-use"
     [ -f "${HOME}/.agents/skills/${name}/SKILL.md" ]
 }
 
 check_hermes_skill_installed() {
-    name="gnome-wayland-computer-use"
-    [ -f "${HOME}/.hermes/skills/${name}/SKILL.md" ]
+    local dir="${HERMES_HOME:-$HOME/.hermes}/skills/computer-use"
+    [ -f "$dir/SKILL.md" ] &&
+        [ -f "$dir/.gnome-wayland-computer-use-managed" ]
+}
+
+check_is_desktop_capture_extension_ready() {
+    gdbus introspect --session \
+        --dest io.github.ryanraposo.GnomeWaylandDesktopCapture \
+        --object-path /io/github/ryanraposo/GnomeWaylandDesktopCapture \
+        2>/dev/null |
+        grep -q "interface io.github.ryanraposo.GnomeWaylandDesktopCapture"
 }
 
 # ── Check functions (print result, return 0/1) ──
 
 check_session() {
-    s; s=$(check_get_session)
+    local s
+    s=$(check_get_session)
     if [ "$s" = "wayland" ]; then
         check_ok "Session: Wayland"; check_pass; return 0
     else
@@ -131,7 +154,8 @@ check_session() {
 }
 
 check_desktop() {
-    d; d=$(check_get_desktop)
+    local d
+    d=$(check_get_desktop)
     if [[ "$d" == *"GNOME"* ]]; then
         check_ok "Desktop: $d"; check_pass; return 0
     else
@@ -195,6 +219,18 @@ check_hermes_skill() {
     fi
 }
 
+check_desktop_capture_extension() {
+    if check_is_desktop_capture_extension_ready; then
+        check_ok "Focus-free desktop-layer capture ready"
+        check_pass
+        return 0
+    else
+        check_fail "Desktop capture extension not loaded (sign out of the GNOME session and sign back in once)"
+        check_xfail
+        return 1
+    fi
+}
+
 check_uinput() {
     if check_has_uinput_device; then
         check_ok "/dev/uinput present"; check_pass; return 0
@@ -215,11 +251,32 @@ check_ydotoold() {
     if ! check_is_ydotoold_installed; then
         check_info "ydotoold not installed (PX Rung fallback degraded)"; check_xfail; return 1
     fi
-    ok=0
+    local ok=0
     if check_is_ydotoold_enabled; then check_ok "ydotoold.service enabled"; ((ok++)) || true
     else check_fail "ydotoold.service not enabled"; fi
-    if check_is_ydotoold_running; then check_ok "ydotoold.service running"; ((ok++)) || true
-    else check_fail "ydotoold.service not running"; fi
+    if check_is_ydotoold_running; then
+        check_ok "ydotoold.service running"; ((ok++)) || true
+    elif check_is_ydotoold_process_up; then
+        check_info "ydotoold process running (outside systemd)"; ((ok++)) || true
+    else
+        check_fail "ydotoold.service not running"
+    fi
     if [ "$ok" -eq 2 ]; then check_pass; else check_xfail; fi
     return $((2 - ok))
+}
+
+check_cua_driver() {
+    if ! check_is_cua_driver_installed; then
+        check_fail "cua-driver not installed (run: hermes computer-use install)"
+        check_xfail
+        return 1
+    fi
+    if check_is_cua_driver_running; then
+        check_ok "Hermes computer_use backend running"
+        check_pass
+        return 0
+    fi
+    check_fail "Hermes computer_use backend not ready"
+    check_xfail
+    return 1
 }
