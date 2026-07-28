@@ -26,7 +26,7 @@ while [ "$#" -gt 0 ]; do
     shift
 done
 
-OUT="${OUT:-${XDG_RUNTIME_DIR:-/tmp}/hermes-${CAPTURE_MODE}-$(date +%s).png}"
+OUT="${OUT:-${XDG_RUNTIME_DIR:-/tmp}/gnome-wayland-${CAPTURE_MODE}-$(date +%s).png}"
 if [ "$CAPTURE_MODE" != desktop ] && [ "$CAPTURE_MODE" != screen ]; then
     echo "capture_mode=invalid" >&2
     exit 2

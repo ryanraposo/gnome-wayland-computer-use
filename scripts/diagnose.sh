@@ -62,10 +62,14 @@ check_and_report atspi_socket "" check_atspi_socket
 
 # ── 3. Skill ───────────────────────────────────────────────────────────
 $JSON || { echo ""; check_hr; echo "── 3. Skill"; }
+HERMES_DETAIL=not_selected
+if check_is_hermes_integration_enabled; then
+    HERMES_DETAIL=selected
+fi
 check_and_report skill "" check_skill
-check_and_report hermes_skill "" check_hermes_skill
+check_and_report hermes_skill "$HERMES_DETAIL" check_hermes_skill
 check_and_report desktop_capture_extension "" check_desktop_capture_extension
-check_and_report cua_driver "" check_cua_driver
+check_and_report cua_driver "$HERMES_DETAIL" check_cua_driver
 
 # ── 4. Input Permissions ───────────────────────────────────────────────
 $JSON || { echo ""; check_hr; echo "── 4. Input"; }

@@ -23,7 +23,7 @@ echo ""
 
 removed=0
 
-# ── 1. Hermes computer_use service ──
+# ── 1. Managed cua-driver service (present in Hermes mode) ──
 CUA_SERVICE="gnome-wayland-computer-use.service"
 CUA_FILE="${HOME}/.config/systemd/user/${CUA_SERVICE}"
 if [ -f "$CUA_FILE" ]; then

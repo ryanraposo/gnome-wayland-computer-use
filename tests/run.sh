@@ -52,6 +52,10 @@ rows = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text().split
 assert rows[-1]["check"] == "summary"
 assert rows[-1]["pass"] is False
 assert any(row["detail"] == 'KDE"test' for row in rows)
+assert {
+    row["check"]: row["detail"]
+    for row in rows
+}.get("hermes_skill") == "not_selected"
 PY
 
 # Desktop capture: the first-class compositor rung writes the desktop layer.
@@ -261,10 +265,18 @@ assert "portal cancellation does not open screenshot fallback UI" \
 install_home="$TEST_TMP/install-home"
 mock_bin="$TEST_TMP/install-bin"
 mkdir -p "$install_home" "$mock_bin"
+install_help=$("$ROOT/install.sh" --help)
+assert "installer advertises both runtime modes" \
+    test "$(grep -Ec -- '--hermes|--agent-only' <<< "$install_help")" -ge 2
+conflict_rc=0
+"$ROOT/install.sh" --hermes --agent-only >/dev/null 2>&1 || conflict_rc=$?
+assert "installer rejects conflicting runtime modes" test "$conflict_rc" -ne 0
 printf '%s\n' '# My existing Hermes identity' > "$install_home/.hermes-soul-original"
 mkdir -p "$install_home/.hermes"
 cp "$install_home/.hermes-soul-original" "$install_home/.hermes/SOUL.md"
-mkdir -p "$install_home/.hermes/skills/computer-use" "$install_home/.hermes/skills/screenshot"
+mkdir -p "$install_home/.hermes/skills/computer-use" \
+    "$install_home/.hermes/skills/screenshot" \
+    "$install_home/.hermes/skills/gnome-wayland-computer-use"
 printf '%s\n' 'stock Hermes skill' > "$install_home/.hermes/skills/computer-use/SKILL.md"
 cat > "$install_home/.hermes/skills/screenshot/SKILL.md" <<'SKILL'
 ---
@@ -272,6 +284,12 @@ name: Screenshot
 slug: screenshot
 ---
 On Linux Wayland, use grim and slurp.
+SKILL
+cat > "$install_home/.hermes/skills/gnome-wayland-computer-use/SKILL.md" <<'SKILL'
+---
+name: gnome-wayland-computer-use
+---
+Legacy managed location.
 SKILL
 for command in gsettings systemctl sudo hermes cua-driver ydotool ydotoold gnome-screenshot gnome-extensions; do
     cat > "$mock_bin/$command" <<'SH'
@@ -318,10 +336,12 @@ assert "shared skill uses only universally required frontmatter" \
         }
         END { exit bad || delimiters < 2 }
     ' "$installed/SKILL.md"
-assert "shared skill preserves the sole Hermes instruction body" \
-    diff -q \
-        <(awk 'delimiters < 2 && /^---$/ { delimiters++; next } delimiters >= 2 { print }' "$ROOT/SKILL.md") \
-        <(awk 'delimiters < 2 && /^---$/ { delimiters++; next } delimiters >= 2 { print }' "$installed/SKILL.md")
+assert "shared skill teaches native agent dispatch" \
+    grep -q "native computer-use" "$installed/SKILL.md"
+assert "shared skill routes capture through its own installed bundle" \
+    grep -q '\.agents/skills/gnome-wayland-computer-use' "$installed/SKILL.md"
+assert "shared skill does not depend on the Hermes skill path" \
+    test "$(grep -c '\.hermes/skills/computer-use' "$installed/SKILL.md")" -eq 0
 assert "installer copies shared checks" test -f "$installed/lib/checks.sh"
 assert "installer copies capture helper" test -x "$installed/scripts/capture.sh"
 assert "installer copies diagnostic helper" test -x "$installed/scripts/diagnose.sh"
@@ -335,12 +355,17 @@ assert "installer always copies the Hermes skill" \
     test -f "$install_home/.hermes/skills/computer-use/SKILL.md"
 assert "Hermes override shadows the built-in computer-use skill" \
     cmp -s "$ROOT/SKILL.md" "$install_home/.hermes/skills/computer-use/SKILL.md"
+assert "Hermes install records mode for diagnostics" \
+    test -f "$installed/.hermes-integration"
 assert "installer archives a pre-existing computer-use skill" \
     grep -q 'stock Hermes skill' "$install_home/.hermes/backups/gnome-wayland-computer-use/"*/computer-use/SKILL.md
 assert "installer quarantines conflicting learned screenshot skills" \
     test ! -e "$install_home/.hermes/skills/screenshot"
 assert "quarantined screenshot skill remains recoverable" \
     test -f "$install_home/.hermes/backups/gnome-wayland-computer-use/"*/screenshot/SKILL.md
+assert "legacy Hermes skill is archived instead of deleted" \
+    grep -q 'Legacy managed location' \
+        "$install_home/.hermes/backups/gnome-wayland-computer-use/"*/gnome-wayland-computer-use/SKILL.md
 assert "Hermes skill routes whole-desktop capture through the helper" \
     grep -q '\.hermes/skills/computer-use/scripts/capture\.sh' "$ROOT/SKILL.md"
 assert "installer activates always-loaded desktop routing" \
@@ -356,12 +381,65 @@ assert "teardown restores the pre-existing computer-use skill" \
     grep -q 'stock Hermes skill' "$install_home/.hermes/skills/computer-use/SKILL.md"
 assert "teardown restores the learned screenshot skill" \
     test -f "$install_home/.hermes/skills/screenshot/SKILL.md"
+assert "teardown restores the legacy Hermes skill" \
+    grep -q 'Legacy managed location' \
+        "$install_home/.hermes/skills/gnome-wayland-computer-use/SKILL.md"
 assert "teardown removes the desktop capture extension" \
     test ! -e "$install_home/.local/share/gnome-shell/extensions/desktop-capture@gnome-wayland-computer-use"
 assert "teardown removes only the managed SOUL block" \
     test "$(grep -c 'gnome-wayland-computer-use:start' "$install_home/.hermes/SOUL.md")" -eq 0
 assert "teardown preserves the original Hermes identity" \
     grep -q 'My existing Hermes identity' "$install_home/.hermes/SOUL.md"
+
+# Without Hermes, auto mode installs the complete shared stack and leaves
+# Hermes-owned state alone.
+agent_bin="$TEST_TMP/install-agent-bin"
+agent_home="$TEST_TMP/install-agent-home"
+mkdir -p "$agent_bin" "$agent_home"
+for command in gsettings systemctl sudo ydotool ydotoold gnome-screenshot gnome-extensions gdbus gst-inspect-1.0; do
+    cp "$mock_bin/$command" "$agent_bin/$command"
+done
+agent_install_out="$TEST_TMP/agent-install.out"
+HOME="$agent_home" USER=tester XDG_SESSION_TYPE=wayland XDG_CURRENT_DESKTOP=GNOME \
+    GNOME_WAYLAND_UINPUT_DEVICE=/dev/null \
+    PATH="$agent_bin:/usr/bin:/bin" \
+    "$ROOT/install.sh" --unattended > "$agent_install_out"
+agent_skill="$agent_home/.agents/skills/gnome-wayland-computer-use"
+assert "auto mode succeeds without Hermes" \
+    grep -q 'Shared GNOME host stack ready' "$agent_install_out"
+assert "non-Hermes install includes the portable skill and helpers" \
+    test -x "$agent_skill/scripts/capture.sh"
+assert "non-Hermes install does not create Hermes state" \
+    test ! -e "$agent_home/.hermes"
+assert "non-Hermes install does not create the Hermes backend service" \
+    test ! -e "$agent_home/.config/systemd/user/gnome-wayland-computer-use.service"
+assert "non-Hermes install is marked as shared-only" \
+    test ! -e "$agent_skill/.hermes-integration"
+
+# Explicit agent-only mode wins even when Hermes is available.
+agent_only_home="$TEST_TMP/install-agent-only-home"
+mkdir -p "$agent_only_home"
+HOME="$agent_only_home" USER=tester XDG_SESSION_TYPE=wayland XDG_CURRENT_DESKTOP=GNOME \
+    GNOME_WAYLAND_UINPUT_DEVICE=/dev/null \
+    PATH="$mock_bin:/usr/bin:/bin" \
+    "$ROOT/install.sh" --unattended --agent-only >/dev/null
+assert "agent-only mode skips an available Hermes runtime" \
+    test ! -e "$agent_only_home/.hermes"
+assert "agent-only mode still installs the portable stack" \
+    test -x "$agent_only_home/.agents/skills/gnome-wayland-computer-use/scripts/diagnose.sh"
+
+# Explicit Hermes mode fails before changing the host when Hermes is absent.
+required_home="$TEST_TMP/install-hermes-required-home"
+mkdir -p "$required_home"
+required_rc=0
+HOME="$required_home" USER=tester XDG_SESSION_TYPE=wayland XDG_CURRENT_DESKTOP=GNOME \
+    GNOME_WAYLAND_UINPUT_DEVICE=/dev/null \
+    PATH="$agent_bin:/usr/bin:/bin" \
+    "$ROOT/install.sh" --unattended --hermes >/dev/null 2>&1 || required_rc=$?
+assert "explicit Hermes mode rejects a missing Hermes runtime" \
+    test "$required_rc" -ne 0
+assert "failed explicit Hermes preflight makes no host changes" \
+    test ! -e "$required_home/.agents"
 
 # The actual curl-pipe execution has no BASH_SOURCE path; all bundle files
 # must therefore come from the published asset URLs, never the caller's cwd.

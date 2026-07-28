@@ -61,17 +61,29 @@ echo -e "
 "
 
 COMPAT=false; UNATTENDED=false; SESSION_RELOAD_NEEDED=false
+RUNTIME_MODE=auto
 TARGET_USER="${SUDO_USER:-${USER:-$(id -un)}}"
 UINPUT_DEVICE="${GNOME_WAYLAND_UINPUT_DEVICE:-/dev/uinput}"
 for arg in "$@"; do
     case "$arg" in
         --compat) COMPAT=true ;;
         --unattended) UNATTENDED=true ;;
+        --hermes)
+            [ "$RUNTIME_MODE" != agent ] || error "--hermes and --agent-only cannot be combined"
+            RUNTIME_MODE=hermes
+            ;;
+        --agent-only)
+            [ "$RUNTIME_MODE" != hermes ] || error "--hermes and --agent-only cannot be combined"
+            RUNTIME_MODE=agent
+            ;;
         --help|-h)
-            echo "Usage: install.sh [--compat] [--unattended]"
+            echo "Usage: install.sh [--compat] [--unattended] [--hermes|--agent-only]"
             echo "  --compat      Install without requiring Wayland/GNOME session"
             echo "  --unattended  Mark piped/automated execution (sudo may still prompt)"
+            echo "  --hermes      Require and configure Hermes (default when detected)"
+            echo "  --agent-only  Install the shared Agent Skills stack without Hermes"
             exit 0 ;;
+        *) error "Unknown option: $arg (run with --help for usage)" ;;
     esac
 done
 if [ ! -t 0 ] && ! $UNATTENDED; then
@@ -81,7 +93,27 @@ if [ "$EUID" -eq 0 ]; then
     error "Run this installer as the logged-in desktop user, not with sudo"
 fi
 
-info "Starting GNOME Wayland Computer-Use setup for Hermes..."
+HERMES_ENABLED=false
+case "$RUNTIME_MODE" in
+    auto)
+        if command -v hermes &>/dev/null; then
+            HERMES_ENABLED=true
+        fi
+        ;;
+    hermes)
+        command -v hermes &>/dev/null || \
+            error "Hermes was explicitly requested but is not on PATH"
+        HERMES_ENABLED=true
+        ;;
+    agent) ;;
+esac
+
+info "Starting GNOME Wayland Computer-Use setup..."
+if $HERMES_ENABLED; then
+    info "Hermes detected; installing the preferred full Hermes integration."
+else
+    info "Hermes not selected; installing the shared Agent Skills integration."
+fi
 
 # ── 1. Session & Display Verification ────────────────────────────────────
 info "[1/5] Verifying display server environment..."
@@ -153,7 +185,7 @@ fi
 success "Ubuntu capture stack ready (Screenshot portal + PipeWire + ydotool fallback)"
 
 # ── 3. Skill Installation ────────────────────────────────────────────────
-info "[3/5] Installing the Hermes skill bundle..."
+info "[3/5] Installing the computer-use skill bundle..."
 NAME="gnome-wayland-computer-use"
 PRIMARY_DIR="${HOME}/.agents/skills/${NAME}"
 HERMES_HOME="${HERMES_HOME:-${HOME}/.hermes}"
@@ -161,6 +193,7 @@ HERMES_DIR="${HERMES_HOME}/skills/computer-use"
 LEGACY_HERMES_DIR="${HERMES_HOME}/skills/${NAME}"
 BASE_URL="https://ryanraposo.github.io/gnome-wayland-computer-use"
 MANAGED_MARKER=".gnome-wayland-computer-use-managed"
+HERMES_INTEGRATION_MARKER=".hermes-integration"
 BACKUP_ROOT="${HERMES_HOME}/backups/gnome-wayland-computer-use"
 BACKUP_MANIFEST="${BACKUP_ROOT}/manifest.tsv"
 BACKUP_BATCH=""
@@ -296,7 +329,7 @@ install_bundle() {
     : > "$dst/$MANAGED_MARKER"
 }
 
-standardize_agent_skill() {
+generate_agent_skill() {
     local skill_file="$1/SKILL.md"
     local next
     next=$(mktemp "${skill_file}.next.XXXXXX")
@@ -306,26 +339,63 @@ standardize_agent_skill() {
 name: gnome-wayland-computer-use
 description: Make computer use reliable on Ubuntu GNOME Wayland with AT-SPI accessibility, focus-free desktop-layer capture, and verified fallbacks. Use when an agent needs to operate or capture a GNOME Wayland desktop, or diagnose the installed computer-use stack.
 ---
-SKILL_FRONTMATTER
 
-    # Keep the single repository skill's Hermes-tuned instructions verbatim;
-    # only its discovery frontmatter differs in the cross-agent location.
-    awk '
-        delimiters < 2 && /^---[[:space:]]*$/ {
-            delimiters++
-            next
-        }
-        delimiters >= 2 { print }
-    ' "$skill_file" >> "$next"
+# GNOME Wayland Computer Use
+
+Use this installed host integration with your runtime's native computer-use
+tool. Follow that tool's real schema; never invent Hermes-style arguments for a
+differently shaped tool.
+
+## Dispatch
+
+- For an application window, use native accessibility-tree or element actions
+  first. Capture before acting and verify after every state-changing action.
+- Prefer focus-free accessible actions. Use coordinates or synthetic input only
+  when the native result explicitly requires a visible/foreground fallback.
+- “Desktop” means wallpaper and desktop icons. “Screen” means the visible
+  display, including windows.
+
+## Capture
+
+Use the installed router instead of probing for screenshot utilities:
+
+```bash
+SKILL_HOME="$HOME/.agents/skills/gnome-wayland-computer-use"
+"$SKILL_HOME/scripts/capture.sh" --desktop /tmp/desktop.png
+"$SKILL_HOME/scripts/capture.sh" --screen /tmp/screen.png
+```
+
+The primary desktop path captures inside GNOME Shell and proves that focus,
+workspace, and window state did not change. The compatibility path briefly
+shows the desktop, captures it, restores the windows, and verifies restoration.
+
+Use `--media` only when your runtime understands Hermes's `MEDIA:` attachment
+marker. Otherwise pass an explicit output path and attach or inspect that file
+with your runtime's normal mechanism.
+
+## Diagnostics
+
+Run:
+
+```bash
+"$HOME/.agents/skills/gnome-wayland-computer-use/scripts/diagnose.sh"
+```
+
+Do not improvise another capture or input stack before reading the diagnostic
+result.
+SKILL_FRONTMATTER
 
     chmod 644 "$next"
     mv "$next" "$skill_file"
 }
 
-install_skill() {
+install_shared_skill() {
     install_bundle "$PRIMARY_DIR"
-    standardize_agent_skill "$PRIMARY_DIR"
+    generate_agent_skill "$PRIMARY_DIR"
+    success "Portable Agent Skill installed → ${PRIMARY_DIR/$HOME/\~}"
+}
 
+install_hermes_skill() {
     if [ -d "$HERMES_DIR" ] && [ ! -f "$HERMES_DIR/$MANAGED_MARKER" ]; then
         archive_hermes_skill "$HERMES_DIR" "pre-existing computer-use skill"
     fi
@@ -333,7 +403,7 @@ install_skill() {
 
     if [ -d "$LEGACY_HERMES_DIR" ] &&
        grep -q '^name: gnome-wayland-computer-use$' "$LEGACY_HERMES_DIR/SKILL.md" 2>/dev/null; then
-        rm -rf "$LEGACY_HERMES_DIR"
+        archive_hermes_skill "$LEGACY_HERMES_DIR" "legacy managed skill location"
     fi
 
     local skill_file
@@ -349,6 +419,7 @@ install_skill() {
         archive_hermes_skill "$skill_file" "conflicting GNOME Wayland screenshot instructions"
     done
 
+    : > "$PRIMARY_DIR/$HERMES_INTEGRATION_MARKER"
     success "Hermes computer-use override installed → ${HERMES_DIR/$HOME/\~}"
 }
 
@@ -389,9 +460,12 @@ PY
     fi
 }
 
-install_skill
+install_shared_skill
 install_capture_extension
-install_soul_routing
+if $HERMES_ENABLED; then
+    install_hermes_skill
+    install_soul_routing
+fi
 info "Desktop capture uses the compositor without changing focus or window state."
 info "Compatibility capture briefly toggles Show Desktop, captures, then restores it."
 
@@ -449,21 +523,20 @@ else
     error "ydotoold is missing after package installation"
 fi
 
-# ── 5. Hermes computer_use backend ───────────────────────────────────────
-info "[5/5] Connecting Hermes computer_use..."
-command -v hermes &>/dev/null || \
-    error "Hermes is not on PATH. Install the target runtime first; the invoking assistant does not need to be Hermes."
-if ! command -v cua-driver &>/dev/null; then
-    info "Installing Hermes's computer_use driver..."
-    hermes computer-use install || error "Hermes could not install cua-driver"
-fi
-command -v cua-driver &>/dev/null || error "cua-driver is still not on PATH"
-cua-driver telemetry disable &>/dev/null || true
+# ── 5. Runtime integration ───────────────────────────────────────────────
+if $HERMES_ENABLED; then
+    info "[5/5] Connecting Hermes computer_use..."
+    if ! command -v cua-driver &>/dev/null; then
+        info "Installing Hermes's computer_use driver..."
+        hermes computer-use install || error "Hermes could not install cua-driver"
+    fi
+    command -v cua-driver &>/dev/null || error "cua-driver is still not on PATH"
+    cua-driver telemetry disable &>/dev/null || true
 
-mkdir -p "$HOME/.config/systemd/user"
-cat << 'SERVICE' > "$HOME/.config/systemd/user/gnome-wayland-computer-use.service"
+    mkdir -p "$HOME/.config/systemd/user"
+    cat << 'SERVICE' > "$HOME/.config/systemd/user/gnome-wayland-computer-use.service"
 [Unit]
-Description=Hermes computer_use backend for GNOME Wayland
+Description=cua-driver backend for GNOME Wayland computer use
 After=graphical-session.target
 PartOf=graphical-session.target
 
@@ -478,33 +551,45 @@ RestartSec=2s
 WantedBy=graphical-session.target
 SERVICE
 
-systemctl --user import-environment \
-    DISPLAY WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE DBUS_SESSION_BUS_ADDRESS 2>/dev/null || true
-systemctl --user daemon-reload
-systemctl --user enable gnome-wayland-computer-use.service
-systemctl --user restart gnome-wayland-computer-use.service
-backend_ready=false
-for _ in 1 2 3 4 5 6 7 8 9 10; do
-    if cua-driver status &>/dev/null; then
-        backend_ready=true
-        break
+    systemctl --user import-environment \
+        DISPLAY WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE DBUS_SESSION_BUS_ADDRESS 2>/dev/null || true
+    systemctl --user daemon-reload
+    systemctl --user enable gnome-wayland-computer-use.service
+    systemctl --user restart gnome-wayland-computer-use.service
+    backend_ready=false
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+        if cua-driver status &>/dev/null; then
+            backend_ready=true
+            break
+        fi
+        sleep 1
+    done
+    if $backend_ready; then
+        success "Hermes computer_use backend enabled and running"
+    else
+        error "Hermes computer_use backend did not start. Inspect: journalctl --user -u gnome-wayland-computer-use.service"
     fi
-    sleep 1
-done
-if $backend_ready; then
-    success "Hermes computer_use backend enabled and running"
 else
-    error "Hermes computer_use backend did not start. Inspect: journalctl --user -u gnome-wayland-computer-use.service"
+    info "[5/5] Finalizing shared agent integration..."
+    success "Shared GNOME host stack ready; use your agent's native computer-use tool."
 fi
 
 echo ""
 echo -e "     \e[1mAll done.\e[0m"
 echo ""
-echo -e "  \e[33mDiagnose:\e[0m      ${HERMES_DIR}/scripts/diagnose.sh"
-if $SESSION_RELOAD_NEEDED; then
-    echo -e "  \e[33mNext:\e[0m          Sign out of the GNOME session and sign back in once, then start a new Hermes session"
+echo -e "  \e[33mDiagnose:\e[0m      ${PRIMARY_DIR}/scripts/diagnose.sh"
+if $HERMES_ENABLED; then
+    if $SESSION_RELOAD_NEEDED; then
+        echo -e "  \e[33mNext:\e[0m          Sign out of GNOME and back in once, then start a new Hermes session"
+    else
+        echo -e "  \e[33mNext:\e[0m          Start a new Hermes session and ask it to use computer_use"
+    fi
 else
-    echo -e "  \e[33mNext:\e[0m          Start a new Hermes session and ask it to use computer_use"
+    if $SESSION_RELOAD_NEEDED; then
+        echo -e "  \e[33mNext:\e[0m          Sign out of GNOME and back in once, then start a new agent session"
+    else
+        echo -e "  \e[33mNext:\e[0m          Start a new agent session so it discovers ${PRIMARY_DIR}/SKILL.md"
+    fi
 fi
 echo ""
 echo -e "

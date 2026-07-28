@@ -18,8 +18,8 @@ paths. One installer for the full stack.
 
 ---
 
-Agents have variable success using linux. This project makes that foundation
-dependable on the most popular linux desktop out there, **Ubuntu 26**:
+Agents have variable success using Linux. This project makes computer use
+dependable on the most popular Linux desktop out there, **Ubuntu 26**:
 
 - AT-SPI actions target accessible widgets and editable text without raising
   windows when the application supports it.
@@ -29,8 +29,8 @@ dependable on the most popular linux desktop out there, **Ubuntu 26**:
   focus, workspace, and window state did not change.
 - Compatibility input is explicit, last-resort, and backed by `/dev/uinput`
   through Ubuntu's `ydotool`.
-- Existing Hermes computer-use and learned screenshot skills are archived before
-  replacement and can be restored by teardown.
+- When Hermes is present, its existing computer-use and learned screenshot
+  skills are archived before replacement and can be restored by teardown.
 
 > [!IMPORTANT]
 > The no-foreground guarantee applies to supported AT-SPI actions and the primary
@@ -40,19 +40,25 @@ dependable on the most popular linux desktop out there, **Ubuntu 26**:
 
 ## Install
 
-You need:
-
-- An active GNOME Wayland session
-- `sudo` access for Ubuntu packages, the `uinput` rule, and input-group setup
-- a network connection
-
-Run the installer as your normal desktop user—**not with `sudo`**:
+Run one command as your normal desktop user—**not with `sudo`**:
 
 ```bash
 curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh | bash
 ```
 
-Prefer to inspect it first?
+The installer prefers Hermes automatically:
+
+- **Hermes on `PATH`** — installs the full Hermes override, routing, `cua-driver`
+  service, and the portable Agent Skill.
+- **No Hermes** — installs the same GNOME host stack and a portable
+  `.agents/skills/` integration for the invoking agent. It does not create or
+  modify `~/.hermes`.
+
+You need an active GNOME Wayland session, network access, and permission to use
+`sudo` for packages, `/dev/uinput`, and input-group setup. The installer asks for
+privilege only when it needs it and is safe to rerun.
+
+Want to inspect it first?
 
 ```bash
 curl -fsSLO https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh
@@ -60,24 +66,23 @@ less install.sh
 bash install.sh
 ```
 
-The installer is idempotent and accepts:
-
-```text
---unattended  Mark automated execution; implied when input is piped
---compat      Continue when the current session is not GNOME Wayland
-```
+| Option | Effect |
+|---|---|
+| `--hermes` | Require Hermes and fail before host changes if it is unavailable |
+| `--agent-only` | Skip Hermes even when it is installed |
+| `--unattended` | Mark automated execution; implied when input is piped |
+| `--compat` | Continue outside a GNOME Wayland session |
 
 `--compat` relaxes the environment check; it does not make the GNOME-specific
 capture extension portable to other desktops. `sudo` may still request a
 password during unattended installation.
 
-### First-run handoff
+### Then
 
-The installer prints the exact next step. If it added input-group membership or
-could not hot-load the Shell extension, sign out of the **GNOME session** and
-sign back in once, then start a new Hermes session. Until that reload, desktop
-capture can use the verified Show Desktop → capture → restore compatibility
-path.
+Follow the installer's `Next:` line. If it requests a session reload, sign out
+of GNOME and back in once, then start a new Hermes or agent session. No reboot
+required. Until then, desktop capture can use the verified Show Desktop →
+capture → restore path.
 
 ## Intent-aware capture
 
@@ -90,16 +95,15 @@ path.
 The capture helper also works directly:
 
 ```bash
-CAPTURE="$HOME/.hermes/skills/computer-use/scripts/capture.sh"
+CAPTURE="$HOME/.agents/skills/gnome-wayland-computer-use/scripts/capture.sh"
 
 "$CAPTURE" --desktop /tmp/desktop.png
 "$CAPTURE" --screen /tmp/screen.png
-"$CAPTURE" --media
 ```
 
 Writes are atomic: a failed attempt does not replace an existing output file.
-`--media` chooses a timestamped path and emits the `MEDIA:` attachment marker
-Hermes expects.
+Hermes can add `--media` to choose a timestamped path and emit its `MEDIA:`
+attachment marker.
 
 ## How it works
 
@@ -108,13 +112,14 @@ The installer configures five layers:
 1. **Session checks** — detects GNOME and Wayland and reports mismatches.
 2. **Accessibility** — enables GNOME toolkit accessibility and starts the AT-SPI
    bus.
-3. **Capture and routing** — installs the GNOME Shell extension, the reusable
-   agent skill, the Hermes `computer-use` override, and an always-loaded
-   desktop-versus-screen routing rule.
+3. **Capture and routing** — installs the GNOME Shell extension and portable
+   Agent Skill. When Hermes is selected, it also installs the exact canonical
+   `computer-use` override and always-loaded desktop-versus-screen routing.
 4. **Input recovery** — installs the Ubuntu capture dependencies, loads
    `/dev/uinput`, grants the desktop user access, and starts `ydotoold`.
-5. **Backend** — installs `cua-driver` if necessary and keeps it running
-   as a user service with native Wayland support.
+5. **Runtime** — with Hermes, installs and health-checks a persistent
+   native-Wayland `cua-driver` service. Other agents keep their own native tool
+   schema and use the shared host helpers directly.
 
 ### Capture order
 
@@ -141,13 +146,13 @@ opt in with `GNOME_WAYLAND_ENABLE_SCREENCAST_FALLBACK=1`.
 After installation:
 
 ```bash
-~/.hermes/skills/computer-use/scripts/diagnose.sh
+~/.agents/skills/gnome-wayland-computer-use/scripts/diagnose.sh
 ```
 
 For machine-readable output:
 
 ```bash
-~/.hermes/skills/computer-use/scripts/diagnose.sh --json
+~/.agents/skills/gnome-wayland-computer-use/scripts/diagnose.sh --json
 ```
 
 From a repository checkout:
@@ -170,15 +175,15 @@ teardown restoration.
   Electron apps may need accessibility enabled by their launcher.
 - Synthetic input requires a GNOME session reload after first joining the
   `input` group.
-- The installer may modify `~/.hermes/SOUL.md`, but only inside a marked managed
-  block. Existing content is preserved.
-- Archived skills live under
+- In Hermes mode, the installer may modify `~/.hermes/SOUL.md`, but only inside
+  a marked managed block. Existing content is preserved.
+- Hermes skill archives live under
   `~/.hermes/backups/gnome-wayland-computer-use/`.
 
 ## Uninstall
 
 ```bash
-~/.hermes/skills/computer-use/scripts/teardown.sh
+~/.agents/skills/gnome-wayland-computer-use/scripts/teardown.sh
 ```
 
 Teardown interactively removes managed services, routing, skills, the udev rule,
@@ -191,7 +196,8 @@ Use `--force` only when you want every managed teardown prompt accepted.
 | Path | Purpose |
 |---|---|
 | `install.sh` | Self-contained local and curl-pipe installer |
-| `SKILL.md` | Reusable GNOME Wayland agent guidance |
+| `AGENTS.md` | Install and self-use funnel for repository-aware agents |
+| `SKILL.md` | Canonical Hermes `computer-use` skill |
 | `gnome-shell-extension/` | Focus-free desktop-layer capture service |
 | `lib/checks.sh` | Shared environment and health checks |
 | `scripts/capture.sh` | Atomic desktop/screen capture router |

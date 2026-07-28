@@ -127,6 +127,11 @@ check_skill_installed() {
     [ -f "${HOME}/.agents/skills/${name}/SKILL.md" ]
 }
 
+check_is_hermes_integration_enabled() {
+    local name="gnome-wayland-computer-use"
+    [ -f "${HOME}/.agents/skills/${name}/.hermes-integration" ]
+}
+
 check_hermes_skill_installed() {
     local dir="${HERMES_HOME:-$HOME/.hermes}/skills/computer-use"
     [ -f "$dir/SKILL.md" ] &&
@@ -212,10 +217,15 @@ check_skill() {
 }
 
 check_hermes_skill() {
+    if ! check_is_hermes_integration_enabled; then
+        check_info "Hermes integration not selected (shared Agent Skill is active)"
+        check_pass
+        return 0
+    fi
     if check_hermes_skill_installed; then
         check_ok "Hermes skill installed"; check_pass; return 0
     else
-        check_info "Hermes skill not installed (Hermes not detected)"; check_xfail; return 1
+        check_fail "Hermes integration selected but its skill is missing"; check_xfail; return 1
     fi
 }
 
@@ -266,6 +276,11 @@ check_ydotoold() {
 }
 
 check_cua_driver() {
+    if ! check_is_hermes_integration_enabled; then
+        check_info "Hermes cua-driver backend not selected"
+        check_pass
+        return 0
+    fi
     if ! check_is_cua_driver_installed; then
         check_fail "cua-driver not installed (run: hermes computer-use install)"
         check_xfail
