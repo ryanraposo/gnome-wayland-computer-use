@@ -192,7 +192,6 @@ Use `--force` only when you want every managed teardown prompt accepted.
 |---|---|
 | `install.sh` | Self-contained local and curl-pipe installer |
 | `SKILL.md` | Reusable GNOME Wayland agent guidance |
-| `hermes/SKILL.md` | Hermes `computer-use` override |
 | `gnome-shell-extension/` | Focus-free desktop-layer capture service |
 | `lib/checks.sh` | Shared environment and health checks |
 | `scripts/capture.sh` | Atomic desktop/screen capture router |
