@@ -9,10 +9,8 @@
 
 # gnome-wayland-computer-use
 
-**Computer use for GNOME Wayland.**
-
-Background-safe actions. Desktop-aware screenshots. Fallbacks that prove they
-put everything back. One command installs the stack.
+Reliable accessibility actions. Desktop-aware screenshots. Verified recovery
+paths. One installer for the full stack.
 
 [Install](#install) · [How it works](#how-it-works) ·
 [Diagnose](#diagnose) · [Uninstall](#uninstall)
@@ -20,17 +18,19 @@ put everything back. One command installs the stack.
 
 ---
 
-Hermes already knows how to operate a desktop. This makes it dependable on
-**Ubuntu 26.04, GNOME, and Wayland**:
+Agents have variable success using linux. This project makes that foundation
+dependable on the most popular linux desktop out there, **Ubuntu 26**:
 
-- **Act without barging in.** AT-SPI targets accessible controls and editable
-  text without raising supported windows.
-- **Capture what was asked for.** “Desktop” means wallpaper and icons; “screen”
-  means the visible display, windows included.
-- **Prove nothing moved.** The primary desktop capture verifies focus, workspace,
-  and window state before it reports success.
-- **Recover safely.** Synthetic input is an explicit last resort, and displaced
-  Hermes skills are archived for teardown to restore.
+- AT-SPI actions target accessible widgets and editable text without raising
+  windows when the application supports it.
+- “Desktop” means the wallpaper and desktop-icons layer; “screen” means the
+  visible display, including windows.
+- The preferred desktop capture path runs inside GNOME Shell and proves that
+  focus, workspace, and window state did not change.
+- Compatibility input is explicit, last-resort, and backed by `/dev/uinput`
+  through Ubuntu's `ydotool`.
+- Existing Hermes computer-use and learned screenshot skills are archived before
+  replacement and can be restored by teardown.
 
 > [!IMPORTANT]
 > The no-foreground guarantee applies to supported AT-SPI actions and the primary
@@ -40,29 +40,19 @@ Hermes already knows how to operate a desktop. This makes it dependable on
 
 ## Install
 
-Run this as your normal desktop user—**not with `sudo`**:
+You need:
+
+- Ubuntu 26.04 with an active GNOME Wayland session
+- `sudo` access for Ubuntu packages, the `uinput` rule, and input-group setup
+- a network connection
+
+Run the installer as your normal desktop user—**not with `sudo`**:
 
 ```bash
 curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh | bash
 ```
 
-That is the install. It checks the session, fetches missing packages, preserves
-existing Hermes skills, and asks for `sudo` only when a system change needs it.
-Safe to rerun.
-
-It expects:
-
-- Ubuntu 26.04 in an active GNOME Wayland session
-- [Hermes Agent](https://github.com/NousResearch/hermes-agent) on `PATH` as
-  `hermes`
-- network access and permission to use `sudo`
-
-Handing the job to another assistant? Point it at this repository and say
-“install it.” From a checkout it should run `./install.sh` as your desktop user
-and relay the final `Next:` instruction. The installing assistant does not need
-to be Hermes.
-
-Want to inspect the script first?
+Prefer to inspect it first?
 
 ```bash
 curl -fsSLO https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh
@@ -70,21 +60,24 @@ less install.sh
 bash install.sh
 ```
 
-| Option | Effect |
-|---|---|
-| `--unattended` | Marks automated execution; implied when input is piped |
-| `--compat` | Continues when the current session is not GNOME Wayland |
+The installer is idempotent and accepts:
+
+```text
+--unattended  Mark automated execution; implied when input is piped
+--compat      Continue when the current session is not GNOME Wayland
+```
 
 `--compat` relaxes the environment check; it does not make the GNOME-specific
 capture extension portable to other desktops. `sudo` may still request a
 password during unattended installation.
 
-### Then
+### First-run handoff
 
-Follow the installer's `Next:` line. If it requests a session reload, sign out
-of GNOME and back in once, then start a new Hermes session. No reboot required.
-Until then, desktop capture can use the verified Show Desktop → capture →
-restore path.
+The installer prints the exact next step. If it added input-group membership or
+could not hot-load the Shell extension, sign out of the **GNOME session** and
+sign back in once, then start a new Hermes session. Until that reload, desktop
+capture can use the verified Show Desktop → capture → restore compatibility
+path.
 
 ## Intent-aware capture
 
@@ -115,13 +108,12 @@ The installer configures five layers:
 1. **Session checks** — detects GNOME and Wayland and reports mismatches.
 2. **Accessibility** — enables GNOME toolkit accessibility and starts the AT-SPI
    bus.
-3. **Capture and routing** — installs the GNOME Shell extension, the Hermes
-   `computer-use` skill, derives Agent Skills-standard discovery metadata for
-   the shared `.agents/skills/` location, and activates an always-loaded
+3. **Capture and routing** — installs the GNOME Shell extension, the reusable
+   agent skill, the Hermes `computer-use` override, and an always-loaded
    desktop-versus-screen routing rule.
 4. **Input recovery** — installs the Ubuntu capture dependencies, loads
    `/dev/uinput`, grants the desktop user access, and starts `ydotoold`.
-5. **Hermes backend** — installs `cua-driver` if necessary and keeps it running
+5. **Backend** — installs `cua-driver` if necessary and keeps it running
    as a user service with native Wayland support.
 
 ### Capture order
@@ -199,7 +191,8 @@ Use `--force` only when you want every managed teardown prompt accepted.
 | Path | Purpose |
 |---|---|
 | `install.sh` | Self-contained local and curl-pipe installer |
-| `SKILL.md` | Sole Hermes-authored `computer-use` skill and intent routing |
+| `SKILL.md` | Reusable GNOME Wayland agent guidance |
+| `hermes/SKILL.md` | Hermes `computer-use` override |
 | `gnome-shell-extension/` | Focus-free desktop-layer capture service |
 | `lib/checks.sh` | Shared environment and health checks |
 | `scripts/capture.sh` | Atomic desktop/screen capture router |
