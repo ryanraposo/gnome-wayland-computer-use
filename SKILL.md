@@ -1,6 +1,6 @@
 ---
 name: computer-use
-description: Drive Ubuntu GNOME and capture its full Wayland desktop.
+description: Use for Ubuntu GNOME Wayland control, capture, or diagnostics.
 version: 2.1.0
 platforms: [linux]
 metadata:

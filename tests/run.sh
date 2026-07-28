@@ -324,8 +324,15 @@ installed="$install_home/.agents/skills/gnome-wayland-computer-use"
 assert "installer copies the skill" test -f "$installed/SKILL.md"
 assert "shared skill name matches its Agent Skills directory" \
     grep -qx 'name: gnome-wayland-computer-use' "$installed/SKILL.md"
-assert "shared skill description includes capability and activation cues" \
-    grep -qx 'description: .*Use when .*' "$installed/SKILL.md"
+shared_description=$(sed -n 's/^description: //p' "$installed/SKILL.md")
+canonical_description=$(sed -n 's/^description: //p' "$ROOT/SKILL.md")
+assert "shared skill description stays within the 64-character common limit" \
+    test "${#shared_description}" -le 64
+assert "shared skill description includes platform and activation intents" \
+    test "$shared_description" = \
+        "Use for Ubuntu GNOME Wayland control, capture, or diagnostics."
+assert "canonical and shared skill descriptions stay aligned" \
+    test "$canonical_description" = "$shared_description"
 assert "shared skill uses only universally required frontmatter" \
     awk '
         /^---$/ { delimiters++; next }

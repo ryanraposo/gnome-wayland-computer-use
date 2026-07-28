@@ -337,7 +337,7 @@ generate_agent_skill() {
     cat > "$next" <<'SKILL_FRONTMATTER'
 ---
 name: gnome-wayland-computer-use
-description: Drive Ubuntu GNOME and capture its full Wayland desktop.
+description: Use for Ubuntu GNOME Wayland control, capture, or diagnostics.
 ---
 
 # GNOME Wayland Computer Use
