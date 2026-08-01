@@ -21,15 +21,22 @@ paths. One installer for the full stack.
 Agents have variable success using Linux. This project makes computer use
 dependable on the most popular Linux desktop out there, **Ubuntu 26**.
 
+## Full computer-use spread
+
+**[Explore the complete capability map →](CAPABILITIES.md)**
+
+Application and window discovery; SOM, vision, and AX inspection; semantic
+background input; clicks, typing, shortcuts, forms, menus, sliders, nested
+scrolling, drag-and-drop, dialogs, file choosers, multi-display operation;
+compositor-aware desktop and screen capture; structured verification; pixel,
+foreground, and `/dev/uinput` recovery; PolicyKit privilege handling;
+diagnostics, teardown, and native Hermes and OpenAI integrations.
+
 > [!TIP]
-> **[Explore the full computer-use capability spread →](CAPABILITIES.md)**
->
-> Application and window discovery; SOM, vision, and AX inspection; semantic
-> background input; clicks, typing, shortcuts, forms, menus, sliders, nested
-> scrolling, drag-and-drop, dialogs, file choosers, multi-display operation;
-> compositor-aware desktop and screen capture; structured verification;
-> pixel, foreground, and `/dev/uinput` recovery; PolicyKit privilege handling;
-> diagnostics, teardown, and native Hermes and OpenAI integrations.
+> **Top secret:** tell any capable agent about this repository and ask it to
+> install the skill. The repo's agent-facing instructions and installer tricks
+> will guide it through choosing the right runtime, installing the host stack,
+> preserving existing skills, and verifying that computer use actually works.
 
 - AT-SPI actions target accessible widgets and editable text without raising
   windows when the application supports it.
