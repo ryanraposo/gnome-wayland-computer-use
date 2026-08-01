@@ -12,14 +12,24 @@
 Reliable accessibility actions. Desktop-aware screenshots. Verified recovery
 paths. One installer for the full stack.
 
-[Install](#install) · [How it works](#how-it-works) ⚕
+[Install](#install) · [Full CUA spread](CAPABILITIES.md) · [How it works](#how-it-works) ⚕
 [Diagnose](#diagnose) · [Uninstall](#uninstall)
 </div>
 
 ---
 
 Agents have variable success using Linux. This project makes computer use
-dependable on the most popular Linux desktop out there, **Ubuntu 26**:
+dependable on the most popular Linux desktop out there, **Ubuntu 26**.
+
+> [!TIP]
+> **[Explore the full computer-use capability spread →](CAPABILITIES.md)**
+>
+> Application and window discovery; SOM, vision, and AX inspection; semantic
+> background input; clicks, typing, shortcuts, forms, menus, sliders, nested
+> scrolling, drag-and-drop, dialogs, file choosers, multi-display operation;
+> compositor-aware desktop and screen capture; structured verification;
+> pixel, foreground, and `/dev/uinput` recovery; PolicyKit privilege handling;
+> diagnostics, teardown, and native Hermes and OpenAI integrations.
 
 - AT-SPI actions target accessible widgets and editable text without raising
   windows when the application supports it.
@@ -232,6 +242,7 @@ Use `--force` only when you want every managed teardown prompt accepted.
 | `SKILL.md` | Hermes-native `computer-use` skill |
 | `runtimes/openai/SKILL.md` | OpenAI-native Agent Skill payload |
 | `agents/openai.yaml` | OpenAI skill-list metadata and implicit-trigger policy |
+| `CAPABILITIES.md` | Complete computer-use capability spread and operating model |
 | `VERSION` | Published skill-bundle release version |
 | `gnome-shell-extension/` | Focus-free desktop-layer capture service |
 | `lib/checks.sh` | Shared environment and health checks |
