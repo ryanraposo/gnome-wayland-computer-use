@@ -11,8 +11,9 @@ configures the same GNOME host stack plus a portable Agent Skill for you.
    checkout as the logged-in desktop user. Default auto mode is correct:
    Hermes receives the preferred full integration when detected; otherwise the
    shared-agent install completes without touching `~/.hermes`.
-3. Do not run the whole installer with `sudo`. It requests `sudo` itself for the
-   few system changes that need it, so the user may need to enter their password.
+3. Do not run the whole installer with `sudo`. It prefers `pkexec` for narrow
+   package, `/dev/uinput`, and group-membership commands, with `sudo` only as a
+   fallback. Never create a general-purpose root shell.
 4. Do not use `--compat` merely to bypass a failed environment check. Explain
    the mismatch and use it only when the user knowingly wants a compatibility
    install.
@@ -27,10 +28,10 @@ completed, stop cleanly and tell the user what remains.
 
 ## Use it yourself
 
-The repository keeps one Hermes-tuned `SKILL.md`. During installation, the
-installer programmatically generates
-`~/.agents/skills/gnome-wayland-computer-use/SKILL.md` with portable,
-directory-matching Agent Skills metadata and native-runtime instructions.
+The repository keeps a Hermes-native root `SKILL.md` and an independently
+authored OpenAI payload at `runtimes/openai/SKILL.md`. Installation copies each
+to its matching skill home and adds `agents/openai.yaml` only to the Agent
+Skills copy.
 
 After installation:
 
@@ -46,6 +47,7 @@ After installation:
    ```bash
    SKILL_HOME="$HOME/.agents/skills/gnome-wayland-computer-use"
    "$SKILL_HOME/scripts/diagnose.sh"
+   "$SKILL_HOME/scripts/check-update.sh" --force
    "$SKILL_HOME/scripts/capture.sh" --desktop /tmp/desktop.png
    "$SKILL_HOME/scripts/capture.sh" --screen /tmp/screen.png
    ```

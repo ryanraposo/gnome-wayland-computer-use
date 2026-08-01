@@ -52,6 +52,16 @@ warn()    { echo -e "\e[33m[WARN]\e[0m $*"; }
 success() { echo -e "\e[32m[OK]\e[0m $*"; }
 error()   { echo -e "\e[31m[ERROR]\e[0m $*"; exit 1; }
 
+as_root() {
+    if command -v pkexec >/dev/null 2>&1; then
+        pkexec "$@"
+    elif command -v sudo >/dev/null 2>&1; then
+        sudo "$@"
+    else
+        error "A graphical PolicyKit helper (pkexec) or sudo is required for: $*"
+    fi
+}
+
 echo -e "
 ▄ ▄▄ ▄▄▄▄
    ▄▀ 0x0 ▀▄
@@ -179,7 +189,7 @@ if [ "${#missing_packages[@]}" -gt 0 ]; then
     command -v apt-get &>/dev/null || \
         error "This installer currently supports Ubuntu/Debian packages; missing: ${missing_packages[*]}"
     info "Installing Ubuntu capture/input packages: ${missing_packages[*]}"
-    sudo apt-get install -y "${missing_packages[@]}" || \
+    as_root apt-get install -y "${missing_packages[@]}" || \
         error "Package installation failed. Ensure Ubuntu's main and universe repositories are enabled."
 fi
 success "Ubuntu capture stack ready (Screenshot portal + PipeWire + ydotool fallback)"
@@ -298,8 +308,10 @@ SOUL
 install_bundle() {
     local dst="$1"
     local files=(
+        "VERSION"
         "lib/checks.sh"
         "scripts/capture.sh"
+        "scripts/check-update.sh"
         "scripts/diagnose.sh"
         "scripts/serve.sh"
         "scripts/teardown.sh"
@@ -329,69 +341,24 @@ install_bundle() {
     : > "$dst/$MANAGED_MARKER"
 }
 
-generate_agent_skill() {
-    local skill_file="$1/SKILL.md"
-    local next
-    next=$(mktemp "${skill_file}.next.XXXXXX")
-
-    cat > "$next" <<'SKILL_FRONTMATTER'
----
-name: gnome-wayland-computer-use
-description: Use for Ubuntu GNOME Wayland control, capture, or diagnostics.
----
-
-# GNOME Wayland Computer Use
-
-Use this installed host integration with your runtime's native computer-use
-tool. Follow that tool's real schema; never invent Hermes-style arguments for a
-differently shaped tool.
-
-## Dispatch
-
-- For an application window, use native accessibility-tree or element actions
-  first. Capture before acting and verify after every state-changing action.
-- Prefer focus-free accessible actions. Use coordinates or synthetic input only
-  when the native result explicitly requires a visible/foreground fallback.
-- “Desktop” means wallpaper and desktop icons. “Screen” means the visible
-  display, including windows.
-
-## Capture
-
-Use the installed router instead of probing for screenshot utilities:
-
-```bash
-SKILL_HOME="$HOME/.agents/skills/gnome-wayland-computer-use"
-"$SKILL_HOME/scripts/capture.sh" --desktop /tmp/desktop.png
-"$SKILL_HOME/scripts/capture.sh" --screen /tmp/screen.png
-```
-
-The primary desktop path captures inside GNOME Shell and proves that focus,
-workspace, and window state did not change. The compatibility path briefly
-shows the desktop, captures it, restores the windows, and verifies restoration.
-
-Use `--media` only when your runtime understands Hermes's `MEDIA:` attachment
-marker. Otherwise pass an explicit output path and attach or inspect that file
-with your runtime's normal mechanism.
-
-## Diagnostics
-
-Run:
-
-```bash
-"$HOME/.agents/skills/gnome-wayland-computer-use/scripts/diagnose.sh"
-```
-
-Do not improvise another capture or input stack before reading the diagnostic
-result.
-SKILL_FRONTMATTER
-
-    chmod 644 "$next"
-    mv "$next" "$skill_file"
+install_openai_payload() {
+    local dst="$1"
+    mkdir -p "$dst/agents"
+    if [ -n "$SELF" ] && [ -f "$SELF/runtimes/openai/SKILL.md" ]; then
+        cp "$SELF/runtimes/openai/SKILL.md" "$dst/SKILL.md"
+        cp "$SELF/agents/openai.yaml" "$dst/agents/openai.yaml"
+    else
+        command -v curl &>/dev/null || error "curl is required for remote installation"
+        curl -fsSL --retry 3 -o "$dst/SKILL.md" "$BASE_URL/runtimes/openai/SKILL.md" || \
+            error "Could not download the OpenAI skill payload"
+        curl -fsSL --retry 3 -o "$dst/agents/openai.yaml" "$BASE_URL/agents/openai.yaml" || \
+            error "Could not download OpenAI skill metadata"
+    fi
 }
 
 install_shared_skill() {
     install_bundle "$PRIMARY_DIR"
-    generate_agent_skill "$PRIMARY_DIR"
+    install_openai_payload "$PRIMARY_DIR"
     success "Portable Agent Skill installed → ${PRIMARY_DIR/$HOME/\~}"
 }
 
@@ -472,13 +439,13 @@ info "Compatibility capture briefly toggles Show Desktop, captures, then restore
 # ── 4. Input Permissions & Hardware Emulation ────────────────────────────
 info "[4/5] Configuring synthetic input (/dev/uinput + ydotoold)..."
 if [ ! -c "$UINPUT_DEVICE" ]; then
-    sudo modprobe uinput 2>/dev/null || warn "Could not load the uinput kernel module"
+    as_root modprobe uinput 2>/dev/null || warn "Could not load the uinput kernel module"
 fi
 if [ ! -c "$UINPUT_DEVICE" ]; then
     error "/dev/uinput is unavailable after loading the uinput module"
 else
     if ! check_is_input_group_member; then
-        sudo usermod -aG input "$TARGET_USER"
+        as_root usermod -aG input "$TARGET_USER"
         SESSION_RELOAD_NEEDED=true
         warn "Added $TARGET_USER to the input group; the same GNOME sign-out/sign-in makes it effective"
     else
@@ -490,9 +457,12 @@ else
     if [ -f "$UDEV_RULE" ] && grep -Fxq "$UDEV_RULE_CONTENT" "$UDEV_RULE"; then
         success "uinput access rule already configured"
     else
-        printf '%s\n' "$UDEV_RULE_CONTENT" | sudo tee "$UDEV_RULE" >/dev/null
-        sudo udevadm control --reload-rules
-        sudo udevadm trigger --name-match=uinput 2>/dev/null || true
+        rule_tmp="$(mktemp)"
+        printf '%s\n' "$UDEV_RULE_CONTENT" > "$rule_tmp"
+        as_root install -m 0644 "$rule_tmp" "$UDEV_RULE"
+        rm -f "$rule_tmp"
+        as_root udevadm control --reload-rules
+        as_root udevadm trigger --name-match=uinput 2>/dev/null || true
         success "uinput access rule installed"
     fi
 fi

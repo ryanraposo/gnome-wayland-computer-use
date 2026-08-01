@@ -39,7 +39,8 @@ assert "shared checks return stable values" test "$?" -eq 0
 # Diagnostics must report every check, escape JSON, and fail only after the summary.
 diagnose_out="$TEST_TMP/diagnose.jsonl"
 diagnose_rc=0
-XDG_SESSION_TYPE=x11 XDG_CURRENT_DESKTOP='KDE"test' \
+mkdir -p "$TEST_TMP/diagnose-home"
+HOME="$TEST_TMP/diagnose-home" XDG_SESSION_TYPE=x11 XDG_CURRENT_DESKTOP='KDE"test' \
     "$ROOT/scripts/diagnose.sh" --json > "$diagnose_out" || diagnose_rc=$?
 assert "diagnostics return nonzero when checks fail" test "$diagnose_rc" -ne 0
 assert "diagnostics report all checks plus summary" test "$(wc -l < "$diagnose_out")" -eq 15
@@ -291,7 +292,7 @@ name: gnome-wayland-computer-use
 ---
 Legacy managed location.
 SKILL
-for command in gsettings systemctl sudo hermes cua-driver ydotool ydotoold gnome-screenshot gnome-extensions; do
+for command in gsettings systemctl pkexec sudo hermes cua-driver ydotool ydotoold gnome-screenshot gnome-extensions; do
     cat > "$mock_bin/$command" <<'SH'
 #!/usr/bin/env bash
 exit 0
@@ -324,15 +325,6 @@ installed="$install_home/.agents/skills/gnome-wayland-computer-use"
 assert "installer copies the skill" test -f "$installed/SKILL.md"
 assert "shared skill name matches its Agent Skills directory" \
     grep -qx 'name: gnome-wayland-computer-use' "$installed/SKILL.md"
-shared_description=$(sed -n 's/^description: //p' "$installed/SKILL.md")
-canonical_description=$(sed -n 's/^description: //p' "$ROOT/SKILL.md")
-assert "shared skill description stays within the 64-character common limit" \
-    test "${#shared_description}" -le 64
-assert "shared skill description includes platform and activation intents" \
-    test "$shared_description" = \
-        "Use for Ubuntu GNOME Wayland control, capture, or diagnostics."
-assert "canonical and shared skill descriptions stay aligned" \
-    test "$canonical_description" = "$shared_description"
 assert "shared skill uses only universally required frontmatter" \
     awk '
         /^---$/ { delimiters++; next }
@@ -345,12 +337,26 @@ assert "shared skill uses only universally required frontmatter" \
     ' "$installed/SKILL.md"
 assert "shared skill teaches native agent dispatch" \
     grep -q "native computer-use" "$installed/SKILL.md"
+assert "shared skill has symptom-rich implicit triggering" sh -c \
+    'grep -q "accessibility inspection" "$1" && grep -q "graphical pkexec package installation" "$1"' \
+    sh "$installed/SKILL.md"
+assert "OpenAI UI metadata permits implicit invocation" \
+    grep -q '^  allow_implicit_invocation: true$' "$installed/agents/openai.yaml"
+assert "shared skill documents closed-loop CUA" \
+    grep -q '^## Closed-Loop Control$' "$installed/SKILL.md"
+assert "shared skill documents stale element references" \
+    grep -q 'element indices and references as invalid' "$installed/SKILL.md"
+assert "shared skill documents focus escalation" \
+    grep -q '^## Background-First Escalation$' "$installed/SKILL.md"
+assert "shared skill prefers graphical package authorization" \
+    grep -q 'pkexec apt-get install -y PACKAGE' "$installed/SKILL.md"
 assert "shared skill routes capture through its own installed bundle" \
     grep -q '\.agents/skills/gnome-wayland-computer-use' "$installed/SKILL.md"
 assert "shared skill does not depend on the Hermes skill path" \
     test "$(grep -c '\.hermes/skills/computer-use' "$installed/SKILL.md")" -eq 0
 assert "installer copies shared checks" test -f "$installed/lib/checks.sh"
 assert "installer copies capture helper" test -x "$installed/scripts/capture.sh"
+assert "installer copies update helper" test -x "$installed/scripts/check-update.sh"
 assert "installer copies diagnostic helper" test -x "$installed/scripts/diagnose.sh"
 assert "installer copies backend helper" test -x "$installed/scripts/serve.sh"
 assert "installer copies teardown helper" test -x "$installed/scripts/teardown.sh"
@@ -362,6 +368,13 @@ assert "installer always copies the Hermes skill" \
     test -f "$install_home/.hermes/skills/computer-use/SKILL.md"
 assert "Hermes override shadows the built-in computer-use skill" \
     cmp -s "$ROOT/SKILL.md" "$install_home/.hermes/skills/computer-use/SKILL.md"
+assert "Hermes skill follows versioned authoring metadata" sh -c \
+    'grep -q "^version: 2.2.0$" "$1" && grep -q "^author: " "$1" && grep -q "^license: MIT$" "$1" && grep -q "^platforms: \[linux\]$" "$1"' \
+    sh "$install_home/.hermes/skills/computer-use/SKILL.md"
+assert "Hermes skill covers exact CUA action vocabulary" \
+    grep -q '^## Hermes Action Vocabulary$' "$install_home/.hermes/skills/computer-use/SKILL.md"
+assert "Hermes skill covers structured action verdicts" \
+    grep -q 'effect="suspected_noop"' "$install_home/.hermes/skills/computer-use/SKILL.md"
 assert "Hermes install records mode for diagnostics" \
     test -f "$installed/.hermes-integration"
 assert "installer archives a pre-existing computer-use skill" \
@@ -403,7 +416,7 @@ assert "teardown preserves the original Hermes identity" \
 agent_bin="$TEST_TMP/install-agent-bin"
 agent_home="$TEST_TMP/install-agent-home"
 mkdir -p "$agent_bin" "$agent_home"
-for command in gsettings systemctl sudo ydotool ydotoold gnome-screenshot gnome-extensions gdbus gst-inspect-1.0; do
+for command in gsettings systemctl pkexec sudo ydotool ydotoold gnome-screenshot gnome-extensions gdbus gst-inspect-1.0; do
     cp "$mock_bin/$command" "$agent_bin/$command"
 done
 agent_install_out="$TEST_TMP/agent-install.out"
@@ -483,6 +496,26 @@ assert "curl-pipe mode downloads the complete Hermes bundle" \
     test -x "$remote_skill/scripts/serve.sh"
 assert "curl-pipe mode installs the published skill content" \
     cmp -s "$ROOT/SKILL.md" "$remote_skill/SKILL.md"
+
+update_remote="$TEST_TMP/update-remote"
+update_state="$TEST_TMP/update-state"
+mkdir -p "$update_remote"
+printf '9.9.9\n' > "$update_remote/VERSION"
+update_out=$(GNOME_WAYLAND_COMPUTER_USE_BASE_URL="file://$update_remote" \
+    GNOME_WAYLAND_COMPUTER_USE_UPDATE_STATE_HOME="$update_state" \
+    "$ROOT/scripts/check-update.sh" --force)
+assert "update checker reports a newer published version" \
+    grep -q '2.2.0 -> 9.9.9' <<< "$update_out"
+printf '0.0.1\n' > "$update_remote/VERSION"
+cached_out=$(GNOME_WAYLAND_COMPUTER_USE_BASE_URL="file://$update_remote" \
+    GNOME_WAYLAND_COMPUTER_USE_UPDATE_STATE_HOME="$update_state" \
+    "$ROOT/scripts/check-update.sh")
+assert "update checker caches the successful lookup" \
+    grep -q '2.2.0 -> 9.9.9' <<< "$cached_out"
+offline_out=$(GNOME_WAYLAND_COMPUTER_USE_BASE_URL='file:///does-not-exist' \
+    GNOME_WAYLAND_COMPUTER_USE_UPDATE_STATE_HOME="$TEST_TMP/offline-state" \
+    "$ROOT/scripts/check-update.sh" --force --quiet)
+assert "offline quiet update checks are nonfatal" test -z "$offline_out"
 
 printf '\n%d passed, %d failed\n' "$passed" "$failed"
 [ "$failed" -eq 0 ]

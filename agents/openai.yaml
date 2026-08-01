@@ -1,0 +1,7 @@
+interface:
+  display_name: "GNOME Wayland Computer Use"
+  short_description: "Reliable GNOME desktop control and capture"
+  default_prompt: "Use $gnome-wayland-computer-use to control this Ubuntu GNOME Wayland desktop and verify the requested result."
+
+policy:
+  allow_implicit_invocation: true

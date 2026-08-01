@@ -54,9 +54,11 @@ The installer prefers Hermes automatically:
   `.agents/skills/` integration for the invoking agent. It does not create or
   modify `~/.hermes`.
 
-You need an active GNOME Wayland session, network access, and permission to use
-`sudo` for packages, `/dev/uinput`, and input-group setup. The installer asks for
-privilege only when it needs it and is safe to rerun.
+You need an active GNOME Wayland session, network access, and permission to
+configure packages, `/dev/uinput`, and input-group access. The installer prefers
+`pkexec` so each administrative command gets a graphical PolicyKit prompt; it
+falls back to `sudo` when PolicyKit is unavailable. It never runs the whole
+installer or a general-purpose shell as root.
 
 Want to inspect it first?
 
@@ -74,8 +76,8 @@ bash install.sh
 | `--compat` | Continue outside a GNOME Wayland session |
 
 `--compat` relaxes the environment check; it does not make the GNOME-specific
-capture extension portable to other desktops. `sudo` may still request a
-password during unattended installation.
+capture extension portable to other desktops. PolicyKit or `sudo` may still
+request approval during unattended installation.
 
 ### Then
 
@@ -83,6 +85,36 @@ Follow the installer's `Next:` line. If it requests a session reload, sign out
 of GNOME and back in once, then start a new Hermes or agent session. No reboot
 required. Until then, desktop capture can use the verified Show Desktop →
 capture → restore path.
+
+The Agent Skills and Hermes payloads are authored independently for their
+native tool conventions. Each performs an offline-safe, cached `VERSION` check
+at most once per day when first used. It only reports an available update; run
+`scripts/check-update.sh --force` to check immediately.
+
+## Computer-use operating model
+
+Every application task follows one loop: scope and capture the correct window,
+target an accessible element, perform one action, then capture and verify the
+observable postcondition. Element references expire after navigation, dialogs,
+list changes, or another capture. Coordinates are a fallback and must come from
+the latest image.
+
+The Hermes payload documents its complete SOM/AX action vocabulary and
+structured background → pixel → foreground escalation contract. The OpenAI
+payload follows the runtime's live native tool schema instead of inventing
+Hermes arguments. Both cover forms, menus, dialogs, file choosers, nested
+scrolling, drag-and-drop, multi-display coordinates, safety, and recovery.
+
+For an explicitly authorized package install, the preferred privilege boundary
+is a direct graphical prompt:
+
+```bash
+pkexec apt-get install -y PACKAGE...
+```
+
+The agent should explain the change, run the smallest command, and verify the
+result without privilege. It should never type the user's password or open a
+root terminal.
 
 ## Intent-aware capture
 
@@ -197,10 +229,14 @@ Use `--force` only when you want every managed teardown prompt accepted.
 |---|---|
 | `install.sh` | Self-contained local and curl-pipe installer |
 | `AGENTS.md` | Install and self-use funnel for repository-aware agents |
-| `SKILL.md` | Canonical Hermes `computer-use` skill |
+| `SKILL.md` | Hermes-native `computer-use` skill |
+| `runtimes/openai/SKILL.md` | OpenAI-native Agent Skill payload |
+| `agents/openai.yaml` | OpenAI skill-list metadata and implicit-trigger policy |
+| `VERSION` | Published skill-bundle release version |
 | `gnome-shell-extension/` | Focus-free desktop-layer capture service |
 | `lib/checks.sh` | Shared environment and health checks |
 | `scripts/capture.sh` | Atomic desktop/screen capture router |
+| `scripts/check-update.sh` | Cached, non-mutating release update check |
 | `scripts/diagnose.sh` | Human and JSON diagnostics |
 | `scripts/serve.sh` | Persistent `cua-driver` backend |
 | `scripts/teardown.sh` | Managed removal and skill restoration |
