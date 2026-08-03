@@ -12,8 +12,8 @@
 Reliable accessibility actions. Desktop-aware screenshots. Verified recovery
 paths. One installer for the full stack.
 
-[Install](#install) 𐄁 [Capabilities](#capabilities) 𐄁 [How it works](#how-it-works) 𐄁
-[Diagnose](#diagnose) 𐄁 [Uninstall](#uninstall)
+[Install](#install) · [Capabilities](#capabilities) · [How it works](#how-it-works) ·
+[Diagnose](#diagnose) · [Uninstall](#uninstall)
 </div>
 
 ---
