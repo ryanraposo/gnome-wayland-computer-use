@@ -1,7 +1,7 @@
 ---
 name: computer-use
 description: Control Ubuntu GNOME Wayland apps, capture, and input.
-version: 2.3.0
+version: 2.2.0
 author: Ryan Raposo
 license: MIT
 platforms: [linux]
