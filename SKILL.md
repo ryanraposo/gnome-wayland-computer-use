@@ -1,11 +1,6 @@
 ---
 name: computer-use
-description: >-
-  Use when an Ubuntu GNOME Wayland task needs native application control,
-  background clicking or typing, accessibility inspection, desktop or screen
-  capture, scrolling, dragging, file choosers, dialogs, package installation
-  through a graphical privilege prompt, computer-use recovery, or diagnosis of
-  AT-SPI, cua-driver, screenshots, focus, coordinates, or synthetic input.
+description: Control Ubuntu GNOME Wayland apps, capture, and input.
 version: 2.3.0
 author: Ryan Raposo
 license: MIT
