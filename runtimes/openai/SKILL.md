@@ -1,12 +1,6 @@
 ---
 name: gnome-wayland-computer-use
-description: >-
-  Control and inspect real Ubuntu GNOME Wayland applications and desktop UI.
-  Use when a task needs native GUI clicking, typing, scrolling, dragging,
-  accessibility inspection, dialogs, file choosers, desktop or screen capture,
-  graphical pkexec package installation, or diagnosis of focus, AT-SPI,
-  screenshots, coordinates, and synthetic input. Prefer browser, terminal, or
-  file tools when they can complete the task without native desktop control.
+description: Control Ubuntu GNOME Wayland apps, capture, and input.
 ---
 
 # GNOME Wayland Computer Use
