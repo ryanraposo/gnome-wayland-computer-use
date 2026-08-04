@@ -20,6 +20,24 @@ At the first matching task in a session, run
 Continue if offline. Report an available version and its reinstall command,
 but never update silently.
 
+## Workflow Contract
+
+Own the workflow: route, observe, act once, verify, then recover or complete.
+Use the runtime's actual live tool schema throughout.
+
+Infer reversible, local, least-disruptive defaults. Ask only questions whose
+answers materially change the action or authorization, normally one and never
+more than three. Recommend and execute one course instead of presenting
+equivalent choices.
+
+Surface progress at meaningful phase changes during longer work. Before an
+external, privileged, destructive, or irreversible action, state its exact
+effect and obtain the required authorization. Reversible visible changes need
+a recovery route. Finish with observable evidence, not tool-call success.
+
+Read `references/skill-ux-contract.md` when ambiguity, recovery, privilege, or a
+multi-step mutation makes the governing boundary relevant.
+
 ## Dispatch
 
 - Application window: use the native accessibility/snapshot CUA tool.
@@ -128,4 +146,5 @@ usually indicate AT-SPI or application accessibility; stale references require
 a fresh snapshot; repeated no-ops require evidence-based escalation.
 
 Finish only after the observable UI or system postcondition is verified. State
-what changed, how it was verified, and any remaining uncertainty.
+what changed, how it was verified, any remaining uncertainty, and only a
+meaningful next action.
