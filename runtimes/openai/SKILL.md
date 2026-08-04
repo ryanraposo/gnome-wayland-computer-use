@@ -7,7 +7,9 @@ description: Control Ubuntu GNOME Wayland apps, capture, and input.
 
 Use the runtime's native computer-use tools according to their actual live
 schema. Do not invent Hermes-style `computer_use(...)` arguments when the
-available OpenAI/Codex tool has a different shape.
+available OpenAI/Codex tool has a different shape. This skill covers
+accessibility inspection, native application interaction, and graphical
+pkexec package installation while keeping the compact description portable.
 
 At the first matching task in a session, run
 `"$HOME/.agents/skills/gnome-wayland-computer-use/scripts/check-update.sh" --quiet`.
