@@ -69,7 +69,7 @@ When changing the skill itself:
 4. Prefer the existing scripts for capture, diagnosis, update checking,
    service operation, and teardown instead of recreating their logic in prose.
 5. Run ShellCheck across maintained shell entrypoints, then run
-   `./tests/skill-ux.sh` and `./tests/run.sh`.
+   `bash ./tests/skill-ux.sh` and `./tests/run.sh`.
 6. Inspect isolated Hermes and Agent Skills installations, including installed
    references and executable modes, before claiming completion.
 7. Publish releases, push changes, or modify repository settings only when the
