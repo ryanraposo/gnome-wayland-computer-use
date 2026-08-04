@@ -309,6 +309,7 @@ install_bundle() {
     local dst="$1"
     local files=(
         "VERSION"
+        "references/skill-ux-contract.md"
         "lib/checks.sh"
         "scripts/capture.sh"
         "scripts/check-update.sh"
@@ -320,7 +321,7 @@ install_bundle() {
     )
     local file
 
-    mkdir -p "$dst/lib" "$dst/scripts" "$dst/gnome-shell-extension"
+    mkdir -p "$dst/references" "$dst/lib" "$dst/scripts" "$dst/gnome-shell-extension"
     if [ -n "$SELF" ] && [ -f "$SELF/SKILL.md" ]; then
         cp "$SELF/SKILL.md" "$dst/SKILL.md"
     else
@@ -493,7 +494,7 @@ else
     error "ydotoold is missing after package installation"
 fi
 
-# ── 5. Runtime integration ───────────────────────────────────────────────
+# ── 5. Runtime integration ────────────────────────────────────────────────
 if $HERMES_ENABLED; then
     info "[5/5] Connecting Hermes computer_use..."
     if ! command -v cua-driver &>/dev/null; then

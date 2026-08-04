@@ -1,24 +1,39 @@
 ---
 name: gnome-wayland-computer-use
-description: >-
-  Control and inspect real Ubuntu GNOME Wayland applications and desktop UI.
-  Use when a task needs native GUI clicking, typing, scrolling, dragging,
-  accessibility inspection, dialogs, file choosers, desktop or screen capture,
-  graphical pkexec package installation, or diagnosis of focus, AT-SPI,
-  screenshots, coordinates, and synthetic input. Prefer browser, terminal, or
-  file tools when they can complete the task without native desktop control.
+description: Control Ubuntu GNOME Wayland apps, capture, and input.
 ---
 
 # GNOME Wayland Computer Use
 
 Use the runtime's native computer-use tools according to their actual live
 schema. Do not invent Hermes-style `computer_use(...)` arguments when the
-available OpenAI/Codex tool has a different shape.
+available OpenAI/Codex tool has a different shape. This skill covers
+accessibility inspection and native application interaction. It also covers
+graphical pkexec package installation while keeping the compact description
+portable.
 
 At the first matching task in a session, run
 `"$HOME/.agents/skills/gnome-wayland-computer-use/scripts/check-update.sh" --quiet`.
 Continue if offline. Report an available version and its reinstall command,
 but never update silently.
+
+## Workflow Contract
+
+Own the workflow: route, observe, act once, verify, then recover or complete.
+Use the runtime's actual live tool schema throughout.
+
+Infer reversible, local, least-disruptive defaults. Ask only questions whose
+answers materially change the action or authorization, normally one and never
+more than three. Recommend and execute one course instead of presenting
+equivalent choices.
+
+Surface progress at meaningful phase changes during longer work. Before an
+external, privileged, destructive, or irreversible action, state its exact
+effect and obtain the required authorization. Reversible visible changes need
+a recovery route. Finish with observable evidence, not tool-call success.
+
+Read `references/skill-ux-contract.md` when ambiguity, recovery, privilege, or a
+multi-step mutation makes the governing boundary relevant.
 
 ## Dispatch
 
@@ -128,4 +143,5 @@ usually indicate AT-SPI or application accessibility; stale references require
 a fresh snapshot; repeated no-ops require evidence-based escalation.
 
 Finish only after the observable UI or system postcondition is verified. State
-what changed, how it was verified, and any remaining uncertainty.
+what changed, how it was verified, any remaining uncertainty, and only a
+meaningful next action.

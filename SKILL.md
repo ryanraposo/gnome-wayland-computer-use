@@ -1,11 +1,6 @@
 ---
 name: computer-use
-description: >-
-  Use when an Ubuntu GNOME Wayland task needs native application control,
-  background clicking or typing, accessibility inspection, desktop or screen
-  capture, scrolling, dragging, file choosers, dialogs, package installation
-  through a graphical privilege prompt, computer-use recovery, or diagnosis of
-  AT-SPI, cua-driver, screenshots, focus, coordinates, or synthetic input.
+description: Control Ubuntu GNOME Wayland apps, capture, and input.
 version: 2.2.0
 author: Ryan Raposo
 license: MIT
@@ -32,6 +27,42 @@ At the first computer-use task in a session, run
 offline check is nonfatal. Report any available version and its printed
 reinstall command, but never update the skill silently.
 
+## Workflow Contract
+
+Take control when invoked. Do the work instead of merely describing this
+skill's instructions.
+
+For every task, move through:
+
+1. **Route** — choose application, desktop, screen, terminal, browser, or
+   privileged host action.
+2. **Observe** — capture the smallest relevant surface and establish current
+   state.
+3. **Act** — perform exactly one meaningful action using the least disruptive
+   capable rung.
+4. **Verify** — prove the requested postcondition from fresh evidence.
+5. **Recover or complete** — change strategy after a failed rung, or report the
+   result with its proof.
+
+Infer reversible, local, background-first defaults. Routine reversible work
+needs no ceremonial question. Ask one decision-changing question when the
+target, outcome, or authorization is materially ambiguous; ask more only when
+separate irreversible decisions genuinely exist, never more than three.
+
+Recommend and execute one path. Mention alternatives only when they produce a
+materially different result.
+
+For a longer task, surface the active phase when work begins, when strategy
+changes, and when user action becomes necessary. Do not narrate every click.
+
+Before an external, destructive, privileged, or otherwise irreversible action,
+preview the exact effect and obtain the required authorization. Reversible
+visible changes need a recovery route. A successful tool call is never proof
+of completion.
+
+Read `references/skill-ux-contract.md` when ambiguity, recovery, privilege, or a
+multi-step mutation makes the governing boundary relevant.
+
 ## When to Use
 
 Use this skill for native GNOME applications, settings panels, file managers,
@@ -50,7 +81,7 @@ Prefer terminal and file tools for shell commands and file edits.
 - **Package/admin action:** use a narrow `pkexec` command after explaining the
   intended change. Never type a password or open a general-purpose root shell.
 
-## Canonical Closed Loop
+## Execution State Machine
 
 Start by listing apps/windows if the target is ambiguous, then capture the
 specific application:
@@ -261,4 +292,9 @@ indices require recapture; repeated no-ops require the escalation ladder.
 - Postcondition verified by read-back, recapture, or a direct system check.
 - Focus escalation was justified and authorized.
 - No secrets or unrelated windows were exposed.
-- Final response states what changed and any remaining uncertainty.
+- Final state was proved in the form the user actually cares about.
+- Any consequential assumption, visible interruption, or irreversible action
+  was surfaced at the correct boundary.
+- Recovery changed strategy instead of blindly repeating a failed rung.
+- Final response contains the change, evidence, remaining uncertainty, and
+  only a meaningful next action.

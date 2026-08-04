@@ -114,6 +114,11 @@ observable postcondition. Element references expire after navigation, dialogs,
 list changes, or another capture. Coordinates are a fallback and must come from
 the latest image.
 
+The skill owns the complete workflow: route → observe → act → verify → recover
+or complete. It infers reversible background-first defaults, asks only
+questions that change the decision, previews consequential effects at their
+real authorization boundary, and finishes from observable proof.
+
 The Hermes payload documents its complete SOM/AX action vocabulary and
 structured background → pixel → foreground escalation contract. The OpenAI
 payload follows the runtime's live native tool schema instead of inventing
@@ -205,12 +210,14 @@ For machine-readable output:
 From a repository checkout:
 
 ```bash
+bash ./tests/skill-ux.sh
 ./tests/run.sh
 ```
 
 The regression suite covers routing, capture order, portal cancellation, atomic
-failure behavior, local and curl-pipe installation, skill preservation, and
-teardown restoration.
+failure behavior, local and curl-pipe installation, skill preservation,
+teardown restoration, runtime authority, and the sub-60-character description
+contract.
 
 ## Operational notes
 
@@ -243,10 +250,11 @@ Use `--force` only when you want every managed teardown prompt accepted.
 | Path | Purpose |
 |---|---|
 | `install.sh` | Self-contained local and curl-pipe installer |
-| `AGENTS.md` | Install and self-use funnel for repository-aware agents |
+| `AGENTS.md` | Install, use, and maintenance funnel for repository-aware agents |
 | `SKILL.md` | Hermes-native `computer-use` skill |
 | `runtimes/openai/SKILL.md` | OpenAI-native Agent Skill payload |
 | `agents/openai.yaml` | OpenAI skill-list metadata and implicit-trigger policy |
+| `references/skill-ux-contract.md` | Workflow phases, decisions, mutations, and completion proof |
 | `CAPABILITIES.md` | Complete computer-use capability spread and operating model |
 | `VERSION` | Published skill-bundle release version |
 | `gnome-shell-extension/` | Focus-free desktop-layer capture service |
@@ -256,5 +264,6 @@ Use `--force` only when you want every managed teardown prompt accepted.
 | `scripts/diagnose.sh` | Human and JSON diagnostics |
 | `scripts/serve.sh` | Persistent `cua-driver` backend |
 | `scripts/teardown.sh` | Managed removal and skill restoration |
+| `tests/skill-ux.sh` | Constitutional and metadata regression checks |
 | `tests/run.sh` | End-to-end shell regression suite |
 | `assets/` | Landing-page and repository social artwork |
