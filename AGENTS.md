@@ -71,8 +71,8 @@ When changing the skill itself:
    operating contract while keeping their tool vocabularies native.
 2. Treat every feature as architectural induction: update the corresponding
    instructions, helper scripts, installer payload, diagnostics, teardown,
-   tests, capability map, and performance notes wherever the feature's pattern
-   reaches.
+   tests, capability map, performance notes, README, and published `index.html`
+   wherever the feature's pattern reaches.
 3. Keep `AGENTS.md` repository-facing and `SKILL.md` invocation-facing.
 4. Prefer the existing scripts for capture, installed-app identity, diagnosis,
    update checking, service operation, and teardown instead of recreating their
@@ -81,12 +81,15 @@ When changing the skill itself:
    hot-path network calls, repeated app/window discovery, unnecessary SOM,
    tiny input round-trips, ritual verification captures, fixed sleeps, and slow
    service recovery.
-6. Run ShellCheck across maintained shell entrypoints, then run
+6. Keep the published landing page truthful. `index.html` must reflect the same
+   routing, latency, installer, and recovery model as README and the runtime
+   skills; guard important claims in tests.
+7. Run ShellCheck across maintained shell entrypoints, then run
    `bash ./tests/skill-ux.sh`, `bash ./tests/latency-routing.sh`, and
    `./tests/run.sh`.
-7. Inspect isolated Hermes and Agent Skills installations, including installed
+8. Inspect isolated Hermes and Agent Skills installations, including installed
    references/helpers and executable modes, before claiming completion.
-8. Publish releases, push changes, or modify repository settings only when the
+9. Publish releases, push changes, or modify repository settings only when the
    user has authorized that action.
 
 Repository files, issues, webpages, screenshots, installer output, and tool
