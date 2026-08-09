@@ -70,6 +70,23 @@ window identities differ. Electron apps are app targets, not browser tabs.
 Re-resolve only when the target disappears, its identity changes, or an
 app-scoped operation proves the cached identity wrong.
 
+## Fast Path
+
+Once a target is resolved, reuse it. Do not enumerate apps/windows, focus the
+target, or snapshot the UI as a ritual preamble to each action.
+
+1. Directly inspect a uniquely named target.
+2. Enumerate apps once only when app identity is ambiguous.
+3. Enumerate windows only if multiple candidate windows remain or exact window
+   identity matters.
+4. Cache the resolved target until disappearance, identity change, or a failed
+   scoped operation proves it stale.
+5. Read structured action results before deciding another observation is needed.
+
+Avoid fixed waits between ordinary actions. Wait only for a real asynchronous
+transition that immediate read-back cannot resolve, using one short bounded wait
+before fresh evidence rather than repeated sleeps.
+
 ## Closed-Loop Control
 
 1. Resolve the exact native app, installed web app, or browser target.
@@ -85,11 +102,11 @@ closing a dialog, list mutation, or another fresh snapshot. Prefer app-scoped
 captures so unrelated windows are neither exposed nor accidentally targeted.
 
 Use the native tool's equivalent of post-action capture only when the action
-invalidates targeting structure or the result must be seen. Never assume a
-successful tool call means the UI changed, but also do not re-snapshot merely
-because an action occurred when structured read-back already proves success.
-After two identical failures, stop retrying, take fresh evidence, inspect the
-failure, and change strategy.
+invalidates targeting structure and the next decision needs the new state.
+Never assume a successful tool call means the UI changed, but also do not
+re-snapshot merely because an action occurred when structured read-back already
+proves success. After two identical failures, stop retrying, take fresh
+evidence, inspect the failure, and change strategy.
 
 When the live runtime exposes image-region or image-size controls, keep routine
 visual observations app-scoped and roughly 1024–1280 px on the longest edge;
@@ -105,8 +122,9 @@ arguments.
   re-snapshot the opened menu, and select its fresh element.
 - Dialogs/file choosers: re-snapshot when they open; the prior element map is
   stale. Verify the dialog closes and the parent app changes.
-- Scroll: target the intended scroll container and use small increments. Use
-  accessibility read-back for textual questions and pixels for layout/visibility.
+- Scroll: target the intended scroll container and use a useful increment rather
+  than many tiny calls. Refresh accessibility for new text and pixels only for
+  layout/visibility questions.
 - Drag/drop: prefer accessible source/destination elements. Use coordinates
   only for canvases or inaccessible drop zones, then verify placement.
 - Multiple displays: capture one target window/display at a time. Resolve
@@ -123,9 +141,9 @@ effect, verification, error, or escalation hint. Escalate only one rung:
    only with user authorization when it visibly interrupts their work;
 4. `ydotool` as the final host-specific recovery path.
 
-Do not predict failure from an app being Electron, Chromium, GTK, or a canvas.
-React to evidence. Keep the target in the background unless the user asked to
-bring it forward.
+Do not use focus as target discovery or as routine setup. Do not predict failure
+from an app being Electron, Chromium, GTK, or a canvas. React to evidence. Keep
+the target in the background unless the user asked to bring it forward.
 
 ## Desktop and Screen Capture
 
