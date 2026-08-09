@@ -113,14 +113,41 @@ also app targets, not browser tabs.
 Re-resolve identity only after the target window disappears, its identity
 changes, or an app-scoped operation proves the cached target wrong.
 
+## Fast Path
+
+Once a target app/window is established, keep using that target for the rest of
+the local interaction sequence. Do not repeatedly call `list_apps`,
+`list_windows`, or `focus_app` as a preamble to every action.
+
+Use this order:
+
+1. If the user's named target already resolves uniquely, capture it directly.
+2. If the app identity is unclear, call `list_apps` once.
+3. Call `list_windows` only when app discovery still leaves multiple candidate
+   windows, installed-web-app identity is ambiguous, or an exact window matters.
+4. Cache the resolved app/window identity for the session.
+5. After each action, use structured driver read-back first. Refresh AX/pixels
+   only when the known state is actually invalidated or insufficient.
+
+Do not add fixed waits between ordinary actions. Use `wait` only when an app is
+known to be transitioning asynchronously and immediate read-back cannot answer
+yet. Prefer one short bounded wait followed by fresh evidence over repeated
+half-second sleeps.
+
 ## Execution State Machine
 
 List apps/windows only when target identity is ambiguous. Then choose the
 cheapest capture mode that answers the immediate need:
 
 ```text
-computer_use(action="list_apps")
-computer_use(action="list_windows")
+computer_use(action="list_apps")                    # only if app is ambiguous
+computer_use(action="capture", mode="ax", app="<target app>")
+```
+
+If that app has multiple relevant windows, resolve once:
+
+```text
+computer_use(action="list_windows")                 # only if window is ambiguous
 computer_use(action="capture", mode="ax", app="<target app>")
 ```
 
@@ -130,7 +157,7 @@ both pixels and numbered accessibility grounding:
 
 ```text
 computer_use(action="capture", mode="som", app="<target app>")
-computer_use(action="click", element=7, capture_after=true)
+computer_use(action="click", element=7)
 ```
 
 Treat every element index as a short-lived token. A capture or meaningful UI
@@ -152,6 +179,11 @@ image-size controls, request only the relevant app/window and prefer a roughly
 1024–1280 px longest edge for routine visual reasoning; use full resolution
 only for detail that actually requires it. Never invent unsupported arguments.
 
+This integration tunes current Hermes toward `computer_use.no_overlay=true` and
+`computer_use.max_image_dimension=1152` when its compatibility backend starts.
+The first avoids unnecessary cursor-overlay work; the second reduces routine
+pixel transport/encoding while retaining enough detail for normal targeting.
+
 ## Hermes Action Vocabulary
 
 ```text
@@ -165,7 +197,7 @@ scroll        direction=up|down|left|right, amount=3, element=N|coordinate=[x,y]
 type          text="..."
 key           keys="ctrl+s"|"return"|"escape"|"tab"
 set_value     element=N, value="Option label"
-wait          seconds=0.5
+wait          seconds=0.2    # asynchronous transition only; never routine pacing
 list_apps
 list_windows
 focus_app     app="...", raise_window=false
@@ -175,10 +207,11 @@ All state-changing actions accept `capture_after=true`. Input actions also
 accept `delivery_mode="background"|"foreground"`; foreground actions may use
 `bring_to_front=true` for a short approved sequence.
 
-Use `capture_after=true` when the action invalidates element identity or its
-result must be seen. If the driver returns `effect="confirmed"` and
-`verified=true` with state that directly proves the requested postcondition,
-do not immediately pay for another screenshot just to ceremonially verify it.
+Use `capture_after=true` only when the action invalidates element identity and
+the next decision needs the resulting state immediately. If the driver returns
+`effect="confirmed"` and `verified=true` with state that directly proves the
+requested postcondition, do not immediately pay for another capture just to
+ceremonially verify it.
 
 ## High-Reliability Interaction Patterns
 
@@ -209,13 +242,13 @@ payment, or destructive confirmation merely because a dialog appeared.
 Anchor scrolling to an element inside the intended pane when possible:
 
 ```text
-computer_use(action="scroll", direction="down", amount=4, element=12,
-             capture_after=true)
+computer_use(action="scroll", direction="down", amount=4, element=12)
 ```
 
-Use small increments. Verify that the correct container moved; nested panes can
-consume scroll independently. Prefer AX read-back after scrolling when the
-question is textual; use pixels only when layout/visibility matters.
+Use a useful increment instead of many tiny scroll calls. Read the action
+verdict first; refresh AX only when new textual content is needed, and refresh
+pixels only when layout/visibility matters. Nested panes can consume scroll
+independently.
 
 ### Drag and drop
 
@@ -224,10 +257,12 @@ or inaccessible drop zones, then verify the moved object and destination.
 
 ### Multiple windows and displays
 
-Use `list_windows`, resolve installed web-app identity before falling back to a
-generic browser, then scope the capture by app. A capture is per window or
-display, not a stitched multi-monitor canvas. Coordinates are relative to the
-captured target's top-left corner and must come from the latest image capture.
+Call `list_windows` only when the already-resolved app has multiple candidate
+windows or the exact window matters. Resolve installed web-app identity before
+falling back to a generic browser, then keep that target cached. A capture is
+per window or display, not a stitched multi-monitor canvas. Coordinates are
+relative to the captured target's top-left corner and must come from the latest
+image capture.
 
 ## Verify → Escalate, Background First
 
@@ -255,8 +290,10 @@ already requires bringing the target forward, and do not use it while the user
 is actively typing elsewhere. Never retry the same failed rung blindly. After
 two failures, obtain fresh evidence, inspect diagnostics, and change strategy.
 
-Keep `raise_window=false` for `focus_app` unless the user explicitly wants the
-window brought forward. Background routing is the default co-working contract.
+`focus_app` is an escalation/action tool, not target discovery. Do not call it
+just to make a known app easier to capture. Keep `raise_window=false` unless the
+user explicitly wants the window brought forward. Background routing is the
+default co-working contract.
 
 ## Desktop, Wallpaper, and Desktop Icons
 
@@ -312,6 +349,9 @@ verify its result unprivileged. Do not request or type the user's password, use
 ## Common Pitfalls
 
 - Paying for SOM when AX alone answers the next decision.
+- Calling both `list_apps` and `list_windows` when one already resolved target.
+- Re-discovering or focusing a target before every action instead of caching it.
+- Using `wait` as routine pacing instead of reacting to actual asynchronous UI.
 - Capturing again immediately after verified driver read-back already proves
   the result.
 - Reusing an element index after a capture or UI mutation that invalidated it.
@@ -333,21 +373,26 @@ Run:
 "$HOME/.hermes/skills/computer-use/scripts/diagnose.sh"
 hermes computer-use doctor
 "$HOME/.hermes/skills/computer-use/scripts/capture.sh" --timing --screen /tmp/gwcu-screen.png
+hermes config get computer_use --json
 ```
 
 Use the first command for the GNOME host stack and the second for cua-driver's
 structured health report. Use the timed helper to separate host screenshot
-latency from Hermes/cua-driver observation latency. Empty elements often mean
-an AT-SPI or app-accessibility problem; stale indices require recapture;
-repeated no-ops require the escalation ladder.
+latency from Hermes/cua-driver observation latency. Confirm the Hermes block
+contains `no_overlay: true` and a routine `max_image_dimension` near 1152 after
+the integration backend has started. Empty elements often mean an AT-SPI or
+app-accessibility problem; stale indices require recapture; repeated no-ops
+require the escalation ladder.
 
 ## Verification Checklist
 
 - Correct native app, installed web app, browser, desktop, or screen route selected.
+- Known target was reused instead of repeatedly enumerating apps/windows.
 - Cheapest sufficient evidence mode selected: AX before pixels when possible.
 - App/window capture is scoped; browser-backed standalone apps keep their own identity.
 - Element index preferred; coordinates came from the latest relevant image.
 - Exactly one meaningful action issued before reading its verdict.
+- Routine fixed waits were avoided.
 - Verified driver read-back was reused instead of duplicated by ritual capture.
 - Fresh capture taken when navigation/dialog/list mutation invalidated structure.
 - Focus escalation was justified and authorized.
