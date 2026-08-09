@@ -31,7 +31,7 @@ grep -q '^## Installed Web App Identity$' "$hermes_skill" || \
     fail "Hermes skill documents standalone web-app identity"
 grep -q -- '--app-id=' "$hermes_skill" || \
     fail "Hermes skill recognizes standalone browser launchers"
-grep -q 'mode="ax" first' "$hermes_skill" || \
+grep -Fq 'Use `mode="ax"` first' "$hermes_skill" || \
     fail "Hermes skill makes AX the cheap first observation"
 grep -q 'do not immediately pay for another screenshot' "$hermes_skill" || \
     fail "Hermes skill avoids duplicate verification captures"
