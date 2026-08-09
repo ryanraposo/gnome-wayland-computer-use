@@ -22,7 +22,7 @@ jobs:
         run: bash -n install.sh lib/*.sh scripts/*.sh tests/*.sh
       - name: Skill UX contract
         run: bash ./tests/skill-ux.sh
-      - name: Latency and routing guards
+      - name: End-to-end latency and routing guards
         run: bash ./tests/latency-routing.sh
       - name: Regression suite
         run: ./tests/run.sh
