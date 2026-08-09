@@ -37,9 +37,9 @@ check_start_atspi_service() {
         /usr/libexec/at-spi-bus-launcher --launch-immediately 2>/dev/null &
         disown
     }
-    for _ in 1 2 3; do
+    for _ in {1..30}; do
         check_is_atspi_socket_exists && return 0
-        sleep 1
+        sleep 0.1
     done
     return 1
 }
@@ -311,6 +311,7 @@ install_bundle() {
         "VERSION"
         "references/skill-ux-contract.md"
         "lib/checks.sh"
+        "scripts/app-identity.sh"
         "scripts/capture.sh"
         "scripts/check-update.sh"
         "scripts/diagnose.sh"
@@ -482,7 +483,7 @@ Description=ydotool uinput daemon
 Type=simple
 ExecStart=/usr/bin/env ydotoold
 Restart=on-failure
-RestartSec=2s
+RestartSec=250ms
 [Install]
 WantedBy=default.target
 SERVICE
@@ -516,7 +517,8 @@ Type=simple
 Environment=CUA_DRIVER_RS_ENABLE_WAYLAND=1
 ExecStart=%h/.agents/skills/gnome-wayland-computer-use/scripts/serve.sh
 Restart=on-failure
-RestartSec=2s
+RestartSec=250ms
+TimeoutStopSec=2s
 
 [Install]
 WantedBy=graphical-session.target
@@ -528,12 +530,12 @@ SERVICE
     systemctl --user enable gnome-wayland-computer-use.service
     systemctl --user restart gnome-wayland-computer-use.service
     backend_ready=false
-    for _ in 1 2 3 4 5 6 7 8 9 10; do
+    for _ in {1..40}; do
         if cua-driver status &>/dev/null; then
             backend_ready=true
             break
         fi
-        sleep 1
+        sleep 0.1
     done
     if $backend_ready; then
         success "Hermes computer_use backend enabled and running"
