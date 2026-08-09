@@ -19,8 +19,9 @@ but never update silently.
 
 ## Workflow Contract
 
-Own the workflow: route, observe, act once, verify, then recover or complete.
-Use the runtime's actual live tool schema throughout.
+Own the workflow: route, take the cheapest useful observation, act once,
+verify from the lightest sufficient evidence, then recover or complete. Use the
+runtime's actual live tool schema throughout.
 
 Infer reversible, local, least-disruptive defaults. Ask only questions whose
 answers materially change the action or authorization, normally one and never
@@ -30,52 +31,86 @@ equivalent choices.
 Surface progress at meaningful phase changes during longer work. Before an
 external, privileged, destructive, or irreversible action, state its exact
 effect and obtain the required authorization. Reversible visible changes need
-a recovery route. Finish with observable evidence, not tool-call success.
+a recovery route. Finish with observable evidence, not ceremonial duplicate
+captures.
 
 Read `references/skill-ux-contract.md` when ambiguity, recovery, privilege, or a
 multi-step mutation makes the governing boundary relevant.
 
 ## Dispatch
 
-- Application window: use the native accessibility/snapshot CUA tool.
+- Native application window: use the native accessibility/snapshot CUA tool.
+- Installed standalone web app/PWA: treat it as its own app when desktop/window
+  identity distinguishes it from the underlying browser engine.
+- Ordinary browser window/tab: prefer browser tooling for purely web work; use
+  native CUA when browser chrome, installed-app state, or the real desktop is
+  part of the task.
 - Desktop means wallpaper and desktop icons: run `capture.sh --desktop`.
 - Screen means the visible display including windows: run `capture.sh --screen`.
 - Package/admin work: prefer a narrow `pkexec` command, never a root shell.
-- Web-only work: prefer a browser tool when it does not require the user's
-  native app state.
 - Shell/file work: use terminal and file tools, not GUI typing.
+
+## Installed Web App Identity
+
+Do not infer that a Chromium-, Chrome-, Brave-, Edge-, Firefox-, or
+Electron-backed window is automatically the generic browser. Resolve a named
+installed web app from the strongest identity exposed by the live runtime and
+cache the decision for the session.
+
+Prefer distinct app/window identity first, then desktop-file/application ID or
+`StartupWMClass`, then standalone launcher evidence such as `--app-id=` or
+`--app=`, then accessible app/window naming. Fall back to the generic browser
+only for ordinary browser chrome/tabs or when standalone identity cannot be
+established.
+
+If ambiguity remains, inspect installed `.desktop` launchers in the normal XDG
+application directories once instead of repeatedly capturing the screen. Two
+PWAs sharing one browser engine remain separate targets when their desktop or
+window identities differ. Electron apps are app targets, not browser tabs.
+Re-resolve only when the target disappears, its identity changes, or an
+app-scoped operation proves the cached identity wrong.
 
 ## Closed-Loop Control
 
-1. Snapshot or capture the exact app/window.
-2. Inspect accessible roles, names, bounds, and current state.
-3. Target by stable element/accessibility identity when supported.
-4. Perform one action.
-5. Re-snapshot and verify the requested postcondition.
+1. Resolve the exact native app, installed web app, or browser target.
+2. Use accessibility/tree-only inspection when text, roles, and state are enough.
+3. Use a plain image only for visual reasoning; use combined image + element
+   grounding only when an action actually needs both.
+4. Perform one meaningful action.
+5. Accept structured driver read-back when it directly proves the requested
+   postcondition; otherwise obtain the cheapest fresh evidence that can.
 
 Treat element indices and references as invalid after navigation, opening or
 closing a dialog, list mutation, or another fresh snapshot. Prefer app-scoped
 captures so unrelated windows are neither exposed nor accidentally targeted.
 
-Use the native tool's equivalent of post-action capture when available, but
-still read the result. Never assume a successful tool call means the UI changed.
-After two identical failures, stop retrying, take a fresh snapshot, inspect the
+Use the native tool's equivalent of post-action capture only when the action
+invalidates targeting structure or the result must be seen. Never assume a
+successful tool call means the UI changed, but also do not re-snapshot merely
+because an action occurred when structured read-back already proves success.
+After two identical failures, stop retrying, take fresh evidence, inspect the
 failure, and change strategy.
+
+When the live runtime exposes image-region or image-size controls, keep routine
+visual observations app-scoped and roughly 1024–1280 px on the longest edge;
+use full resolution only for details that require it. Never invent unsupported
+arguments.
 
 ## Interaction Patterns
 
-- Text: click the editable control, type, verify the visible value, submit, and
-  verify the result. Select-all only when replacement is intended.
+- Text: inspect the field using the cheapest sufficient mode, click, type,
+  verify the visible/read-back value, submit, and recapture only when resulting
+  structure or visual state must be established.
 - Menus/selects: prefer a native value/select action. Otherwise click once,
   re-snapshot the opened menu, and select its fresh element.
 - Dialogs/file choosers: re-snapshot when they open; the prior element map is
   stale. Verify the dialog closes and the parent app changes.
-- Scroll: target the intended scroll container and use small increments.
-  Nested panes often consume scroll independently.
+- Scroll: target the intended scroll container and use small increments. Use
+  accessibility read-back for textual questions and pixels for layout/visibility.
 - Drag/drop: prefer accessible source/destination elements. Use coordinates
   only for canvases or inaccessible drop zones, then verify placement.
-- Multiple displays: capture one target window/display at a time. Coordinates
-  must belong to the latest capture and its scaling.
+- Multiple displays: capture one target window/display at a time. Resolve
+  standalone web-app identity before collapsing a target into its browser.
 
 ## Background-First Escalation
 
@@ -105,7 +140,11 @@ SKILL_HOME="$HOME/.agents/skills/gnome-wayland-computer-use"
 Attach or inspect the output with the runtime's normal file/image mechanism.
 Do not use Hermes's `--media` marker outside Hermes. The compositor desktop
 path proves focus, workspace, and window state stayed unchanged. Its fallback
-briefly shows the desktop, captures it, restores it, and verifies restoration.
+briefly reveals the desktop, polls for the resulting screenshot, restores the
+windows, and verifies restoration without fixed multi-second sleeps.
+
+For latency diagnosis, add `--timing`; the helper emits
+`capture_elapsed_ms=N` on stderr without changing normal output.
 
 Do not probe for alternatives or directly invoke `gnome-screenshot`, `grim`,
 `slurp`, ImageMagick, or GNOME screenshot D-Bus APIs.
@@ -136,11 +175,14 @@ the result unprivileged. Never type or request the user's password, use
 
 ```bash
 "$HOME/.agents/skills/gnome-wayland-computer-use/scripts/diagnose.sh"
+"$HOME/.agents/skills/gnome-wayland-computer-use/scripts/capture.sh" --timing --screen /tmp/gwcu-screen.png
 ```
 
-Read the full result before changing the capture/input stack. Empty elements
-usually indicate AT-SPI or application accessibility; stale references require
-a fresh snapshot; repeated no-ops require evidence-based escalation.
+Read the full result before changing the capture/input stack. The timed helper
+separates host screenshot latency from native-runtime observation latency.
+Empty elements usually indicate AT-SPI or application accessibility; stale
+references require a fresh snapshot; repeated no-ops require evidence-based
+escalation.
 
 Finish only after the observable UI or system postcondition is verified. State
 what changed, how it was verified, any remaining uncertainty, and only a
