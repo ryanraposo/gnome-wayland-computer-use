@@ -12,7 +12,7 @@
 Low-latency accessibility actions. Desktop-aware screenshots. Verified recovery
 paths. One installer for the full stack.
 
-[Install](#install) · [Capabilities](#capabilities) · [How it works](#how-it-works) ·
+[Install](#install) · [Capabilities](#capabilities) · [Performance](PERF_NOTES.md) · [How it works](#how-it-works) ·
 [Diagnose](#diagnose) · [Uninstall](#uninstall)
 </div>
 
@@ -167,7 +167,8 @@ remains, the installed launcher resolver can inspect desktop IDs,
 ```
 
 The resolver caches its launcher inventory briefly in the runtime directory.
-Two PWAs using the same browser engine remain separate targets when their
+It understands direct browser launchers plus wrapped and Flatpak-style commands,
+so two PWAs using the same browser engine remain separate targets when their
 launcher/window identities differ. Electron applications remain native app
 targets when the desktop/runtime exposes their distinct identity.
 
@@ -186,13 +187,11 @@ CAPTURE="$HOME/.agents/skills/gnome-wayland-computer-use/scripts/capture.sh"
 
 "$CAPTURE" --desktop /tmp/desktop.png
 "$CAPTURE" --screen /tmp/screen.png
-"$CAPTURE" --timing --screen /tmp/screen.png
 ```
 
 Writes are atomic: a failed attempt does not replace an existing output file.
 Hermes can add `--media` to choose a timestamped path and emit its `MEDIA:`
-attachment marker. Compatibility screenshot paths poll for readiness instead of
-paying fixed screenshot sleeps.
+attachment marker. Add `--timing` to emit `capture_elapsed_ms=N` on stderr.
 
 ## How it works
 
@@ -200,16 +199,17 @@ The installer configures five layers:
 
 1. **Session checks** — detects GNOME and Wayland and reports mismatches.
 2. **Accessibility** — enables GNOME toolkit accessibility and starts the AT-SPI
-   bus with short readiness polling.
-3. **Capture and routing** — installs the GNOME Shell extension, cached
-   browser/PWA identity resolver, and portable Agent Skill. When Hermes is
-   selected, it also installs the canonical `computer-use` override and
-   always-loaded desktop-versus-screen routing.
+   bus.
+3. **Capture and routing** — installs the GNOME Shell extension, cached installed-app
+   identity resolver, and portable Agent Skill. When Hermes is selected, it also
+   installs the exact canonical `computer-use` override and always-loaded
+   desktop-versus-screen routing.
 4. **Input recovery** — installs the Ubuntu capture dependencies, loads
-   `/dev/uinput`, grants the desktop user access, and starts `ydotoold`.
+   `/dev/uinput`, grants the desktop user access, and starts `ydotoold` with a
+   short managed restart delay.
 5. **Runtime** — with Hermes, installs and health-checks a persistent
-   native-Wayland `cua-driver` service with fast restart/readiness polling.
-   Other agents keep their own native tool schema and use the shared host helpers.
+   native-Wayland `cua-driver` service with fast readiness polling. Other agents
+   keep their own native tool schema and use the shared host helpers directly.
 
 ### Capture order
 
@@ -219,7 +219,8 @@ The installer configures five layers:
    from the offscreen capture. It rejects the result if focus, workspace, or
    window state changed.
 2. The compatibility path toggles Show Desktop, takes one full-screen capture,
-   restores the prior state, and compares compositor window state.
+   restores the prior state, and compares compositor window state. Screenshot and
+   restoration readiness are polled rather than padded with fixed animation sleeps.
 
 **Visible screen**
 
@@ -237,14 +238,19 @@ After installation:
 
 ```bash
 ~/.agents/skills/gnome-wayland-computer-use/scripts/diagnose.sh
-~/.agents/skills/gnome-wayland-computer-use/scripts/app-identity.sh "ChatGPT"
-~/.agents/skills/gnome-wayland-computer-use/scripts/capture.sh --timing --screen /tmp/screen.png
 ```
 
-For machine-readable host diagnostics:
+For machine-readable output:
 
 ```bash
 ~/.agents/skills/gnome-wayland-computer-use/scripts/diagnose.sh --json
+```
+
+For latency and routing diagnosis:
+
+```bash
+~/.agents/skills/gnome-wayland-computer-use/scripts/app-identity.sh "ChatGPT"
+~/.agents/skills/gnome-wayland-computer-use/scripts/capture.sh --timing --screen /tmp/screen.png
 ```
 
 From a repository checkout:
@@ -255,11 +261,12 @@ bash ./tests/latency-routing.sh
 ./tests/run.sh
 ```
 
-The regression suite covers latency policy, network-free first-use routing,
-installed-web-app identity, capture timing, routing and capture order, portal
-cancellation, atomic failure behavior, local and curl-pipe installation, skill
-preservation, teardown restoration, runtime authority, and the
-sub-60-character description contract.
+The regression suite covers routing, capture order, portal cancellation, atomic
+failure behavior, local and curl-pipe installation, skill preservation,
+teardown restoration, runtime authority, and the sub-60-character description
+contract. The latency guard additionally covers cache-only first use, browser/PWA
+identity including wrapped launchers, published-site consistency, semantic-action
+spans, decision-boundary verification, fast screenshot fallbacks, and service recovery.
 
 ## Operational notes
 
@@ -292,23 +299,24 @@ Use `--force` only when you want every managed teardown prompt accepted.
 | Path | Purpose |
 |---|---|
 | `install.sh` | Self-contained local and curl-pipe installer |
+| `index.html` | Published landing page; kept aligned with the runtime latency contract |
 | `AGENTS.md` | Install, use, and maintenance funnel for repository-aware agents |
 | `SKILL.md` | Hermes-native `computer-use` skill |
 | `runtimes/openai/SKILL.md` | OpenAI-native Agent Skill payload |
 | `agents/openai.yaml` | OpenAI skill-list metadata and implicit-trigger policy |
-| `references/skill-ux-contract.md` | Workflow phases, decisions, latency boundaries, mutations, and completion proof |
+| `references/skill-ux-contract.md` | Workflow phases, decisions, mutations, and completion proof |
 | `CAPABILITIES.md` | Complete computer-use capability spread and operating model |
-| `PERF_NOTES.md` | End-to-end latency budgets and measurement guidance |
+| `PERF_NOTES.md` | Separated latency budgets, regression evidence, and measurement guidance |
 | `VERSION` | Published skill-bundle release version |
 | `gnome-shell-extension/` | Focus-free desktop-layer capture service |
 | `lib/checks.sh` | Shared environment and health checks |
-| `scripts/app-identity.sh` | Cached browser/PWA launcher identity resolver |
-| `scripts/capture.sh` | Atomic desktop/screen capture router and timing diagnostics |
-| `scripts/check-update.sh` | Cached, non-mutating release update check |
+| `scripts/app-identity.sh` | Cached installed-browser/PWA/Electron launcher identity resolver |
+| `scripts/capture.sh` | Atomic desktop/screen capture router with timing diagnostics |
+| `scripts/check-update.sh` | Cache-only hot-path and explicit cached release update check |
 | `scripts/diagnose.sh` | Human and JSON diagnostics |
 | `scripts/serve.sh` | Persistent `cua-driver` backend |
 | `scripts/teardown.sh` | Managed removal and skill restoration |
 | `tests/skill-ux.sh` | Constitutional and metadata regression checks |
-| `tests/latency-routing.sh` | End-to-end latency and installed-web-app regression guards |
+| `tests/latency-routing.sh` | End-to-end latency, PWA routing, site, and recovery guards |
 | `tests/run.sh` | End-to-end shell regression suite |
 | `assets/` | Landing-page and repository social artwork |
