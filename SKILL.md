@@ -19,13 +19,15 @@ metadata:
 
 Drive application windows with Hermes's native `computer_use` tool and use the
 installed compositor-aware helper for desktop-layer and visible-screen capture.
-The operating model is closed-loop: observe, target, act once, observe again,
-and prove the requested postcondition.
+The operating model is latency-aware and closed-loop: route once, use the
+cheapest useful evidence, execute a deterministic semantic action span, verify
+at the next real decision boundary, and complete.
 
 At the first computer-use task in a session, run
-`"$HOME/.hermes/skills/computer-use/scripts/check-update.sh" --quiet`. An
-offline check is nonfatal. Report any available version and its printed
-reinstall command, but never update the skill silently.
+`"$HOME/.hermes/skills/computer-use/scripts/check-update.sh" --quiet --cached-only`.
+This hot-path check never uses the network. Report a cached available version
+and its printed reinstall command, but never update the skill silently. Use
+`check-update.sh --force` only when an explicit update check is appropriate.
 
 ## Workflow Contract
 
@@ -34,13 +36,13 @@ skill's instructions.
 
 For every task, move through:
 
-1. **Route** — choose application, desktop, screen, terminal, browser, or
-   privileged host action.
-2. **Observe** — capture the smallest relevant surface and establish current
-   state.
-3. **Act** — perform exactly one meaningful action using the least disruptive
-   capable rung.
-4. **Verify** — prove the requested postcondition from fresh evidence.
+1. **Route** — choose native application, installed web app, browser, desktop,
+   screen, terminal, or privileged host action. Reuse a resolved target.
+2. **Observe** — use the cheapest evidence that can answer the next decision.
+3. **Act** — perform the largest deterministic semantic action span the live
+   tool supports without crossing a decision or authorization boundary.
+4. **Verify** — accept structured driver read-back when it proves the requested
+   state; obtain fresh evidence only when the next decision needs it.
 5. **Recover or complete** — change strategy after a failed rung, or report the
    result with its proof.
 
@@ -57,62 +59,143 @@ changes, and when user action becomes necessary. Do not narrate every click.
 
 Before an external, destructive, privileged, or otherwise irreversible action,
 preview the exact effect and obtain the required authorization. Reversible
-visible changes need a recovery route. A successful tool call is never proof
-of completion.
+visible changes need a recovery route. A successful tool call is proof only
+when its structured read-back actually establishes the requested postcondition.
 
 Read `references/skill-ux-contract.md` when ambiguity, recovery, privilege, or a
 multi-step mutation makes the governing boundary relevant.
 
 ## When to Use
 
-Use this skill for native GNOME applications, settings panels, file managers,
-dialogs, menus, canvas interfaces, desktop/screen capture, accessibility
-diagnostics, and any task where the user expects the agent to click, type,
-scroll, or drag on their real desktop. Prefer a browser-specific tool for a web
-task when it can complete the work without operating the user's native browser.
-Prefer terminal and file tools for shell commands and file edits.
+Use this skill for native GNOME applications, installed standalone web apps,
+settings panels, file managers, dialogs, menus, canvas interfaces,
+desktop/screen capture, accessibility diagnostics, and any task where the user
+expects the agent to click, type, scroll, or drag on their real desktop. Prefer
+a browser-specific tool for a web task when it can complete the work without
+operating the user's native browser or installed-app state. Prefer terminal and
+file tools for shell commands and file edits.
 
 ## Route the Target Correctly
 
-- **Application window:** use `computer_use`, scoped with `app=`.
+- **Native application window:** use `computer_use`, scoped with `app=`.
+- **Installed web app/PWA:** treat it as its own app when desktop/window identity
+  distinguishes it from its browser engine; scope captures/actions to that app.
+- **Ordinary browser window/tab:** use browser tooling when the task is purely
+  web; use `computer_use(app="<browser>")` only when native browser UI/state is
+  part of the task.
 - **Desktop:** wallpaper and desktop icons only; use `capture.sh --media`.
 - **Screen:** the currently visible display including windows; use
   `capture.sh --media --screen`.
 - **Package/admin action:** use a narrow `pkexec` command after explaining the
   intended change. Never type a password or open a general-purpose root shell.
 
+## Installed Web App Identity
+
+Do not collapse every Chromium-, Chrome-, Brave-, Edge-, Firefox-, or
+Electron-backed window into the browser executable. Resolve the user's named
+app from the strongest identity available and cache that decision for the
+session.
+
+Prefer, in order:
+
+1. a distinct app/window identity returned by `list_apps` or `list_windows`;
+2. desktop-file identity, `StartupWMClass`, or application ID;
+3. a standalone browser launcher containing `--app-id=`, `--app=`, or an
+   equivalent site-app launch flag;
+4. accessible application name/window title as supporting evidence;
+5. the generic browser identity only when the window truly belongs to ordinary
+   browser chrome/tabs or the standalone identity cannot be established.
+
+When browser-family ambiguity remains, query installed launchers once instead
+of taking another screenshot:
+
+```bash
+"$HOME/.hermes/skills/computer-use/scripts/app-identity.sh" "<app name>"
+```
+
+The resolver caches browser/PWA/Electron launcher identity in the runtime
+directory. Two standalone web apps using the same Chromium process family
+remain two app targets when their desktop/window identities differ. Electron
+apps are app targets, not browser tabs. Use `--refresh` only when installed
+launchers changed or cached identity is contradicted by the live window.
+
+Re-resolve identity only after the target window disappears, its identity
+changes, or an app-scoped operation proves the cached target wrong.
+
 ## Execution State Machine
 
-Start by listing apps/windows if the target is ambiguous, then capture the
-specific application:
+List apps/windows only when target identity is genuinely ambiguous. Do not pay
+for discovery again when the target is already known from the user request or a
+valid earlier result. Then choose the cheapest capture mode that answers the
+immediate need:
 
 ```text
 computer_use(action="list_apps")
 computer_use(action="list_windows")
-computer_use(action="capture", mode="som", app="<target app>")
+computer_use(action="capture", mode="ax", app="<target app>")
 ```
 
-`mode="som"` returns a screenshot with numbered overlays plus an accessibility
-index. Prefer its stable element index over pixels:
+Use `mode="ax"` first when accessible text/roles/state are enough. Escalate to
+`vision` for visual-only inspection and to `som` when an action genuinely needs
+both pixels and numbered accessibility grounding:
 
 ```text
-computer_use(action="click", element=7, capture_after=true)
+computer_use(action="capture", mode="som", app="<target app>")
+computer_use(action="click", element=7)
 ```
 
-Treat every element index as a short-lived token. Any capture or meaningful UI
-mutation can invalidate it. Re-capture before acting again when a dialog opens,
-a page navigates, a list changes, or the tool reports a stale element.
+Treat every element index as a short-lived token. A capture or meaningful UI
+mutation can invalidate it. Re-capture before element-index actions when a
+dialog opens, a page navigates, a list changes, or the tool reports a stale
+element. Do not re-capture merely because time passed or because a confirmed
+input action occurred.
 
 Use capture modes intentionally:
 
 | Mode | Result | Use |
 |---|---|---|
-| `som` | image, numbered overlays, AX index | default for targeting |
-| `vision` | plain screenshot | visual verification without overlays |
-| `ax` | accessibility tree only | text-only inspection or dense UI |
+| `ax` | accessibility tree only | default for readable/targetable UI; cheapest observation |
+| `vision` | plain screenshot | visual verification, canvas, inaccessible UI |
+| `som` | image, numbered overlays, AX index | only when pixels + element grounding are both needed |
 
-For dense Electron or IDE trees, scope with `app=` before increasing
-`max_elements`. Never capture unrelated applications just to find the target.
+For dense Electron, Chromium, browser, or IDE trees, scope with `app=` before
+increasing `max_elements`. When the live runtime exposes image-region or
+image-size controls, request only the relevant app/window and prefer a roughly
+1024–1280 px longest edge for routine visual reasoning; use full resolution
+only for detail that actually requires it. Never invent unsupported arguments.
+
+## Latency-First Interaction
+
+Spend tool/model round-trips only where a decision changes.
+
+- **Discovery:** call `list_apps`/`list_windows` only to resolve ambiguity or
+  recover from a stale target. Cache the result for the current target.
+- **Typing:** use one `type(text="...")` call for the complete intended text.
+  Do not type character-by-character or re-observe between chunks without a
+  returned failure or UI dependency.
+- **Shortcuts:** send the complete shortcut in one `key` action instead of
+  separate modifier/key events.
+- **Values:** prefer `set_value` over opening a menu, capturing it, selecting,
+  and capturing again when the control exposes a semantic value operation.
+- **Scrolling:** make one useful scroll action, then inspect only when content
+  discovery or layout requires it. Do not capture after every wheel-sized step.
+- **Coupled actions:** after a verified focus/click on a stable text field, the
+  next deterministic `type` does not require an observation in between. After
+  verified typing, a known submit hotkey can follow without an intermediate
+  screenshot when it does not depend on changed UI state.
+- **Post-action capture:** use `capture_after=true` at navigation, dialog/list
+  mutation, visual ambiguity, canvas work, or another real decision boundary.
+  Omit it for deterministic intermediate input whose structured read-back is
+  sufficient.
+- **Waiting:** never use `wait` as routine pacing. Use it only when an actual
+  asynchronous transition has no completion signal. Start with a short wait
+  (roughly 0.1–0.25 s) and extend only when evidence requires it.
+- **Failures:** a no-op or background-unavailable verdict changes strategy. A
+  successful verified action does not earn an extra tool call by default.
+
+A semantic action span ends when the next action depends on newly rendered
+state, element identity changed, user authorization is required, or the driver
+cannot prove delivery.
 
 ## Hermes Action Vocabulary
 
@@ -127,7 +210,7 @@ scroll        direction=up|down|left|right, amount=3, element=N|coordinate=[x,y]
 type          text="..."
 key           keys="ctrl+s"|"return"|"escape"|"tab"
 set_value     element=N, value="Option label"
-wait          seconds=0.5
+wait          seconds=0.15
 list_apps
 list_windows
 focus_app     app="...", raise_window=false
@@ -137,14 +220,23 @@ All state-changing actions accept `capture_after=true`. Input actions also
 accept `delivery_mode="background"|"foreground"`; foreground actions may use
 `bring_to_front=true` for a short approved sequence.
 
+Use `capture_after=true` only when the action invalidates element identity, its
+result must be seen, or the next decision depends on fresh state. If the driver
+returns `effect="confirmed"` and `verified=true` with state that directly proves
+the requested postcondition, do not immediately pay for another observation to
+ceremonially verify it.
+
 ## High-Reliability Interaction Patterns
 
 ### Text fields and forms
 
-Capture, click the editable element, type, and verify the displayed value. Use
-`ctrl+a` only when replacement is intended. Submit with the visible button or
-`key(keys="return")`, then verify the resulting state rather than assuming the
-keystroke landed.
+Capture the cheapest mode that exposes the field, click the editable element,
+and read the click verdict. When focus/delivery is confirmed and the field did
+not trigger a structural change, type the complete text immediately without an
+intermediate capture. Use `ctrl+a` only when replacement is intended. Verify the
+value from structured read-back when available. Submit with the visible button
+or `key(keys="return")`; recapture when submission navigates, opens a dialog, or
+otherwise changes the next decision state.
 
 ### Menus, selects, and sliders
 
@@ -156,8 +248,9 @@ element index.
 ### Dialogs and file choosers
 
 After an action opens a dialog, re-capture the target app because the old index
-map is stale. Identify the dialog by role/title, fill its fields, and verify it
-closed and the parent window changed. Never approve permissions, secrets, 2FA,
+map is stale. Identify the dialog by role/title, fill deterministic fields
+without re-observing between each one, and verify it closed and the parent app
+changed at the submit/close boundary. Never approve permissions, secrets, 2FA,
 payment, or destructive confirmation merely because a dialog appeared.
 
 ### Scrolling
@@ -165,12 +258,13 @@ payment, or destructive confirmation merely because a dialog appeared.
 Anchor scrolling to an element inside the intended pane when possible:
 
 ```text
-computer_use(action="scroll", direction="down", amount=4, element=12,
-             capture_after=true)
+computer_use(action="scroll", direction="down", amount=4, element=12)
 ```
 
-Use small increments. Verify that the correct container moved; nested panes can
-consume scroll independently.
+Use useful increments. Verify that the correct container moved when the next
+decision depends on newly revealed content; nested panes can consume scroll
+independently. Prefer AX read-back for textual discovery and pixels only when
+layout/visibility matters.
 
 ### Drag and drop
 
@@ -179,16 +273,21 @@ or inaccessible drop zones, then verify the moved object and destination.
 
 ### Multiple windows and displays
 
-Use `list_windows`, then scope the capture by app. A capture is per window or
-display, not a stitched multi-monitor canvas. Coordinates are relative to the
-captured target's top-left corner and must come from the latest capture.
+Use `list_windows` only when needed to resolve or recover the target, resolve
+installed web-app identity before falling back to a generic browser, then scope
+the capture by app. A capture is per window or display, not a stitched
+multi-monitor canvas. Coordinates are relative to the captured target's
+top-left corner and must come from the latest relevant image.
 
 ## Verify → Escalate, Background First
 
 Read each structured action result:
 
-- `effect="confirmed"` and `verified=true`: driver read-back succeeded.
-- `effect="unverifiable"`: re-capture and inspect the result yourself.
+- `effect="confirmed"` and `verified=true`: accept the read-back when it proves
+  the requested state; continue the deterministic span without an unnecessary
+  duplicate capture.
+- `effect="unverifiable"`: obtain the cheapest fresh evidence that can verify
+  the result, AX before pixels when suitable.
 - `effect="suspected_noop"`, `code="background_unavailable"`, or an
   `escalation.recommended` value: climb exactly one rung.
 
@@ -205,7 +304,7 @@ The ladder is:
 Foreground is a visible focus change. Ask first unless the user's request
 already requires bringing the target forward, and do not use it while the user
 is actively typing elsewhere. Never retry the same failed rung blindly. After
-two failures, re-capture, inspect diagnostics, and change strategy.
+two failures, obtain fresh evidence, inspect diagnostics, and change strategy.
 
 Keep `raise_window=false` for `focus_app` unless the user explicitly wants the
 window brought forward. Background routing is the default co-working contract.
@@ -221,13 +320,17 @@ Run immediately:
 Preserve the emitted `MEDIA:/absolute/path.png` line. Do not analyze the image
 unless asked. The primary compositor path captures only the desktop layer and
 proves focus, workspace, and window state did not change. Its compatibility
-path briefly shows the desktop, captures, restores, and verifies restoration.
+path briefly shows the desktop, polls for the capture, restores the windows,
+and verifies restoration without fixed multi-second sleeps.
 
 For the visible screen including windows:
 
 ```bash
 "$HOME/.hermes/skills/computer-use/scripts/capture.sh" --media --screen
 ```
+
+Add `--timing` while diagnosing latency; timing is emitted on stderr as
+`capture_elapsed_ms=N` without changing the attachment output.
 
 Do not substitute `computer_use(app="screen")`, probe for screenshot tools, or
 call `gnome-screenshot`, `grim`, `slurp`, ImageMagick, or GNOME screenshot
@@ -259,8 +362,17 @@ verify its result unprivileged. Do not request or type the user's password, use
 
 ## Common Pitfalls
 
-- Reusing an element index after a capture or UI mutation.
-- Assuming `capture_after` proves success without reading the returned state.
+- Re-running app/window discovery for a target already resolved in the session.
+- Paying for SOM when AX alone answers the next decision.
+- Capturing again immediately after verified driver read-back already proves
+  the result.
+- Inserting a capture between deterministic click → type or type → submit spans
+  when the next action does not depend on newly rendered state.
+- Typing text one character/chunk per tool round-trip.
+- Using `wait` as habitual pacing instead of reacting to an asynchronous state.
+- Reusing an element index after a capture or UI mutation that invalidated it.
+- Assuming every Chromium-family window is the generic browser instead of an
+  installed standalone web app.
 - Clicking coordinates from a differently sized or scaled capture.
 - Scrolling the whole window when a nested pane owns the content.
 - Predicting that an app needs foreground delivery instead of reacting to the
@@ -276,25 +388,30 @@ Run:
 ```bash
 "$HOME/.hermes/skills/computer-use/scripts/diagnose.sh"
 hermes computer-use doctor
+"$HOME/.hermes/skills/computer-use/scripts/app-identity.sh" "<app name>"
+"$HOME/.hermes/skills/computer-use/scripts/capture.sh" --timing --screen /tmp/gwcu-screen.png
 ```
 
 Use the first command for the GNOME host stack and the second for cua-driver's
-structured health report. Diagnose before inventing another capture/input
-stack. Empty elements often mean an AT-SPI or app-accessibility problem; stale
-indices require recapture; repeated no-ops require the escalation ladder.
+structured health report. Use the identity resolver when browser-backed app
+routing is ambiguous without spending a screenshot. Use the timed helper to
+separate host screenshot latency from Hermes/cua-driver observation latency.
+Empty elements often mean an AT-SPI or app-accessibility problem; stale indices
+require recapture; repeated no-ops require the escalation ladder.
 
 ## Verification Checklist
 
-- Correct app/window or desktop/screen route selected.
-- Fresh capture taken before acting.
-- Element index preferred; coordinates came from the latest capture.
-- Exactly one action issued before checking its verdict.
-- Postcondition verified by read-back, recapture, or a direct system check.
+- Correct native app, installed web app, browser, desktop, or screen route selected.
+- Existing app/window identity reused unless evidence invalidated it.
+- Cheapest sufficient evidence mode selected: AX before pixels when possible.
+- App/window capture is scoped; browser-backed standalone apps keep their own identity.
+- Semantic input was performed in useful spans instead of tiny round-trips.
+- Element index preferred; coordinates came from the latest relevant image.
+- Verified driver read-back was reused instead of duplicated by ritual capture.
+- Fresh evidence was obtained at navigation/dialog/list/visual decision boundaries.
 - Focus escalation was justified and authorized.
 - No secrets or unrelated windows were exposed.
 - Final state was proved in the form the user actually cares about.
-- Any consequential assumption, visible interruption, or irreversible action
-  was surfaced at the correct boundary.
 - Recovery changed strategy instead of blindly repeating a failed rung.
 - Final response contains the change, evidence, remaining uncertainty, and
   only a meaningful next action.

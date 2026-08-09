@@ -41,20 +41,28 @@ grep -q '^## Workflow Contract$' "$ROOT/SKILL.md" || \
     fail "Hermes skill owns the workflow"
 grep -q '^## Execution State Machine$' "$ROOT/SKILL.md" || \
     fail "Hermes skill declares its state machine"
+grep -q '^## Latency-First Interaction$' "$ROOT/SKILL.md" || \
+    fail "Hermes skill owns end-to-end latency"
 grep -q '^## Workflow Contract$' "$ROOT/runtimes/openai/SKILL.md" || \
     fail "portable skill owns the workflow"
-pass "both runtime payloads own execution"
+grep -q '^## Latency-First Interaction$' "$ROOT/runtimes/openai/SKILL.md" || \
+    fail "portable skill owns end-to-end latency"
+pass "both runtime payloads own execution and latency"
 
 grep -q '^## Maintaining this repository$' "$ROOT/AGENTS.md" || \
     fail "repository guide owns maintenance routing"
 grep -q 'Keep `AGENTS.md` repository-facing and `SKILL.md` invocation-facing' \
     "$ROOT/AGENTS.md" || fail "repository and runtime authority stay distinct"
+grep -q 'end-to-end latency budget' "$ROOT/AGENTS.md" || \
+    fail "repository maintenance protects full workflow latency"
 pass "repository guidance stays repository-facing"
 
 test -f "$ROOT/references/skill-ux-contract.md" || \
     fail "skill UX contract exists"
 grep -q '^## Phase transitions$' "$ROOT/references/skill-ux-contract.md" || \
     fail "skill UX contract defines phase transitions"
+grep -q '^## Latency budget and decision boundaries$' "$ROOT/references/skill-ux-contract.md" || \
+    fail "skill UX contract defines decision-boundary latency"
 grep -q '"references/skill-ux-contract.md"' "$ROOT/install.sh" || \
     fail "installer ships the skill UX contract"
 pass "skill UX contract is defined and delivered"
