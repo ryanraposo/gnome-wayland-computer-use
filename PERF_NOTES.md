@@ -26,8 +26,10 @@ Use the cheapest evidence that answers the next decision:
 Resolve the target once and reuse it until evidence invalidates it. Installed
 standalone web apps keep their own identity when desktop/window metadata or
 launcher flags distinguish them from the browser engine underneath them.
-`scripts/app-identity.sh` provides a cached launcher lookup for browser/PWA
-ambiguity without spending a screenshot.
+`scripts/app-identity.sh` provides a cached browser/PWA launcher lookup for
+ambiguous browser-backed targets without spending a screenshot. Distinct
+Electron applications remain app targets through their live desktop/runtime
+identity; the helper does not need to infer an engine from every executable.
 
 A structured driver result that directly proves the requested postcondition is
 sufficient verification. Avoid a duplicate post-action screenshot unless UI
