@@ -56,19 +56,22 @@ def cache_fresh(path):
         return False
 
 
-def detect_engine(executable):
-    base = pathlib.Path(executable).name.casefold()
-    if 'google-chrome' in base or base in {'chrome', 'chrome-wrapper'}:
+def detect_engine(argv):
+    tokens = [str(token).casefold() for token in argv]
+    joined = '\n'.join(tokens)
+    if any(x in joined for x in ('google-chrome', 'com.google.chrome')) or any(
+        pathlib.Path(token).name in {'chrome', 'chrome-wrapper'} for token in tokens
+    ):
         return 'chrome'
-    if 'chromium' in base:
+    if 'chromium' in joined or 'org.chromium.chromium' in joined:
         return 'chromium'
-    if 'brave' in base:
+    if 'brave' in joined or 'com.brave.browser' in joined:
         return 'brave'
-    if 'microsoft-edge' in base or base.startswith('edge'):
+    if 'microsoft-edge' in joined or 'com.microsoft.edge' in joined:
         return 'edge'
-    if 'firefox' in base:
+    if 'firefox' in joined or 'org.mozilla.firefox' in joined:
         return 'firefox'
-    if 'electron' in base:
+    if 'electron' in joined:
         return 'electron'
     return None
 
@@ -80,6 +83,16 @@ def parse_exec(value):
         return shlex.split(cleaned)
     except ValueError:
         return cleaned.split()
+
+
+def flag_value(argv, name):
+    prefix = name + '='
+    for index, token in enumerate(argv):
+        if token.startswith(prefix):
+            return token.split('=', 1)[1]
+        if token == name and index + 1 < len(argv):
+            return argv[index + 1]
+    return None
 
 
 def classify(path):
@@ -104,12 +117,10 @@ def classify(path):
     if not argv:
         return None
 
-    executable = argv[0]
-    engine = detect_engine(executable)
-    flags = argv[1:]
-    app_flag = next((x.split('=', 1)[1] for x in flags if x.startswith('--app-id=') and '=' in x), None)
-    app_url = next((x.split('=', 1)[1] for x in flags if x.startswith('--app=') and '=' in x), None)
-    standalone = bool(app_flag or app_url or any(x in {'--ssb', '--kiosk-app'} for x in flags))
+    engine = detect_engine(argv)
+    app_flag = flag_value(argv, '--app-id')
+    app_url = flag_value(argv, '--app')
+    standalone = bool(app_flag or app_url or any(x in {'--ssb', '--kiosk-app'} for x in argv))
     startup_wm_class = entry.get('StartupWMClass', '').strip() or None
 
     if standalone:
