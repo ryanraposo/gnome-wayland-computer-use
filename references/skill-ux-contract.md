@@ -9,7 +9,7 @@ closed loop. `SKILL.md` remains the invoked runtime authority.
 |---|---|---|
 | Route | User objective and callable tools known | Observe, act from cached identity, ask |
 | Observe | Sufficient app-scoped evidence or direct system state | Act, ask, or complete |
-| Act | One semantic action or deterministic action span selected | Act, verify, recover |
+| Act | One deterministic semantic action span selected | Act, verify, recover |
 | Verify | Structured read-back or fresh evidence establishes the needed state | Act, recover, or complete |
 | Recover | Failed rung classified | Observe or act through a different strategy |
 | Complete | Requested postcondition proved | Receipt |
@@ -31,8 +31,8 @@ Computer use should spend time on decisions, not ritual round-trips.
   sufficient, and SOM only when both are necessary.
 - A driver result that reports the requested effect as confirmed and verified
   can close verification without another capture.
-- Do not insert an observation between deterministic, semantically coupled
-  inputs when the next input does not depend on newly rendered state.
+- Do not insert an observation inside a deterministic semantic action span when
+  the next input does not depend on newly rendered state.
 - Type complete text in one semantic typing action; send a shortcut as one
   hotkey; use direct value selection instead of opening and re-reading menus
   when the runtime supports it.
