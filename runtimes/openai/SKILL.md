@@ -8,20 +8,20 @@ description: Control Ubuntu GNOME Wayland apps, capture, and input.
 Use the runtime's native computer-use tools according to their actual live
 schema. Do not invent Hermes-style `computer_use(...)` arguments when the
 available OpenAI/Codex tool has a different shape. This skill covers
-accessibility inspection and native application interaction. It also covers
-graphical pkexec package installation while keeping the compact description
-portable.
+accessibility inspection, native application interaction, installed web-app
+identity, and graphical pkexec package installation.
 
 At the first matching task in a session, run
-`"$HOME/.agents/skills/gnome-wayland-computer-use/scripts/check-update.sh" --quiet`.
-Continue if offline. Report an available version and its reinstall command,
-but never update silently.
+`"$HOME/.agents/skills/gnome-wayland-computer-use/scripts/check-update.sh" --quiet --cached-only`.
+This hot-path check never uses the network. Report a cached available version
+and its reinstall command, but never update silently. Use `--force` only for an
+explicit update check.
 
 ## Workflow Contract
 
-Own the workflow: route, take the cheapest useful observation, act once,
-verify from the lightest sufficient evidence, then recover or complete. Use the
-runtime's actual live tool schema throughout.
+Own the workflow: route once, take the cheapest useful observation, perform a
+deterministic semantic action span, verify at the next real decision boundary,
+then recover or complete. Use the runtime's actual live tool schema throughout.
 
 Infer reversible, local, least-disruptive defaults. Ask only questions whose
 answers materially change the action or authorization, normally one and never
@@ -63,20 +63,28 @@ Prefer distinct app/window identity first, then desktop-file/application ID or
 only for ordinary browser chrome/tabs or when standalone identity cannot be
 established.
 
-If ambiguity remains, inspect installed `.desktop` launchers in the normal XDG
-application directories once instead of repeatedly capturing the screen. Two
-PWAs sharing one browser engine remain separate targets when their desktop or
-window identities differ. Electron apps are app targets, not browser tabs.
-Re-resolve only when the target disappears, its identity changes, or an
-app-scoped operation proves the cached identity wrong.
+If ambiguity remains, inspect installed launchers without taking another
+screenshot:
+
+```bash
+"$HOME/.agents/skills/gnome-wayland-computer-use/scripts/app-identity.sh" "<app name>"
+```
+
+The resolver caches browser/PWA/Electron launcher identity in the runtime
+directory. Two PWAs sharing one browser engine remain separate targets when
+their desktop or window identities differ. Electron apps are app targets, not
+browser tabs. Re-resolve only when the target disappears, its identity changes,
+or an app-scoped operation proves the cached identity wrong. Use `--refresh`
+only when installed launchers changed or cached identity is contradicted.
 
 ## Closed-Loop Control
 
-1. Resolve the exact native app, installed web app, or browser target.
+1. Resolve the exact native app, installed web app, or browser target once; reuse it.
 2. Use accessibility/tree-only inspection when text, roles, and state are enough.
 3. Use a plain image only for visual reasoning; use combined image + element
    grounding only when an action actually needs both.
-4. Perform one meaningful action.
+4. Perform the largest deterministic semantic action span supported by the live
+   tool without crossing a decision or authorization boundary.
 5. Accept structured driver read-back when it directly proves the requested
    postcondition; otherwise obtain the cheapest fresh evidence that can.
 
@@ -85,27 +93,51 @@ closing a dialog, list mutation, or another fresh snapshot. Prefer app-scoped
 captures so unrelated windows are neither exposed nor accidentally targeted.
 
 Use the native tool's equivalent of post-action capture only when the action
-invalidates targeting structure or the result must be seen. Never assume a
-successful tool call means the UI changed, but also do not re-snapshot merely
-because an action occurred when structured read-back already proves success.
-After two identical failures, stop retrying, take fresh evidence, inspect the
-failure, and change strategy.
+invalidates targeting structure, the result must be seen, or the next decision
+depends on fresh state. Never assume a successful tool call means the UI
+changed, but also do not re-snapshot merely because an action occurred when
+structured read-back already proves success.
 
 When the live runtime exposes image-region or image-size controls, keep routine
 visual observations app-scoped and roughly 1024–1280 px on the longest edge;
 use full resolution only for details that require it. Never invent unsupported
 arguments.
 
+## Latency-First Interaction
+
+Spend tool/model round-trips only where a decision changes.
+
+- Reuse app/window discovery until evidence invalidates it.
+- Type complete intended text in one native typing action instead of per-character
+  or per-chunk loops.
+- Send a complete shortcut in one key/hotkey action.
+- Prefer semantic set/select/value actions over opening a menu and re-reading it.
+- After a verified click/focus on a stable text field, type immediately when the
+  next action does not depend on newly rendered state.
+- After verified typing, a known submit action may follow without an intermediate
+  screenshot when no new decision is required.
+- Scroll by a useful amount and inspect at the next content/layout decision,
+  rather than after every small input.
+- Use post-action capture at navigation, dialogs, materially changed lists,
+  visual ambiguity, canvas work, or another real decision boundary.
+- Avoid wait/sleep as routine pacing. Use a short wait only for a genuine
+  asynchronous transition with no completion signal, then extend only from evidence.
+- A confirmed/verified result continues the semantic span; a no-op,
+  background-unavailable, stale-target, or unverifiable result ends it and
+  triggers evidence/recovery.
+
 ## Interaction Patterns
 
-- Text: inspect the field using the cheapest sufficient mode, click, type,
-  verify the visible/read-back value, submit, and recapture only when resulting
-  structure or visual state must be established.
+- Text: inspect the field using the cheapest sufficient mode, click/focus it,
+  read the action verdict, then type the full text immediately when focus is
+  confirmed and structure stayed stable. Verify from read-back where possible;
+  recapture at submit/navigation boundaries.
 - Menus/selects: prefer a native value/select action. Otherwise click once,
   re-snapshot the opened menu, and select its fresh element.
 - Dialogs/file choosers: re-snapshot when they open; the prior element map is
-  stale. Verify the dialog closes and the parent app changes.
-- Scroll: target the intended scroll container and use small increments. Use
+  stale. Fill deterministic fields without observations between each field;
+  verify at submit/close.
+- Scroll: target the intended scroll container and use useful increments. Use
   accessibility read-back for textual questions and pixels for layout/visibility.
 - Drag/drop: prefer accessible source/destination elements. Use coordinates
   only for canvases or inaccessible drop zones, then verify placement.
@@ -175,14 +207,16 @@ the result unprivileged. Never type or request the user's password, use
 
 ```bash
 "$HOME/.agents/skills/gnome-wayland-computer-use/scripts/diagnose.sh"
+"$HOME/.agents/skills/gnome-wayland-computer-use/scripts/app-identity.sh" "<app name>"
 "$HOME/.agents/skills/gnome-wayland-computer-use/scripts/capture.sh" --timing --screen /tmp/gwcu-screen.png
 ```
 
-Read the full result before changing the capture/input stack. The timed helper
-separates host screenshot latency from native-runtime observation latency.
-Empty elements usually indicate AT-SPI or application accessibility; stale
-references require a fresh snapshot; repeated no-ops require evidence-based
-escalation.
+Read the full diagnostic result before changing the capture/input stack. The
+identity resolver handles browser/PWA ambiguity without spending a screenshot.
+The timed helper separates host screenshot latency from native-runtime
+observation latency. Empty elements usually indicate AT-SPI or application
+accessibility; stale references require a fresh snapshot; repeated no-ops
+require evidence-based escalation.
 
 Finish only after the observable UI or system postcondition is verified. State
 what changed, how it was verified, any remaining uncertainty, and only a
