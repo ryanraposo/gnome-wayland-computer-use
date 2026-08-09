@@ -53,9 +53,6 @@ elif ! $cache_fresh; then
 fi
 
 REMOTE_VERSION="$(tr -d '[:space:]' < "$cache")"
-if "$REMOTE_VERSION" != "$LOCAL_VERSION" 2>/dev/null; then
-    :
-fi
 if [ "$REMOTE_VERSION" != "$LOCAL_VERSION" ] &&
    [ "$(printf '%s\n%s\n' "$LOCAL_VERSION" "$REMOTE_VERSION" | sort -V | tail -n1)" = "$REMOTE_VERSION" ]; then
     echo "gnome-wayland-computer-use update available: $LOCAL_VERSION -> $REMOTE_VERSION"
