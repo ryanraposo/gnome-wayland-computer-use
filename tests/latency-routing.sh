@@ -15,6 +15,7 @@ pass() {
 }
 
 capture="$ROOT/scripts/capture.sh"
+serve="$ROOT/scripts/serve.sh"
 hermes_skill="$ROOT/SKILL.md"
 portable_skill="$ROOT/runtimes/openai/SKILL.md"
 
@@ -33,11 +34,32 @@ grep -q -- '--app-id=' "$hermes_skill" || \
     fail "Hermes skill recognizes standalone browser launchers"
 grep -Fq 'Use `mode="ax"` first' "$hermes_skill" || \
     fail "Hermes skill makes AX the cheap first observation"
-grep -q 'do not immediately pay for another screenshot' "$hermes_skill" || \
+grep -q 'do not immediately pay for another capture' "$hermes_skill" || \
     fail "Hermes skill avoids duplicate verification captures"
 grep -q '^## Installed Web App Identity$' "$portable_skill" || \
     fail "portable skill documents standalone web-app identity"
 pass "runtime routing is AX-first and installed-web-app aware"
+
+grep -q '^## Fast Path$' "$hermes_skill" || \
+    fail "Hermes skill documents a fast interaction path"
+grep -q 'Call `list_windows` only when app discovery still leaves multiple candidate' "$hermes_skill" || \
+    fail "Hermes skill avoids unconditional list_windows"
+if grep -q 'computer_use(action="click", element=7, capture_after=true)' "$hermes_skill"; then
+    fail "happy-path click example does not force a post-action capture"
+fi
+grep -q 'Do not add fixed waits between ordinary actions' "$hermes_skill" || \
+    fail "Hermes skill forbids routine wait pacing"
+grep -q '`focus_app` is an escalation/action tool, not target discovery' "$hermes_skill" || \
+    fail "Hermes skill keeps focus changes out of discovery"
+pass "interaction loop avoids discovery, wait, focus, and recapture churn"
+
+grep -q 'hermes config set computer_use.no_overlay true' "$serve" || \
+    fail "compatibility backend seeds Hermes no-overlay mode"
+grep -q 'hermes config set computer_use.max_image_dimension 1152' "$serve" || \
+    fail "compatibility backend seeds smaller routine images"
+grep -q '^export CUA_DRIVER_RS_TELEMETRY_ENABLED=0$' "$serve" || \
+    fail "compatibility backend disables cua-driver telemetry"
+pass "Hermes/cua-driver runtime gets low-overhead defaults"
 
 # The ydotool screen fallback should return as soon as the screenshot file
 # exists instead of imposing the old 1.5 second sleep.
