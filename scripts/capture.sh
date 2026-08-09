@@ -6,18 +6,21 @@
 set -euo pipefail
 
 MEDIA_MODE=false
+TIMING_MODE=false
 CAPTURE_MODE=desktop
 OUT=
 CAPTURE_PROOF=
+CAPTURE_STARTED_MS=$(date +%s%3N 2>/dev/null || printf '0')
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --media) MEDIA_MODE=true ;;
+        --timing) TIMING_MODE=true ;;
         --desktop) CAPTURE_MODE=desktop ;;
         --screen) CAPTURE_MODE=screen ;;
-        -*) echo "usage: $0 [--media] [--desktop|--screen] [output.png]" >&2; exit 2 ;;
+        -*) echo "usage: $0 [--media] [--timing] [--desktop|--screen] [output.png]" >&2; exit 2 ;;
         *)
             if [ -n "$OUT" ]; then
-                echo "usage: $0 [--media] [--desktop|--screen] [output.png]" >&2
+                echo "usage: $0 [--media] [--timing] [--desktop|--screen] [output.png]" >&2
                 exit 2
             fi
             OUT="$1"
@@ -38,13 +41,28 @@ MARKER=$(mktemp "$OUTDIR/.capture-marker.XXXXXX")
 SHELL_TMP=
 trap 'rm -f "$TMP" "$MARKER" ${SHELL_TMP:+"$SHELL_TMP"}' EXIT
 
+wait_for_new_screenshot() {
+    local ss_dir="$1" latest="" attempt=0
+    while [ "$attempt" -lt 40 ]; do
+        latest=$(find "$ss_dir" -maxdepth 1 -type f -newer "$MARKER" -printf '%T@ %p\n' 2>/dev/null \
+            | sort -nr | head -1 | cut -d' ' -f2-)
+        if [ -n "$latest" ] && [ -s "$latest" ]; then
+            printf '%s\n' "$latest"
+            return 0
+        fi
+        attempt=$((attempt + 1))
+        sleep 0.025
+    done
+    return 1
+}
+
 capture_gnome_shell_desktop() {
     local result runtime_dir
     command -v gdbus >/dev/null 2>&1 || return 1
     runtime_dir="${XDG_RUNTIME_DIR:-/tmp}"
     [ -d "$runtime_dir" ] && [ -w "$runtime_dir" ] || runtime_dir=/tmp
     SHELL_TMP=$(mktemp "$runtime_dir/gnome-wayland-desktop.XXXXXX.png") || return 1
-    result=$(timeout 10 gdbus call --session \
+    result=$(timeout 3 gdbus call --session \
         --dest io.github.ryanraposo.GnomeWaylandDesktopCapture \
         --object-path /io/github/ryanraposo/GnomeWaylandDesktopCapture \
         --method io.github.ryanraposo.GnomeWaylandDesktopCapture.CaptureDesktop \
@@ -72,14 +90,14 @@ capture_gnome_screenshot() {
             return 1
         fi
     fi
-    timeout 5 gnome-screenshot --file "$TMP" 2>/dev/null && [ -s "$TMP" ]
+    timeout 2 gnome-screenshot --file "$TMP" 2>/dev/null && [ -s "$TMP" ]
 }
 
 capture_portal_screenshot() {
     local portal_python="${GNOME_WAYLAND_SYSTEM_PYTHON:-/usr/bin/python3}"
     [ -x "$portal_python" ] || portal_python="$(command -v python3 2>/dev/null || true)"
     [ -n "$portal_python" ] || return 1
-    timeout 15 "$portal_python" - "$TMP" << 'PYEOF'
+    timeout 8 "$portal_python" - "$TMP" << 'PYEOF'
 import os
 import signal
 import sys
@@ -117,7 +135,7 @@ def close_request():
             None,
             None,
             Gio.DBusCallFlags.NONE,
-            2000,
+            1000,
             None,
         )
     except Exception:
@@ -155,10 +173,10 @@ try:
         'Screenshot',
         GLib.Variant('(sa{sv})', ('', options)),
         Gio.DBusCallFlags.NONE,
-        5000,
+        3000,
         None,
     )
-    timeout_id = GLib.timeout_add_seconds(10, lambda: (loop.quit(), False)[1])
+    timeout_id = GLib.timeout_add_seconds(5, lambda: (loop.quit(), False)[1])
     loop.run()
     GLib.source_remove(timeout_id)
 finally:
@@ -192,7 +210,7 @@ capture_portal_screencast() {
     local portal_python="${GNOME_WAYLAND_SYSTEM_PYTHON:-/usr/bin/python3}"
     [ -x "$portal_python" ] || portal_python="$(command -v python3 2>/dev/null || true)"
     [ -n "$portal_python" ] || return 1
-    timeout 60 "$portal_python" - "$TMP" << 'PYEOF'
+    timeout 25 "$portal_python" - "$TMP" << 'PYEOF'
 import os
 import pathlib
 import signal
@@ -234,7 +252,7 @@ def close_dbus_object(path, interface):
             None,
             None,
             Gio.DBusCallFlags.NONE,
-            2000,
+            1000,
             None,
         )
     except Exception:
@@ -278,10 +296,10 @@ def request(method, signature, values):
             method,
             GLib.Variant(signature, tuple(values)),
             Gio.DBusCallFlags.NONE,
-            5000,
+            3000,
             None,
         )
-        timeout_id = GLib.timeout_add_seconds(55, lambda: (loop.quit(), False)[1])
+        timeout_id = GLib.timeout_add_seconds(20, lambda: (loop.quit(), False)[1])
         loop.run()
         GLib.source_remove(timeout_id)
     finally:
@@ -338,7 +356,7 @@ try:
         'OpenPipeWireRemote',
         GLib.Variant('(oa{sv})', (session_handle, {})),
         Gio.DBusCallFlags.NONE,
-        5000,
+        3000,
         None,
         None,
     )
@@ -351,7 +369,7 @@ try:
     pipeline_bus = pipeline.get_bus()
     pipeline.set_state(Gst.State.PLAYING)
     message = pipeline_bus.timed_pop_filtered(
-        10 * Gst.SECOND,
+        5 * Gst.SECOND,
         Gst.MessageType.ERROR | Gst.MessageType.EOS,
     )
     pipeline.set_state(Gst.State.NULL)
@@ -368,32 +386,56 @@ PYEOF
 
 capture_ydotool_printscreen() {
     local ss_dir="${HOME}/Pictures/Screenshots"
-    mkdir -p "$ss_dir"
     local latest
+    mkdir -p "$ss_dir"
 
     command -v ydotool >/dev/null 2>&1 || return 1
     touch "$MARKER"
     # GNOME binds Shift+Print to a direct full-screen capture. Plain Print opens
     # the screenshot UI, whose remembered mode may be "window" or "selection".
-    timeout 3 ydotool key 42:1 99:1 99:0 42:0 2>/dev/null || return 1
-    sleep 1.5
-    latest=$(find "$ss_dir" -maxdepth 1 -type f -newer "$MARKER" -printf '%T@ %p\n' \
-        | sort -nr | head -1 | cut -d' ' -f2-)
-    [ -n "$latest" ] || return 1
+    timeout 1 ydotool key 42:1 99:1 99:0 42:0 2>/dev/null || return 1
+    latest=$(wait_for_new_screenshot "$ss_dir") || return 1
     cp "$latest" "$TMP"
     rm -f "$latest"
     [ -s "$TMP" ]
 }
 
 get_window_rects() {
-    timeout 3 gdbus call --session \
+    timeout 1 gdbus call --session \
         --dest org.cua.WinRects \
         --object-path /org/cua/WinRects \
         --method org.cua.WinRects.GetRects 2>/dev/null
 }
 
 toggle_show_desktop() {
-    timeout 3 ydotool key 125:1 32:1 32:0 125:0 2>/dev/null
+    timeout 1 ydotool key 125:1 32:1 32:0 125:0 2>/dev/null
+}
+
+wait_for_window_state_change() {
+    local baseline="$1" current="" attempt=0
+    while [ "$attempt" -lt 8 ]; do
+        current=$(get_window_rects || true)
+        if [ -n "$current" ] && [ "$current" != "$baseline" ]; then
+            return 0
+        fi
+        attempt=$((attempt + 1))
+        sleep 0.025
+    done
+    return 1
+}
+
+wait_for_window_state() {
+    local expected="$1" current="" attempt=0
+    while [ "$attempt" -lt 20 ]; do
+        current=$(get_window_rects || true)
+        if [ "$current" = "$expected" ]; then
+            printf '%s\n' "$current"
+            return 0
+        fi
+        attempt=$((attempt + 1))
+        sleep 0.025
+    done
+    return 1
 }
 
 capture_ydotool_desktop() {
@@ -408,25 +450,28 @@ capture_ydotool_desktop() {
     if [[ "$before_state" == *'"visible":true'* ]]; then
         toggle_show_desktop || return 1
         toggled=true
-        sleep 0.4
+        # GNOME's animation normally changes the compositor state almost
+        # immediately. Poll briefly rather than imposing a fixed delay.
+        wait_for_window_state_change "$before_state" || true
     fi
 
     touch "$MARKER"
-    timeout 3 ydotool key 42:1 99:1 99:0 42:0 2>/dev/null || capture_rc=$?
-    sleep 1.5
+    timeout 1 ydotool key 42:1 99:1 99:0 42:0 2>/dev/null || capture_rc=$?
+    if [ "$capture_rc" -eq 0 ]; then
+        latest=$(wait_for_new_screenshot "$ss_dir") || capture_rc=1
+    fi
 
     if "$toggled"; then
         toggle_show_desktop || capture_rc=1
-        sleep 0.2
+        after_state=$(wait_for_window_state "$before_state" || true)
+    else
+        after_state=$(get_window_rects || true)
     fi
     [ "$capture_rc" -eq 0 ] || return 1
-    after_state=$(get_window_rects || true)
     [ "$after_state" = "$before_state" ] || return 1
     CAPTURE_PROOF="show-desktop-restored=true"
 
-    latest=$(find "$ss_dir" -maxdepth 1 -type f -newer "$MARKER" -printf '%T@ %p\n' \
-        | sort -nr | head -1 | cut -d' ' -f2-)
-    [ -n "$latest" ] || return 1
+    [ -n "${latest:-}" ] || return 1
     cp "$latest" "$TMP"
     rm -f "$latest"
     [ -s "$TMP" ]
@@ -439,9 +484,17 @@ finish_capture() {
 }
 
 report_capture() {
-    local method="$1"
+    local method="$1" now_ms elapsed_ms
     if [ -n "$CAPTURE_PROOF" ]; then
         printf 'capture_proof=%s\n' "$CAPTURE_PROOF" >&2
+    fi
+    if "$TIMING_MODE"; then
+        now_ms=$(date +%s%3N 2>/dev/null || printf '0')
+        if [[ "$CAPTURE_STARTED_MS" =~ ^[0-9]+$ ]] && [[ "$now_ms" =~ ^[0-9]+$ ]] && \
+           [ "$CAPTURE_STARTED_MS" -gt 0 ] && [ "$now_ms" -ge "$CAPTURE_STARTED_MS" ]; then
+            elapsed_ms=$((now_ms - CAPTURE_STARTED_MS))
+            printf 'capture_elapsed_ms=%s\n' "$elapsed_ms" >&2
+        fi
     fi
     if "$MEDIA_MODE"; then
         printf 'MEDIA:%s\n' "$OUT"
