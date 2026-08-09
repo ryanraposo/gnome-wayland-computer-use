@@ -21,6 +21,7 @@ hermes_skill="$ROOT/SKILL.md"
 portable_skill="$ROOT/runtimes/openai/SKILL.md"
 contract="$ROOT/references/skill-ux-contract.md"
 installer="$ROOT/install.sh"
+landing="$ROOT/index.html"
 
 if grep -Eq 'sleep (1\.5|0\.4|0\.2)([[:space:]]|$)' "$capture"; then
     fail "capture helper has no legacy fixed screenshot sleeps"
@@ -59,7 +60,11 @@ grep -q '"scripts/app-identity.sh"' "$installer" || \
     fail "installer ships the web-app identity resolver"
 grep -q '^RestartSec=250ms$' "$installer" || \
     fail "managed services recover without a two-second restart penalty"
-pass "runtime contract attacks discovery, action, wait, verification, and recovery latency"
+grep -q 'Installed web apps stay apps' "$landing" || \
+    fail "landing page explains installed-web-app routing"
+grep -q 'Route once → cheapest useful evidence' "$landing" || \
+    fail "landing page reflects the end-to-end low-latency loop"
+pass "runtime and published surfaces share the latency-routing contract"
 
 # First-use update routing must never wait on the network. The normal explicit
 # update command remains free to refresh its cache.
@@ -85,7 +90,7 @@ elapsed_ms=$(( $(date +%s%3N) - start_ms ))
 pass "first-use update check is network-free (${elapsed_ms}ms)"
 
 # Installed web apps backed by the same browser must keep distinct identities,
-# while a normal browser launcher remains classified as browser chrome.
+# including browser commands hidden behind env/Flatpak wrappers.
 identity_home="$TEST_TMP/identity-home"
 identity_data="$identity_home/data"
 identity_runtime="$identity_home/runtime"
@@ -111,6 +116,13 @@ Name=Gmail
 Exec=/usr/bin/google-chrome-stable --profile-directory=Default --app=https://mail.google.com/
 StartupWMClass=crx_gmail_app
 DESKTOP
+cat > "$identity_data/applications/flatpak-docs.desktop" <<'DESKTOP'
+[Desktop Entry]
+Type=Application
+Name=Docs
+Exec=/usr/bin/flatpak run com.google.Chrome --app https://docs.google.com/
+StartupWMClass=crx_docs_app
+DESKTOP
 
 identity_json="$TEST_TMP/identity.json"
 HOME="$identity_home" XDG_DATA_HOME="$identity_data" XDG_DATA_DIRS="$TEST_TMP/empty-data" \
@@ -127,6 +139,9 @@ assert by_name['ChatGPT']['standalone_web_app'] is True
 assert by_name['ChatGPT']['app_id'] == 'chatgpt_app'
 assert by_name['Gmail']['kind'] == 'installed-web-app'
 assert by_name['Gmail']['standalone_web_app'] is True
+assert by_name['Docs']['kind'] == 'installed-web-app'
+assert by_name['Docs']['engine'] == 'chrome'
+assert by_name['Docs']['site'] == 'https://docs.google.com/'
 assert by_name['ChatGPT']['desktop_id'] != by_name['Gmail']['desktop_id']
 PY
 query_json="$TEST_TMP/query.json"
@@ -139,7 +154,7 @@ rows = json.load(open(sys.argv[1], encoding='utf-8'))
 assert len(rows) == 1
 assert rows[0]['display_name'] == 'ChatGPT'
 PY
-pass "two PWAs sharing Chrome remain distinct app targets"
+pass "browser, PWAs, and wrapped PWAs retain distinct identities"
 
 # The ydotool screen fallback should return as soon as the screenshot file
 # exists instead of imposing the old 1.5 second sleep.
