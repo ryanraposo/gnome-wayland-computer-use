@@ -20,6 +20,7 @@ update_check="$ROOT/scripts/check-update.sh"
 hermes_skill="$ROOT/SKILL.md"
 portable_skill="$ROOT/runtimes/openai/SKILL.md"
 contract="$ROOT/references/skill-ux-contract.md"
+installer="$ROOT/install.sh"
 
 if grep -Eq 'sleep (1\.5|0\.4|0\.2)([[:space:]]|$)' "$capture"; then
     fail "capture helper has no legacy fixed screenshot sleeps"
@@ -54,7 +55,11 @@ grep -q 'semantic action span' "$contract" || \
     fail "skill UX contract permits deterministic action spans"
 grep -q 'A fresh screenshot is not a phase-transition requirement' "$contract" || \
     fail "skill UX contract rejects ritual recapture"
-pass "runtime contract attacks discovery, action, wait, and verification latency"
+grep -q '"scripts/app-identity.sh"' "$installer" || \
+    fail "installer ships the web-app identity resolver"
+grep -q '^RestartSec=250ms$' "$installer" || \
+    fail "managed services recover without a two-second restart penalty"
+pass "runtime contract attacks discovery, action, wait, verification, and recovery latency"
 
 # First-use update routing must never wait on the network. The normal explicit
 # update command remains free to refresh its cache.
@@ -84,7 +89,7 @@ pass "first-use update check is network-free (${elapsed_ms}ms)"
 identity_home="$TEST_TMP/identity-home"
 identity_data="$identity_home/data"
 identity_runtime="$identity_home/runtime"
-mkdir -p "$identity_data/applications" "$identity_runtime"
+mkdir -p "$identity_data/applications" "$identity_runtime" "$TEST_TMP/empty-data"
 cat > "$identity_data/applications/google-chrome.desktop" <<'DESKTOP'
 [Desktop Entry]
 Type=Application
@@ -109,7 +114,7 @@ DESKTOP
 
 identity_json="$TEST_TMP/identity.json"
 HOME="$identity_home" XDG_DATA_HOME="$identity_data" XDG_DATA_DIRS="$TEST_TMP/empty-data" \
-    XDG_RUNTIME_DIR="$identity_runtime" "$identity" > "$identity_json"
+    XDG_RUNTIME_DIR="$identity_runtime" bash "$identity" > "$identity_json"
 python3 - "$identity_json" <<'PY' || fail "installed web-app resolver keeps browser/PWA identity distinct"
 import json
 import sys
@@ -126,7 +131,7 @@ assert by_name['ChatGPT']['desktop_id'] != by_name['Gmail']['desktop_id']
 PY
 query_json="$TEST_TMP/query.json"
 HOME="$identity_home" XDG_DATA_HOME="$identity_data" XDG_DATA_DIRS="$TEST_TMP/empty-data" \
-    XDG_RUNTIME_DIR="$identity_runtime" "$identity" ChatGPT > "$query_json"
+    XDG_RUNTIME_DIR="$identity_runtime" bash "$identity" ChatGPT > "$query_json"
 python3 - "$query_json" <<'PY' || fail "installed web-app resolver supports cheap name lookup"
 import json
 import sys
