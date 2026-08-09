@@ -8,65 +8,83 @@ screenshot problem.
 1. **Startup/routing** — skill first-use work and update checks.
 2. **Target discovery** — app/window lookup and browser-vs-installed-web-app identity.
 3. **Observation** — native `computer_use` AX, vision, and SOM latency.
-4. **Action loop** — tool/model round-trips for click, type, key, set-value,
-   scroll, drag, and focus delivery.
-5. **Verification** — redundant post-action observation versus structured
-   driver read-back.
-6. **Host capture** — `scripts/capture.sh` desktop/screen routing.
-7. **Recovery** — service restart and fallback delay after a real failure.
+4. **Action loop** — tool/model round-trips spent on click, type, shortcuts,
+   values, scrolling, and waits.
+5. **Verification** — duplicate observations after already verified actions.
+6. **Host capture** — `scripts/capture.sh` desktop/screen helper latency.
+7. **Recovery** — service restart and readiness polling after a backend failure.
 
-## Policy
+## Fast-path policy
 
-Use the cheapest evidence that answers the next decision:
+- First-use update checks are cache-only; the computer-use hot path never waits
+  on DNS or HTTP.
+- Resolve an app/window once and reuse it until evidence invalidates the target.
+- Installed standalone web apps keep their own identity. The launcher resolver
+  understands direct and wrapped browser commands, including Flatpak-style
+  launchers, `--app-id`, `--app`, desktop IDs, and `StartupWMClass`.
+- AX is the default when text/roles/state are sufficient. Vision is for pixels;
+  SOM is for pixels plus element grounding.
+- Keep deterministic semantic input together: complete typing, complete
+  shortcuts, direct value setting, and coupled click → type / type → submit
+  spans when the next input does not depend on newly rendered state.
+- Treat structured `confirmed` + `verified` read-back as verification when it
+  proves the requested postcondition.
+- Obtain fresh evidence at real decision boundaries: navigation, dialogs,
+  material list changes, stale targets, canvas/visual ambiguity, focus
+  escalation, or when the next action depends on new UI state.
+- Use `wait` only for genuine asynchronous transitions without a completion
+  signal; start short and extend from evidence.
 
-1. accessibility/tree-only for readable and targetable UI;
-2. plain image for visual-only reasoning;
-3. combined image + element grounding only when both are required.
+## Host capture
 
-Resolve the target once and reuse it until evidence invalidates it. Installed
-standalone web apps keep their own identity when desktop/window metadata or
-launcher flags distinguish them from the browser engine underneath them.
-`scripts/app-identity.sh` provides a cached browser/PWA launcher lookup for
-ambiguous browser-backed targets without spending a screenshot. Distinct
-Electron applications remain app targets through their live desktop/runtime
-identity; the helper does not need to infer an engine from every executable.
+`capture.sh --timing` emits `capture_elapsed_ms=N` on stderr while preserving
+normal stdout/media behavior.
 
-A structured driver result that directly proves the requested postcondition is
-sufficient verification. Avoid a duplicate post-action screenshot unless UI
-structure changed, targeting references became stale, visual evidence is
-actually required, or the next action depends on newly rendered state.
+Compatibility screenshot paths poll for readiness instead of imposing the old
+fixed 1.5 second screenshot sleep. Desktop compatibility capture also polls
+compositor restoration instead of fixed animation sleeps.
 
-Execute deterministic semantic action spans instead of manufacturing model/tool
-round-trips: one full-text typing action, one hotkey, direct semantic value
-selection, useful scroll increments, and no intermediate capture between
-confirmed coupled actions when the next action does not depend on changed UI.
+The regression guard requires mocked immediate screen and desktop compatibility
+captures to remain below one second. This ceiling is intentionally loose enough
+for shared CI while preventing reintroduction of multi-second fixed waits.
 
-First-use update checks are cache-only. Explicit update checks can refresh the
-cache. Managed cua-driver/ydotool services use short restart delays so a real
-backend failure does not impose an avoidable multi-second recovery penalty.
+## Recovery
 
-## Host capture targets
+Managed `cua-driver` and `ydotoold` services use a 250 ms restart delay instead
+of two seconds. Installer readiness probes use 100 ms polling rather than one
+second polling.
 
-`capture.sh --timing` emits `capture_elapsed_ms=N` on stderr.
+## Final integration guard
 
-The compatibility screenshot rungs return as soon as the screenshot file and
-required compositor state are ready. Regression guards require mocked immediate
-captures to finish in under one second, preventing the former fixed 1.5 second
-waits from returning.
+The published landing page, runtime skills, installer, helper scripts, UX
+contract, and tests are expected to describe the same latency model. CI guards
+that contract, including browser vs PWA identity and wrapped/Flatpak launchers.
 
-## Measurement
+On the final integration CI run, mocked hot paths measured:
 
-Do not combine unlike costs into one number. Measure repeated warm runs and
-report median/p50 and p95 separately for:
+- cache-only first-use update check: **9 ms**;
+- immediate screen fallback: **34 ms**;
+- desktop compatibility fallback: **284 ms**.
 
-- first-use routing with a cold/no update cache;
-- app/window discovery and cached installed-web-app identity lookup;
-- native `ax`, `vision`, and `som` observations;
-- representative semantic actions and a short form-filling sequence;
-- desktop and screen helper capture;
-- backend restart/recovery when deliberately exercised.
+These are regression-fixture timings, not claims about a real GNOME session.
+They prove that the repository itself no longer injects the former multi-second
+fixed waits into those paths.
 
-The important user-facing metric is a representative task span: resolve target,
-inspect, act, and prove the requested result. A faster screenshot is useful; a
-workflow that avoids unnecessary screenshots, discovery calls, waits, and model
-round-trips is the larger win.
+## Real-machine measurement
+
+Measure native Hermes/cua-driver behavior separately from the host helper:
+
+- repeated `ax` captures;
+- repeated `vision` captures;
+- repeated `som` captures;
+- representative semantic actions and verified action spans;
+- `capture.sh --timing --screen`;
+- `capture.sh --timing --desktop`.
+
+Record median/p50, p95, and worst. If native image capture remains slow while AX
+and host capture are fast, investigate cua-driver/portal/image encoding rather
+than adding sleeps or another screenshot stack.
+
+The goal is a computer-use loop that spends latency on meaningful decisions,
+not on redundant discovery, network checks, screenshots, tiny input calls,
+ceremonial verification, or recovery timers.
