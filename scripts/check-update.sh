@@ -7,12 +7,18 @@ STATE_HOME="${GNOME_WAYLAND_COMPUTER_USE_UPDATE_STATE_HOME:-${XDG_STATE_HOME:-$H
 CACHE_SECONDS="${GNOME_WAYLAND_COMPUTER_USE_UPDATE_CACHE_SECONDS:-86400}"
 QUIET=false
 FORCE=false
+CACHED_ONLY=false
 
 for arg in "$@"; do
     case "$arg" in
         --quiet) QUIET=true ;;
         --force) FORCE=true ;;
-        --help|-h) echo "Usage: check-update.sh [--quiet] [--force]"; exit 0 ;;
+        --cached-only) CACHED_ONLY=true ;;
+        --help|-h)
+            echo "Usage: check-update.sh [--quiet] [--force] [--cached-only]"
+            echo "  --cached-only  Never use the network; read an existing cache only"
+            exit 0
+            ;;
         *) echo "error: unknown option: $arg" >&2; exit 2 ;;
     esac
 done
@@ -28,12 +34,16 @@ if ! $FORCE && [ -s "$cache" ]; then
     [ "$((now - modified))" -lt "$CACHE_SECONDS" ] && cache_fresh=true
 fi
 
-if ! $cache_fresh; then
+if $CACHED_ONLY; then
+    # Computer-use startup must never wait on DNS/network. A stale cached version
+    # is still useful as an advisory; no cache simply means no startup notice.
+    [ -s "$cache" ] || exit 0
+elif ! $cache_fresh; then
     if ! command -v curl >/dev/null 2>&1; then
         $QUIET || echo "update check skipped: curl is unavailable"
         exit 0
     fi
-    remote="$(curl -fsSL --connect-timeout 3 --max-time 8 "$BASE_URL/VERSION" 2>/dev/null || true)"
+    remote="$(curl -fsSL --connect-timeout 2 --max-time 4 "$BASE_URL/VERSION" 2>/dev/null || true)"
     remote="$(printf '%s' "$remote" | tr -d '[:space:]')"
     if [[ ! "$remote" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
         $QUIET || echo "update check skipped: release endpoint is offline"
@@ -43,6 +53,9 @@ if ! $cache_fresh; then
 fi
 
 REMOTE_VERSION="$(tr -d '[:space:]' < "$cache")"
+if "$REMOTE_VERSION" != "$LOCAL_VERSION" 2>/dev/null; then
+    :
+fi
 if [ "$REMOTE_VERSION" != "$LOCAL_VERSION" ] &&
    [ "$(printf '%s\n%s\n' "$LOCAL_VERSION" "$REMOTE_VERSION" | sort -V | tail -n1)" = "$REMOTE_VERSION" ]; then
     echo "gnome-wayland-computer-use update available: $LOCAL_VERSION -> $REMOTE_VERSION"
