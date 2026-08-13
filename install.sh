@@ -7,9 +7,8 @@ VERSION="2.3.0"
 BASE_URL="${GWCU_BASE_URL:-https://ryanraposo.github.io/gnome-wayland-computer-use}"
 
 # Deliberately pinned. Do not replace this with "latest".
-# Cua Driver 0.19.3's standard Linux release artifact is built with
-# `--features cua-driver/portal-input`. On GNOME/Mutter this supplies
-# xdg-desktop-portal RemoteDesktop + EIS input without a second binary.
+# Cua Driver 0.19.3's standard Linux release artifact provides the portal-input
+# path used by GNOME RemoteDesktop -> EIS/libei control.
 CUA_DRIVER_RS_VERSION="${GWCU_CUA_DRIVER_RS_VERSION:-0.19.3}"
 
 SELF=""
@@ -113,7 +112,7 @@ PATHBLOCK
 
 refresh_cua() {
     command -v curl >/dev/null 2>&1 || die "curl is required to install Cua Driver"
-    info "Installing pinned Cua Driver $CUA_DRIVER_RS_VERSION (portal-input release build)"
+    info "Installing pinned Cua Driver $CUA_DRIVER_RS_VERSION"
     CUA_DRIVER_RS_VERSION="$CUA_DRIVER_RS_VERSION" \
     CUA_DRIVER_RS_NO_MODIFY_PATH=1 \
         /bin/bash -c "$(curl -fsSL https://cua.ai/driver/install.sh)" ||
@@ -130,7 +129,7 @@ refresh_cua() {
 doctor_hints() {
     local file="$1"
     [ -s "$file" ] || return 0
-    python3 - "$file" <<'PY' 2>/dev/null || true
+    /usr/bin/python3 - "$file" <<'PY' 2>/dev/null || true
 import json, sys
 try:
     data=json.load(open(sys.argv[1], encoding="utf-8"))
@@ -140,18 +139,14 @@ keys={"hint","hints","message","detail","details","recovery","recommendation","r
 out=[]
 def walk(x, key=""):
     if isinstance(x, dict):
-        for k,v in x.items():
-            walk(v, str(k).lower())
+        for k,v in x.items(): walk(v, str(k).lower())
     elif isinstance(x, list):
-        for v in x:
-            walk(v, key)
+        for v in x: walk(v, key)
     elif isinstance(x, str) and (key in keys or any(t in x.lower() for t in ("permission","portal","remote desktop","wayland","drm","pipewire","winrects"))):
         s=" ".join(x.split())
-        if s and s not in out:
-            out.append(s)
+        if s and s not in out: out.append(s)
 walk(data)
-for s in out[:12]:
-    print(f"  - {s}")
+for s in out[:12]: print(f"  - {s}")
 PY
 }
 
@@ -183,38 +178,50 @@ maybe_add_video_group() {
     return 0
 }
 
-managed_agents_setup() {
-    local pref="$STATE/managed-agents" response value=on
+managed_truths_setup() {
+    local pref="$STATE/managed-truths" legacy="$STATE/managed-agents" response value=on
+
+    if [ ! -s "$pref" ] && [ -s "$legacy" ]; then
+        IFS= read -r value <"$legacy" || value=on
+        case "${value,,}" in off|no|false|0) value=off ;; *) value=on ;; esac
+        printf '%s\n' "$value" >"$pref.tmp"
+        chmod 600 "$pref.tmp"
+        mv -f "$pref.tmp" "$pref"
+        rm -f "$legacy"
+        ok "Migrated managed-truth preference from the pre-.gwcu installer"
+    fi
+
     if [ -s "$pref" ]; then
         IFS= read -r value <"$pref" || value=on
         case "${value,,}" in off|no|false|0) value=off ;; *) value=on ;; esac
-        ok "Managed AGENTS.md blocks already configured: $value"
+        ok "Managed .gwcu truths already configured: $value"
         return 0
     fi
 
     if ! $EXPLICIT_UNATTENDED && [ -r /dev/tty ]; then
-        printf 'Would you like to allow managed AGENTS.md blocks? They can reduce turns/calls by up to 100%% for repeat identity-routing setup [Y/n]: ' >/dev/tty
+        printf 'Enable managed .gwcu local truths? Git scopes will add /.gwcu to .gitignore before storing machine/workspace facts [Y/n]: ' >/dev/tty
         read -r response </dev/tty || response=""
         [[ "$response" =~ ^[nN] ]] && value=off
     fi
+
     printf '%s\n' "$value" >"$pref.tmp"
     chmod 600 "$pref.tmp"
     mv -f "$pref.tmp" "$pref"
     if [ "$value" = on ]; then
-        ok "Managed AGENTS.md blocks enabled (bounded stable app identity only)"
+        ok "Managed .gwcu truths enabled (repo/workspace-local; Git scopes are ignored before write)"
     else
-        ok "Managed AGENTS.md blocks disabled"
+        ok "Managed .gwcu truths disabled"
     fi
 }
 
 countdown_portal() {
     local n
-    info "GNOME calls its compositor-approved local pointer/keyboard permission “Remote Desktop”."
+    info "GNOME calls its compositor-approved local pointer/keyboard permission 'Remote Desktop'."
     info "Cua uses that portal only to obtain an EIS/libei input session; GWCU installs no RDP/VNC server or raw-input daemon."
     info "The one-time handshake sends no click or key. It only moves the pointer once."
     printf '\n'
     for n in 3 2 1; do
-        printf '\r\033[34m[INFO]\033[0m GNOME permission prompt may appear in %s… ' "$n"
+        printf '\r\033[34m[INFO]\033[0m GNOME permission prompt may appear in %s... ' "$n"
         sleep 1
     done
     printf '\r\033[34m[INFO]\033[0m Approve the GNOME Remote Desktop / remote-control prompt if it appears.          \n'
@@ -240,7 +247,8 @@ Usage: install.sh [--compat] [--unattended] [--hermes|--agent-only]
 
 Environment:
   GWCU_CUA_DRIVER_RS_VERSION=<version>  deliberate release qualification override
-  GWCU_PROJECT_MEMORY=off               runtime override for managed AGENTS.md memory
+  GWCU_TRUTHS=off                       runtime override for managed .gwcu truth use
+  GWCU_SCOPE_ROOT=<path>                explicit non-Git/repo truth scope override
 HELP
             exit 0
             ;;
@@ -312,15 +320,13 @@ if [ "$DISTRO_ID" = ubuntu ] && [ "$DISTRO_VERSION" = 26.04 ]; then
         if ! as_root apt-get install -y --no-install-recommends "${missing[@]}"; then
             info "Refreshing apt metadata and retrying once"
             as_root apt-get update
-            as_root apt-get install -y --no-install-recommends "${missing[@]}" ||
-                die "Ubuntu dependency repair failed"
+            as_root apt-get install -y --no-install-recommends "${missing[@]}" || die "Ubuntu dependency repair failed"
         fi
     fi
 
     PW_VERSION=$(dpkg-query -W -f='${Version}' pipewire 2>/dev/null | sed 's/^[0-9][0-9]*://;s/-.*//' || true)
     [ -n "$PW_VERSION" ] || die "Could not determine the installed PipeWire version"
-    dpkg --compare-versions "$PW_VERSION" ge 0.3.40 ||
-        die "PipeWire >= 0.3.40 is required; Ubuntu package reports $PW_VERSION"
+    dpkg --compare-versions "$PW_VERSION" ge 0.3.40 || die "PipeWire >= 0.3.40 is required; Ubuntu package reports $PW_VERSION"
     ok "PipeWire $PW_VERSION satisfies the >= 0.3.40 floor"
 fi
 
@@ -373,8 +379,7 @@ if [ -n "$PRE_CUA" ] && "$PRE_CUA" --version 2>/dev/null | grep -Fq "$CUA_DRIVER
 else
     refresh_cua
 fi
-"$CUA" describe health_report >/dev/null 2>&1 ||
-    die "Pinned Cua Driver does not expose the stable health_report surface"
+"$CUA" describe health_report >/dev/null 2>&1 || die "Pinned Cua Driver does not expose the stable health_report surface"
 ok "Cua Driver $CUA_DRIVER_RS_VERSION: $CUA"
 
 CUA_HOME="${CUA_DRIVER_HOME:-$HOME/.cua-driver}"
@@ -392,8 +397,7 @@ if [ -f "$HELPER/$WINRECTS_UUID/extension.js" ] && [ -f "$WINRECTS_DIR/extension
     helper_matches=true
 fi
 helper_was_active=false
-if command -v gnome-extensions >/dev/null 2>&1 && \
-   gnome-extensions info "$WINRECTS_UUID" 2>/dev/null | grep -q 'State:[[:space:]]*ACTIVE'; then
+if command -v gnome-extensions >/dev/null 2>&1 && gnome-extensions info "$WINRECTS_UUID" 2>/dev/null | grep -q 'State:[[:space:]]*ACTIVE'; then
     helper_was_active=true
 fi
 helper_changed=false
@@ -404,8 +408,7 @@ fi
 [ -d "$WINRECTS_DIR" ] || die "Cua WinRects was not installed"
 
 helper_active=false
-if command -v gnome-extensions >/dev/null 2>&1 && \
-   gnome-extensions info "$WINRECTS_UUID" 2>/dev/null | grep -q 'State:[[:space:]]*ACTIVE'; then
+if command -v gnome-extensions >/dev/null 2>&1 && gnome-extensions info "$WINRECTS_UUID" 2>/dev/null | grep -q 'State:[[:space:]]*ACTIVE'; then
     helper_active=true
 fi
 RELOAD_REQUIRED=false
@@ -445,7 +448,7 @@ install_bundle() {
     for rel in VERSION references/skill-ux-contract.md \
         scripts/app-identity.sh scripts/capture.sh scripts/check-update.sh scripts/computer-use.sh \
         scripts/cua-health.py scripts/diagnose.sh scripts/observe.sh scripts/observer.py \
-        scripts/portal-control.py scripts/profile.sh scripts/teardown.sh \
+        scripts/portal-control.py scripts/profile.sh scripts/teardown.sh scripts/truths.py \
         systemd/user/gnome-wayland-computer-use-observer.socket \
         systemd/user/gnome-wayland-computer-use-observer.service; do
         get_file "$rel" "$dst/$rel"
@@ -459,7 +462,7 @@ install_bundle() {
 install_bundle "$PRIMARY" runtimes/openai/SKILL.md
 mkdir -p "$PRIMARY/agents"
 get_file agents/openai.yaml "$PRIMARY/agents/openai.yaml"
-managed_agents_setup
+managed_truths_setup
 
 if $HERMES; then
     install_bundle "$HERMES_SKILL" SKILL.md
@@ -530,7 +533,6 @@ if [ -f "$LEGACY_YDO" ] && grep -q 'Description=ydotool uinput daemon' "$LEGACY_
     systemctl --user disable --now ydotoold.service 2>/dev/null || true
     rm -f "$LEGACY_YDO"
 fi
-
 LEGACY_RULE='/etc/udev/rules.d/80-gnome-wayland-computer-use.rules'
 LEGACY_RULE_VALUE='KERNEL=="uinput", GROUP="input", MODE="0660", TAG+="uaccess", OPTIONS+="static_node=uinput"'
 if [ -f "$LEGACY_RULE" ] && grep -Fxq "$LEGACY_RULE_VALUE" "$LEGACY_RULE"; then
@@ -539,8 +541,7 @@ if [ -f "$LEGACY_RULE" ] && grep -Fxq "$LEGACY_RULE_VALUE" "$LEGACY_RULE"; then
 fi
 LEGACY_EXT="${XDG_DATA_HOME:-$HOME/.local/share}/gnome-shell/extensions/desktop-capture@gnome-wayland-computer-use"
 if [ -d "$LEGACY_EXT" ]; then
-    command -v gnome-extensions >/dev/null 2>&1 &&
-        gnome-extensions disable desktop-capture@gnome-wayland-computer-use 2>/dev/null || true
+    command -v gnome-extensions >/dev/null 2>&1 && gnome-extensions disable desktop-capture@gnome-wayland-computer-use 2>/dev/null || true
     rm -rf "$LEGACY_EXT"
 fi
 systemctl --user daemon-reload 2>/dev/null || true
@@ -554,10 +555,8 @@ cp "$PRIMARY/systemd/user/gnome-wayland-computer-use-observer.socket" "$UNIT_DIR
 cp "$PRIMARY/systemd/user/gnome-wayland-computer-use-observer.service" "$UNIT_DIR/"
 systemctl --user daemon-reload || $COMPAT || die "Could not reload user systemd"
 if ! $COMPAT; then
-    systemctl --user enable --now gnome-wayland-computer-use-observer.socket ||
-        die "Could not enable observer socket"
-    systemctl --user is-active --quiet gnome-wayland-computer-use-observer.socket ||
-        die "Observer socket is not active"
+    systemctl --user enable --now gnome-wayland-computer-use-observer.socket || die "Could not enable observer socket"
+    systemctl --user is-active --quiet gnome-wayland-computer-use-observer.socket || die "Observer socket is not active"
 fi
 /usr/bin/python3 "$PRIMARY/scripts/observer.py" self-test >/dev/null || die "Observer self-test failed"
 ok "Private socket-activated ScreenCast observer ready"
@@ -584,8 +583,10 @@ pointer/keyboard path; a separate first whole-screen observation may show Screen
 consent.
 
 Use `/computer-use status` for a compact runtime view, `/computer-use consent` to verify
-the local portal contract, `/computer-use managed [on|off|status]` for bounded project
-AGENTS.md identity memory, and `/computer-use doctor` for deterministic diagnosis.
+the local portal contract, `/computer-use managed [on|off|status]` for repo/workspace
+`.gwcu` persistence, `/computer-use truths` to show the current truth scope, and
+`/computer-use doctor` for deterministic diagnosis. Persistent machine/workspace truth
+belongs in `.gwcu`, never AGENTS.md. Live Cua state wins on contradiction.
 
 For explicit whole-screen observation, use the installed observer. Do not invent a
 raw-input fallback when Cua refuses a delivery shape.
@@ -596,7 +597,7 @@ SOUL
     chmod 600 "$next"; mv "$next" "$SOUL"; rm -f "$clean"
 fi
 
-python3 - "$STATE/ownership.json" "$PREV_ACCESSIBILITY" "$ACCESSIBILITY_CHANGED" \
+/usr/bin/python3 - "$STATE/ownership.json" "$PREV_ACCESSIBILITY" "$ACCESSIBILITY_CHANGED" \
     "$CUA_INSTALLED_BY_GWCU" "$CUA_DRIVER_RS_VERSION" "$HERMES" <<'PY'
 import json, os, pathlib, sys
 p=pathlib.Path(sys.argv[1]); p.parent.mkdir(parents=True,exist_ok=True)
@@ -624,10 +625,8 @@ if ! $COMPAT; then
     if [ "$DOCTOR_RC" -ne 0 ]; then
         printf '\nCua doctor hints:\n' >&2
         HINT_TEXT=$(doctor_hints "$DOCTOR_OUT")
-        if [ -n "$HINT_TEXT" ]; then
-            printf '%s\n' "$HINT_TEXT" >&2
-        elif [ -s "$DOCTOR_OUT" ]; then
-            sed 's/^/  - /' "$DOCTOR_OUT" >&2
+        if [ -n "$HINT_TEXT" ]; then printf '%s\n' "$HINT_TEXT" >&2
+        elif [ -s "$DOCTOR_OUT" ]; then sed 's/^/  - /' "$DOCTOR_OUT" >&2
         fi
         [ ! -s "$DOCTOR_ERR" ] || sed 's/^/  - /' "$DOCTOR_ERR" >&2
         if maybe_add_video_group "$DOCTOR_OUT" "$DOCTOR_ERR"; then
@@ -660,13 +659,13 @@ fi
 printf '\n'
 if $RELOAD_REQUIRED; then
     printf 'READY EXCEPT GNOME HELPER RELOAD\n'
-    printf 'Control consent, Cua, and observation are prepared. Reload/sign out once so GNOME loads the updated WinRects helper.\n'
+    printf 'Control consent, Cua, observation, and .gwcu support are prepared. Reload/sign out once so GNOME loads the updated WinRects helper.\n'
 elif $COMPAT; then
     printf 'INSTALLED FOR NEXT UBUNTU GNOME SESSION\n'
 else
     printf 'READY. One-time setup is complete.\n'
     if $HERMES; then
-        printf 'Hermes: /computer-use status · /computer-use managed · /computer-use consent · /computer-use doctor\n'
+        printf 'Hermes: /computer-use status · /computer-use managed · /computer-use truths · /computer-use consent · /computer-use doctor\n'
     fi
 fi
 printf '\n'
