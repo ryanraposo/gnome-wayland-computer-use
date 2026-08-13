@@ -160,7 +160,7 @@ pass "timing mode preserves method output"
 # Runtime/published surfaces share the same architecture.
 grep -q '^## Pixel-Only Surfaces$' "$hermes_skill" || fail "Hermes skill lacks pixel-only recovery"
 grep -q '^## Pixel-Only Surfaces$' "$portable_skill" || fail "portable skill lacks pixel-only recovery"
-grep -q 'does not require WinRects' "$hermes_skill" || fail "Hermes skill still depends on WinRects"
+grep -q 'does \*\*not\*\* require WinRects' "$hermes_skill" || fail "Hermes skill still depends on WinRects"
 grep -q 'Route once → cheapest truthful evidence' "$readme" || fail "README lost latency contract"
 grep -q 'Installed web apps stay apps' "$landing" || fail "landing page lost PWA identity"
 grep -q 'ScreenCast + PipeWire' "$landing" || fail "landing page lost native capture hot path"
