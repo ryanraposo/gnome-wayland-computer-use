@@ -62,21 +62,37 @@ def nearest_existing(start: Path) -> Path | None:
     return None
 
 
+def git_root(start: Path) -> Path | None:
+    rc, raw = run_git(start, "rev-parse", "--show-toplevel")
+    if rc != 0 or not raw:
+        return None
+    try:
+        return Path(raw).resolve()
+    except OSError:
+        return None
+
+
 def resolve_scope() -> tuple[Path, bool, str]:
     explicit = os.environ.get("GWCU_SCOPE_ROOT")
     if explicit:
         root = Path(explicit).expanduser().resolve()
-        return root, (root / ".git").exists(), "environment"
+        discovered = git_root(root)
+        return root, discovered == root, "environment"
 
     start = workdir()
+
+    # A Git worktree is always its own truth scope, even when it lives beneath a
+    # broader non-Git workspace that already has a .gwcu. This preserves the
+    # repo-scoped contract and prevents parent machine/workspace truth from
+    # bleeding into a repository.
+    repo = git_root(start)
+    if repo is not None:
+        return repo, True, "git_root"
+
+    # Outside Git, an existing ancestor .gwcu defines a durable workspace scope.
     existing = nearest_existing(start)
     if existing is not None:
-        rc, git_root = run_git(existing, "rev-parse", "--show-toplevel")
-        return existing, rc == 0 and Path(git_root).resolve() == existing, "nearest_truth"
-
-    rc, root = run_git(start, "rev-parse", "--show-toplevel")
-    if rc == 0 and root:
-        return Path(root).resolve(), True, "git_root"
+        return existing, False, "nearest_truth"
 
     return start, False, "workdir"
 
