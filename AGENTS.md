@@ -54,9 +54,11 @@ ROOT="$HOME/.agents/skills/gnome-wayland-computer-use"
    contradiction.
 3. Managed Git scopes must add `/.gwcu` to the root `.gitignore` before the
    truth file is created. Never normalize machine/display details into commits.
-4. Non-Git workspaces are first-class. Scope resolution is: explicit override,
-   nearest existing ancestor `.gwcu`, Git root, then current working directory.
-   This lets a long-lived general workspace keep one `.gwcu` for its descendants.
+4. Scope isolation is deliberate: explicit `GWCU_SCOPE_ROOT` wins; otherwise a
+   Git worktree always owns its root `.gwcu`, even inside a broader workspace.
+   Outside Git, the nearest existing ancestor `.gwcu` defines the workspace;
+   otherwise the current working directory does. This lets a long-lived general
+   workspace carry one truth file without bleeding its state into nested repos.
 5. `.gwcu` separates `observed`, `capabilities`, `calibration`, `preferences`,
    and `apps`. Generated sections may be safely regenerated; preferences and
    unknown extension keys are preserved.
