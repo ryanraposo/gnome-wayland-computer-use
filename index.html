@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="description" content="A deterministic, call-efficient computer-use runtime for Ubuntu 26.04 GNOME.">
+<meta name="description" content="Deterministic, call-efficient computer use for Ubuntu 26.04 GNOME.">
 <title>gnome-wayland-computer-use</title>
 <style>
 :root{color-scheme:dark;--bg:#080808;--panel:#101010;--line:#292929;--ink:#f6f6f2;--muted:#aaa9a2;--blue:#8ab4ff;--green:#9ce8b5;--violet:#c6b2ff;--gold:#f4dc98;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
@@ -15,12 +15,12 @@
 section{margin-top:74px}h2{font-size:1rem;text-transform:uppercase;letter-spacing:.16em;margin:0 0 22px;color:#d8d8d2}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
 .card{border:1px solid var(--line);border-radius:18px;padding:23px;background:linear-gradient(180deg,#121212,#0d0d0d);min-height:220px}.card .num{font-size:.75rem;letter-spacing:.16em;color:#676761;margin-bottom:26px}.card b{display:block;font-size:1rem;line-height:1.35;margin-bottom:14px}.card p{margin:0;color:var(--muted);line-height:1.62;font-size:.92rem}
 .blue{color:var(--blue)}.green{color:var(--green)}.violet{color:var(--violet)}.gold{color:var(--gold)}
-.flow{border:1px solid var(--line);border-radius:18px;padding:25px;background:#0c0c0c;overflow:auto;white-space:pre;color:#d9d9d4;line-height:1.65}
+.flow{border:1px solid var(--line);border-radius:18px;padding:25px;background:#0c0c0c;overflow:auto;white-space:pre;color:#d9d9d4;line-height:1.65}.split{display:grid;grid-template-columns:1fr 1fr;gap:12px}.split .flow{height:100%}
 .truth{font-size:clamp(1.45rem,3vw,2.4rem);line-height:1.25;letter-spacing:-.035em;max-width:920px}.truth strong{color:var(--green)}.small{color:var(--muted);line-height:1.7;max-width:920px}
 .notice{border:1px solid #285437;border-radius:18px;padding:23px;background:linear-gradient(180deg,#0c1710,#0b110d);max-width:940px}.notice b{color:var(--green)}.notice p{color:#c3c9c2;line-height:1.7;margin:.7rem 0 0}
 .commands{display:grid;grid-template-columns:1fr 1fr;gap:12px}.command{border:1px solid var(--line);border-radius:14px;background:#0d0d0d;padding:18px}.command code{color:#f3f3ee}.command span{display:block;color:var(--muted);margin-top:8px;line-height:1.5;font-size:.88rem}
 .footer{margin-top:90px;border-top:1px solid var(--line);padding-top:28px;color:#777;font-size:.9rem}
-@media(max-width:900px){.grid{grid-template-columns:1fr 1fr}}@media(max-width:650px){.grid,.commands{grid-template-columns:1fr}.cta{grid-template-columns:1fr}.cta span{display:none}.wrap{padding-top:42px}.hero h1{font-size:clamp(2.8rem,16vw,5rem)}}
+@media(max-width:900px){.grid{grid-template-columns:1fr 1fr}.split{grid-template-columns:1fr}}@media(max-width:650px){.grid,.commands{grid-template-columns:1fr}.cta{grid-template-columns:1fr}.cta span{display:none}.wrap{padding-top:42px}.hero h1{font-size:clamp(2.8rem,16vw,5rem)}}
 </style>
 </head>
 <body><main class="wrap">
@@ -32,7 +32,7 @@ section{margin-top:74px}h2{font-size:1rem;text-transform:uppercase;letter-spacin
      ▀▀   ▀▀</div>
 <div class="eyebrow">gnome-wayland-computer-use</div>
 <h1>Spend calls<br>on the task.</h1>
-<p class="lede"><strong>A deterministic computer-use runtime for Ubuntu 26.04 GNOME.</strong> Cua owns control. GWCU finishes one-time setup, compiles recurring mechanics into local programs, and remembers only stable project truths when you allow it.</p>
+<p class="lede"><strong>Deterministic computer use for Ubuntu 26.04 GNOME.</strong> Cua owns control. GWCU finishes one-time setup, compiles recurring mechanics into local programs, and turns durable observations into repo/workspace information in <code>.gwcu</code>.</p>
 <div class="pills"><span class="pill">Ubuntu 26.04</span><span class="pill">GNOME 50</span><span class="pill">Cua 0.19.3 pinned</span><span class="pill">RemoteDesktop + EIS/libei</span><span class="pill">AT-SPI</span><span class="pill">ScreenCast + PipeWire</span></div>
 <div class="cta"><code>curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh | bash</code><span>setup once → READY</span></div>
 </header>
@@ -40,70 +40,140 @@ section{margin-top:74px}h2{font-size:1rem;text-transform:uppercase;letter-spacin
 <section>
 <h2>Four hard advantages</h2>
 <div class="grid">
-<div class="card"><div class="num">01</div><b class="green">ZERO-CEREMONY HOT PATH</b><p>A known app/window pays <strong>0 GWCU setup calls</strong> before Cua. No update ritual, broad diagnosis, enumeration, or desktop-wide prelude.</p></div>
-<div class="card"><div class="num">02</div><b class="blue">PROGRAMS COLLAPSE MECHANICS</b><p>Route and recovery scripts compose their own lower-level probes. Several local operations still cost the agent <strong>one outer call</strong>.</p></div>
-<div class="card"><div class="num">03</div><b class="violet">PROJECT TRUTHS GET WARMER</b><p>Managed AGENTS.md identity records can skip repeat launcher resolution entirely—up to <strong>100% of repeat identity-routing setup</strong>.</p></div>
-<div class="card"><div class="num">04</div><b class="gold">INSTALL ONCE, USE IT</b><p>Dependencies, pinned Cua, GNOME control consent, managed-memory preference, Hermes commands, observer lifecycle, and health proof happen up front.</p></div>
+<div class="card"><div class="num">01</div><b class="green">ZERO-CEREMONY HOT PATH</b><p>A known app/window pays <strong>0 GWCU setup calls</strong> before Cua. No diagnostic or enumeration ritual.</p></div>
+<div class="card"><div class="num">02</div><b class="blue">PROGRAMS COLLAPSE MECHANICS</b><p>Route and recovery compose lower-level probes locally. Several operations still cost the agent <strong>one outer call</strong>.</p></div>
+<div class="card"><div class="num">03</div><b class="violet">.GWCU TURNS OBSERVATION INTO INFORMATION</b><p>A cold exact identity becomes local truth. Warm routes skip repeat launcher/PWA discovery without touching AGENTS.md.</p></div>
+<div class="card"><div class="num">04</div><b class="gold">INSTALL ONCE, USE IT</b><p>Dependencies, pinned Cua, GNOME control consent, truth preference, Hermes commands, observer lifecycle, and health proof happen up front.</p></div>
 </div>
 </section>
 
 <section>
-<h2>The operating model</h2>
-<div class="flow">remember stable invariants
-  → program recurring mechanics
-    → use native Hermes orchestration when orchestration is real
-      → let the model reason only about what is new
-        → Cua executes through one control authority</div>
-<p class="small">Cua owns semantic + pixel actions, target/window state, GNOME geometry, exact activation, input delivery, verification, escalation, and refusal. GWCU owns the Ubuntu substrate, deterministic routing/recovery, bounded project memory, and whole-screen observation.</p>
+<h2>What it actually feels like</h2>
+<div class="split">
+<div class="flow">KNOWN TARGET
+
+[KNOW] target already bound
+  ↓
+[CUA #1] useful target state
+  ↓
+[DECIDE] AX or PX
+  ↓
+[CUA #2] useful action
+  ↓
+done
+
+SAVED
+0 GWCU setup calls
+0 enumeration
+0 screenshot prelude
+0 diagnostics</div>
+<div class="flow">WARM .GWCU ROUTE
+
+[KNOW] name, identity uncertain
+  ↓
+[TOOL #1] profile.sh route
+  ├─ nearest .gwcu
+  ├─ exact identity hit
+  ├─ no launcher scan
+  ├─ no diagnostics
+  └─ no rewrite
+  ↓
+[CUA #1] useful action
+
+SAVED
+100% repeat identity-resolution work</div>
+</div>
 </section>
 
 <section>
-<h2>Known target</h2>
-<div class="flow">one Cua target/window state
-  → AX when grounded / PX from that same state
-  → useful action span
-  → verify only when the next decision depends on new state</div>
-<p class="small">Zero task-time update checks. Zero broad diagnostics. Zero known-target enumeration. Zero whole-screen prelude when target evidence is enough. Zero blind retry of the same failed delivery shape.</p>
+<h2>Cold once → warm forever-ish</h2>
+<div class="flow">FIRST ENCOUNTER
+[TOOL] route
+  → resolve repo/workspace scope
+  → .gwcu miss
+  → deterministic launcher/PWA resolver
+  → exact identity
+  → Git scope? establish /.gwcu in root .gitignore first
+  → atomic .gwcu write
+  → one compact route result
+
+NEXT ENCOUNTER
+[TOOL] route
+  → .gwcu hit
+  → no identity resolver
+  → no AGENTS parsing
+  → no diagnostic fan-out
+  → one compact route result</div>
+<p class="small">Live Cua state still wins on contradiction. Stored truth removes repeated mechanics; it never becomes control authority.</p>
+</section>
+
+<section>
+<h2>.gwcu</h2>
+<p class="truth">One local truth file. <strong>No diary.</strong></p>
+<div class="flow">{
+  "apps": {},
+  "calibration": {},
+  "capabilities": {},
+  "observed": {},
+  "preferences": {},
+  "schema": "gwcu.truths.v1"
+}</div>
+<p class="small"><code>observed</code>, <code>capabilities</code>, <code>calibration</code>, and <code>apps</code> are generated truth. <code>preferences</code> are user-owned and survive generated-truth regeneration. GWCU stores conclusions, not screenshots, task history, user text, raw health dumps, focus state, or transient geometry.</p>
+</section>
+
+<section>
+<h2>Repo and non-Git scope</h2>
+<div class="flow">GWCU_SCOPE_ROOT override
+  → nearest ancestor already containing .gwcu
+  → Git worktree root
+  → current working directory</div>
+<p class="small">That nearest-existing rule makes a general non-Git workspace first-class. Put one <code>.gwcu</code> at a workspace root and descendants reuse it. In Git, GWCU ensures <code>/.gwcu</code> is in the root <code>.gitignore</code> before truth is created; unsafe ignore setup makes persistence fail closed.</p>
+</section>
+
+<section>
+<h2>Host contradiction</h2>
+<div class="flow">[TOOL #1] profile.sh recover
+  → cached profile
+  → refresh only if stale/missing
+      → diagnose.sh
+          → Cua health
+          → portal/session facts
+          → observer facts
+  → one deterministic next action</div>
+<p class="small">The model never pays separate turns for <code>read → interpret → refresh → interpret → diagnose → interpret</code>.</p>
 </section>
 
 <section>
 <h2>Remote Desktop, explained once</h2>
-<div class="notice"><b>GNOME is naming a local compositor permission.</b><p>Cua uses <code>org.freedesktop.portal.RemoteDesktop</code> to obtain an EIS/libei pointer + keyboard session. GWCU installs no RDP/VNC server, raw-input daemon, or project input udev rule. On a fresh install, the terminal explains the handshake and counts down 3 → 2 → 1 before the GNOME prompt. The bootstrap moves the pointer once—no click, no key—and Cua can persist GNOME’s revocable restore token so the normal case does not ask again.</p></div>
-<p class="small">Verify any time with <code>/computer-use consent</code>. Whole-screen ScreenCast permission is a separate capability and appears only when whole-screen observation is requested.</p>
+<div class="notice"><b>GNOME is naming a local compositor permission.</b><p>Cua uses <code>org.freedesktop.portal.RemoteDesktop</code> to obtain an EIS/libei pointer + keyboard session. GWCU installs no RDP/VNC server or raw-input daemon. On a fresh install, the terminal explains the handshake and counts down 3 → 2 → 1 before the GNOME prompt. The bootstrap moves the pointer once: no click, no key.</p></div>
 </section>
 
 <section>
 <h2>Hermes /computer-use</h2>
 <div class="commands">
-<div class="command"><code>/computer-use status</code><span>Cua health, portal state, restore-token state, and managed-memory preference.</span></div>
-<div class="command"><code>/computer-use managed</code><span>Enable bounded project AGENTS.md identity truths; add <code>off</code> or <code>status</code> when needed.</span></div>
-<div class="command"><code>/computer-use consent</code><span>Explain and verify the GNOME RemoteDesktop → EIS/libei control contract.</span></div>
-<div class="command"><code>/computer-use doctor</code><span>Run the deterministic installed-system diagnosis.</span></div>
+<div class="command"><code>/computer-use status</code><span>Cua, portal, restore token, and managed truth status.</span></div>
+<div class="command"><code>/computer-use managed on|off|status</code><span>Control repo/workspace-local .gwcu persistence.</span></div>
+<div class="command"><code>/computer-use truths</code><span>Show the active truth scope, path, and counts.</span></div>
+<div class="command"><code>/computer-use consent</code><span>Verify RemoteDesktop → EIS/libei.</span></div>
+<div class="command"><code>/computer-use doctor</code><span>Run deterministic installed-system diagnosis.</span></div>
 </div>
-<p class="small">The installer registers this through Hermes’s native plugin command API and enables the plugin. Command discovery gets the description and argument hint without patching Hermes core.</p>
-</section>
-
-<section>
-<h2>Managed project truths</h2>
-<p class="truth">A tiny cache of durable identity. <strong>No diary.</strong></p>
-<p class="small">Only low-churn app identity fields are eligible: display name, desktop ID, app ID, StartupWMClass, and app kind. No screenshots, timestamps, user text, task history, coordinates, geometry, focus, or health snapshots. The block is bounded, deterministic, regex-addressable, comment-safe, and subordinate to live Cua state.</p>
 </section>
 
 <section>
 <h2>Install contract</h2>
 <p class="truth">Prepare once. <strong>Prove READY.</strong></p>
-<p class="small">The installer repairs only missing Ubuntu foundation, pins Cua 0.19.3, installs Cua’s GNOME helper, asks once about managed AGENTS.md blocks, establishes GNOME’s local control permission, registers Hermes commands when present, enables the warm observer, runs Cua doctor, consumes Cua health_report, and records reversible ownership.</p>
+<p class="small">The installer repairs missing Ubuntu foundation, pins Cua 0.19.3, installs Cua's GNOME helper, records the managed-.gwcu preference, establishes GNOME local control permission, registers Hermes commands when present, enables the warm observer, runs Cua doctor, consumes Cua health_report, and records reversible ownership.</p>
 </section>
 
 <section>
 <h2>Uninstall</h2>
 <div class="cta"><code>curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/uninstall.sh | bash</code><span>reversible ownership</span></div>
-<p class="small">Project skills, the Hermes command plugin, observer units, managed PATH/routing, accessibility changes, exact legacy artifacts, and GWCU-added group state are reversible. Ubuntu desktop packages and GNOME permission state remain host-owned. Managed blocks already written into user repositories remain repository content.</p>
+<p class="small">Installer-owned integration is removed. Repo/workspace <code>.gwcu</code> files and their ignore protection remain local workspace content.</p>
 </section>
 
 <section>
 <h2>The point</h2>
-<p class="truth">Remember invariants.<br>Program the routine.<br><strong>Reason about the new.</strong></p>
+<p class="truth">Observe once.<br>Turn it into information.<br><strong>Spend the next call on the task.</strong></p>
 </section>
 
 <div class="footer">gnome-wayland-computer-use · deterministic computer use for Ubuntu 26.04 GNOME</div>
