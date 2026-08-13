@@ -9,251 +9,197 @@
 
 # gnome-wayland-computer-use
 
-Low-latency accessibility actions. Desktop-aware screenshots. Verified recovery
-paths. One installer for the full stack.
+Fast, closed-loop computer use for Ubuntu GNOME Wayland.
 
-[Install](#install) · [Capabilities](#capabilities) · [Performance](PERF_NOTES.md) · [How it works](#how-it-works) ·
-[Diagnose](#diagnose) · [Uninstall](#uninstall)
+**Accessibility when semantics exist. Pixels when they do not. Native portals for the screen.**
+
+[Install](#install) · [Architecture](#architecture) · [Capture](#native-screen-capture) · [Diagnose](#diagnose)
 </div>
 
 ---
 
-Agents have variable success using Linux. This project makes computer use dependable on the most popular Linux desktop out there, **Ubuntu 26**.
+Linux desktop automation tends to fail in two opposite ways: it either pretends
+Wayland is X11, or it grows a pile of compositor-specific helpers until the
+helpers become the product.
 
-## Capabilities
+This project does neither.
 
-**[Explore the complete capability map →](CAPABILITIES.md)**
+It gives capable agents a GNOME/Wayland operating contract built around the
+surfaces the desktop already provides: AT-SPI for accessible applications, XDG
+ScreenCast/Screenshot portals + PipeWire for pixels, and explicit input recovery
+when semantic delivery cannot finish the job.
 
-- Cached application and window discovery, including installed-web-app identity
-- AX-first inspection with vision and SOM only when pixels are actually needed
-- Background-first semantic input in useful action spans
-- Clicks, full-text typing, shortcuts, forms, menus, sliders, scrolling, drag-and-drop, dialogs, and file choosers
-- Multi-window and multi-display operation
-- Compositor-aware desktop and screen capture with timing diagnostics
-- Decision-boundary verification instead of ritual post-action recapture
-- Structured recovery through pixels, foreground delivery, and `/dev/uinput`
-- PolicyKit privilege handling, diagnostics, teardown, and native Hermes and OpenAI integrations
+## Architecture
 
-> [!TIP]
-> **Top secret:** tell any capable agent about this repository and ask it to install the skill. The repo’s agent-facing instructions help it choose the right runtime, preserve existing setup, and verify the install.
+| Need | Primary surface | Recovery |
+|---|---|---|
+| Read/act on accessible UI | AT-SPI through the runtime driver | pixels → foreground |
+| Capture the visible display | XDG ScreenCast + PipeWire | Screenshot portal → legacy GNOME capture → Shift+Print |
+| Identify installed web apps | live identity + cached desktop launchers | generic browser identity |
+| Operate pixel-only GLFW/Vulkan/canvas UI | visible-screen pixels + coordinates | ordinary foreground/window selection |
+| Last-resort synthetic input | runtime driver | `/dev/uinput` + `ydotool` |
+| Privileged host action | narrow graphical `pkexec` | explicit manual recovery |
 
-- AT-SPI actions target accessible widgets and editable text without raising
-  windows when the application supports it.
-- Browser-backed standalone apps are resolved as their own app targets when
-  desktop/window identity or launcher flags distinguish them from browser chrome.
-- “Desktop” means the wallpaper and desktop-icons layer; “screen” means the
-  visible display, including windows.
-- The preferred desktop capture path runs inside GNOME Shell and proves that
-  focus, workspace, and window state did not change.
-- Compatibility input is explicit, last-resort, and backed by `/dev/uinput`
-  through Ubuntu's `ydotool`.
-- When Hermes is present, its existing computer-use and learned screenshot
-  skills are archived before replacement and can be restored by teardown.
+**There is no GNOME Shell extension in the architecture.**
 
-> [!IMPORTANT]
-> The no-foreground guarantee applies to supported AT-SPI actions and the primary
-> compositor capture path. Pixel/input fallbacks may briefly affect the visible
-> desktop; the desktop fallback restores Show Desktop and verifies window state
-> before reporting success.
+Older releases of this repository shipped
+`desktop-capture@gnome-wayland-computer-use` and accidentally coupled a desktop
+fallback to a separate WinRects helper. Version 2.3 retires the project-owned
+capture extension during install and does not require WinRects. Missing semantic
+window geometry now degrades to pixels instead of another Shell helper.
+
+## Why this matters
+
+A GLFW/Vulkan renderer can be plainly visible and still expose no useful AT-SPI
+surface. On such an app, an empty `list_windows` result is not proof that the
+window is absent. The visible screen is the authoritative evidence surface.
+
+Conversely, an accessible text field does not need a screenshot between every
+click and keystroke. The skill keeps deterministic semantic actions together
+and observes again only when the next decision depends on changed state.
+
+That combination is the point: **semantic where possible, visual where
+necessary, neither confused for the other.**
 
 ## Install
 
-Run one command as your normal desktop user—**not with `sudo`**:
+Run as the logged-in desktop user:
 
 ```bash
 curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh | bash
 ```
 
-The installer prefers Hermes automatically:
+The installer prefers Hermes when it is present; otherwise it installs the
+shared Agent Skill stack under `~/.agents/skills/`.
 
-- **Hermes on `PATH`** — installs the full Hermes override, routing, `cua-driver`
-  service, and the portable Agent Skill.
-- **No Hermes** — installs the same GNOME host stack and a portable
-  `.agents/skills/` integration for the invoking agent. It does not create or
-  modify `~/.hermes`.
-
-You need an active GNOME Wayland session, network access, and permission to
-configure packages, `/dev/uinput`, and input-group access. The installer prefers
-`pkexec` so each administrative command gets a graphical PolicyKit prompt; it
-falls back to `sudo` when PolicyKit is unavailable. It never runs the whole
-installer or a general-purpose shell as root.
-
-Want to inspect it first?
-
-```bash
-curl -fsSLO https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh
-less install.sh
-bash install.sh
+```text
+--hermes      require Hermes integration
+--agent-only  install the shared stack without Hermes
+--compat      relax the GNOME/Wayland environment preflight
+--unattended  mark automated execution
 ```
 
-| Option | Effect |
-|---|---|
-| `--hermes` | Require Hermes and fail before host changes if it is unavailable |
-| `--agent-only` | Skip Hermes even when it is installed |
-| `--unattended` | Mark automated execution; implied when input is piped |
-| `--compat` | Continue outside a GNOME Wayland session |
+The host stack enables toolkit accessibility, installs the shared skill and
+capture helper, configures the explicit `/dev/uinput` fallback, and connects the
+Hermes runtime when selected.
 
-`--compat` relaxes the environment check; it does not make the GNOME-specific
-capture extension portable to other desktops. PolicyKit or `sudo` may still
-request approval during unattended installation.
+A session sign-out/sign-in is needed only when the installer newly adds the user
+to the `input` group. **Capture itself does not require a session reload or a
+Shell extension.**
 
-### Then
-
-Follow the installer's `Next:` line. If it requests a session reload, sign out
-of GNOME and back in once, then start a new Hermes or agent session. No reboot
-required. Until then, desktop capture can use the verified Show Desktop →
-capture → restore path.
-
-The Agent Skills and Hermes payloads are authored independently for their
-native tool conventions. First-use computer-use routing reads only an existing
-cached `VERSION` result and never waits on the network. Run
-`scripts/check-update.sh --force` when you actually want to refresh it.
-
-## Computer-use operating model
-
-The fast path is:
-
-> **Route once → cheapest useful evidence → semantic action span → verify at the next decision boundary.**
-
-A known app/window target is reused instead of rediscovered. AX-only inspection
-is preferred when text, roles, and state are enough; vision is for image-only
-reasoning; SOM is reserved for tasks that genuinely need pixels plus element
-grounding.
-
-Deterministic input stays together. A confirmed field click can be followed by
-one complete typing action without an intervening screenshot; a known submit
-hotkey can follow verified typing when the next action does not depend on newly
-rendered state. Semantic `set_value` is preferred over opening and re-reading a
-menu. Waits are for real asynchronous transitions, not pacing.
-
-Fresh evidence belongs at actual decision boundaries: navigation, new dialogs,
-material list changes, stale element identity, canvas/visual ambiguity, focus
-escalation, or any step where the next action depends on the new UI. A
-structured driver verdict that directly proves the requested state is already
-verification and does not need a ceremonial screenshot afterward.
-
-The skill owns the complete workflow: route → observe → act → verify → recover
-or complete. It infers reversible background-first defaults, asks only
-questions that change the decision, previews consequential effects at their
-real authorization boundary, and finishes from observable proof.
-
-The Hermes payload documents its complete SOM/AX action vocabulary and
-structured background → pixel → foreground escalation contract. The OpenAI
-payload follows the runtime's live native tool schema instead of inventing
-Hermes arguments. Both cover forms, menus, dialogs, file choosers, nested
-scrolling, drag-and-drop, multi-display coordinates, safety, and recovery.
-
-For an explicitly authorized package install, the preferred privilege boundary
-is a direct graphical prompt:
-
-```bash
-pkexec apt-get install -y PACKAGE...
-```
-
-The agent should explain the change, run the smallest command, and verify the
-result without privilege. It should never type the user's password or open a
-root terminal.
-
-## Installed web apps vs browsers
-
-When a Chrome/Chromium/Brave/Edge/Firefox-backed window has standalone app
-identity, the skill treats it as that installed web app instead of collapsing
-it into the generic browser. Live app/window identity wins. If ambiguity
-remains, the installed launcher resolver can inspect desktop IDs,
-`StartupWMClass`, `--app-id=`, and `--app=` without taking another screenshot:
-
-```bash
-~/.agents/skills/gnome-wayland-computer-use/scripts/app-identity.sh "ChatGPT"
-```
-
-The resolver caches its launcher inventory briefly in the runtime directory.
-It understands direct browser launchers plus wrapped and Flatpak-style commands,
-so two PWAs using the same browser engine remain separate targets when their
-launcher/window identities differ. Electron applications remain native app
-targets when the desktop/runtime exposes their distinct identity.
-
-## Intent-aware capture
-
-| What you ask for | What you get | Default path |
-|---|---|---|
-| “Capture my desktop”, wallpaper, or desktop icons | The GNOME desktop layer without covering app windows | GNOME Shell compositor extension |
-| “Capture my screen” or “what I’m looking at” | The current visible display, including windows | Screenshot portal |
-| Click, type, or inspect an app | Accessibility tree and stable widget actions where supported | AT-SPI through `cua-driver` |
-
-The capture helper also works directly:
+## Native screen capture
 
 ```bash
 CAPTURE="$HOME/.agents/skills/gnome-wayland-computer-use/scripts/capture.sh"
 
-"$CAPTURE" --desktop /tmp/desktop.png
 "$CAPTURE" --screen /tmp/screen.png
+"$CAPTURE" --timing --screen /tmp/screen.png
+"$CAPTURE" --media --screen
 ```
 
-Writes are atomic: a failed attempt does not replace an existing output file.
-Hermes can add `--media` to choose a timestamped path and emit its `MEDIA:`
-attachment marker. Add `--timing` to emit `capture_elapsed_ms=N` on stderr.
-
-## How it works
-
-The installer configures five layers:
-
-1. **Session checks** — detects GNOME and Wayland and reports mismatches.
-2. **Accessibility** — enables GNOME toolkit accessibility and starts the AT-SPI
-   bus.
-3. **Capture and routing** — installs the GNOME Shell extension, cached installed-app
-   identity resolver, and portable Agent Skill. When Hermes is selected, it also
-   installs the exact canonical `computer-use` override and always-loaded
-   desktop-versus-screen routing.
-4. **Input recovery** — installs the Ubuntu capture dependencies, loads
-   `/dev/uinput`, grants the desktop user access, and starts `ydotoold` with a
-   short managed restart delay.
-5. **Runtime** — with Hermes, installs and health-checks a persistent
-   native-Wayland `cua-driver` service with fast readiness polling. Other agents
-   keep their own native tool schema and use the shared host helpers directly.
+`--desktop` remains accepted for old callers, but it is now an alias for the
+real visible display. The helper no longer hides windows to manufacture a
+special wallpaper/icons layer.
 
 ### Capture order
 
-**Desktop**
+1. **XDG ScreenCast + PipeWire** — the hot path. The portal selects one monitor,
+   and on portal v4+ the helper requests `persist_mode=2`. A restore token is
+   stored under the user's state directory and rotated after every successful
+   restoration.
+2. **XDG Screenshot portal** — one-shot recovery path.
+3. **`gnome-screenshot`** — compatibility for older GNOME releases only. GNOME
+   49+ is skipped because its legacy Shell path is no longer a reliable surface.
+4. **Shift+Print through `ydotool`** — final hardware-level recovery.
 
-1. GNOME Shell captures the desktop layer while app-window actors are excluded
-   from the offscreen capture. It rejects the result if focus, workspace, or
-   window state changed.
-2. The compatibility path toggles Show Desktop, takes one full-screen capture,
-   restores the prior state, and compares compositor window state. Screenshot and
-   restoration readiness are polled rather than padded with fixed animation sleeps.
+The first ScreenCast capture may show GNOME's monitor-sharing chooser. That is a
+real permission boundary, not installer ceremony. Once persistence is granted,
+subsequent captures restore the selected source instead of rebuilding the
+permission decision from scratch.
 
-**Visible screen**
+If the user cancels the chooser, the helper stops rather than surprising them
+with a second permission UI.
 
-1. `gnome-screenshot --file` on GNOME releases where it is supported
-2. the non-interactive `org.freedesktop.portal.Screenshot` request
-3. GNOME's direct full-screen shortcut through `ydotool`
+Writes are atomic: a failed capture never replaces an existing output file.
+`--timing` emits `capture_elapsed_ms=N` on stderr.
 
-Portal cancellation stops the chain instead of opening another capture UI.
-ScreenCast/PipeWire is diagnostic-only because it can show a sharing chooser;
-opt in with `GNOME_WAYLAND_ENABLE_SCREENCAST_FALLBACK=1`.
+## Wallpaper versus screen
 
-## Diagnose
+If the user wants **what is currently visible**, capture the screen.
 
-After installation:
+If the user wants **the wallpaper image itself**, resolve GNOME's configured
+background asset (`org.gnome.desktop.background`) instead of hiding windows and
+calling that a screenshot.
 
-```bash
-~/.agents/skills/gnome-wayland-computer-use/scripts/diagnose.sh
-```
+If desktop icons are supplied by another extension, they are simply visible
+screen content. This project does not couple itself to that extension's private
+geometry or scene graph.
 
-For machine-readable output:
+## Accessible apps versus pixel-only apps
 
-```bash
-~/.agents/skills/gnome-wayland-computer-use/scripts/diagnose.sh --json
-```
+For accessible applications, begin with the runtime's AX-only inspection.
+Escalate to pixels only when layout, canvas content, or inaccessible controls
+make pixels relevant.
 
-For latency and routing diagnosis:
+For GLFW, Vulkan, games, canvas-heavy applications, remote-viewer surfaces, or
+other custom-rendered windows:
+
+1. capture the visible display;
+2. locate the surface visually;
+3. use coordinate actions from that fresh image;
+4. recapture after layout-changing operations;
+5. use ordinary overview/Alt-Tab/foreground selection if the target is obscured.
+
+Do not repeatedly probe AT-SPI for a surface that has no accessibility contract,
+and do not install a Shell helper just to make semantic inventory look complete.
+
+## Installed web apps stay apps
+
+Standalone Chrome/Chromium/Brave/Edge/Firefox apps are resolved from live
+identity first, then desktop IDs, `StartupWMClass`, and launcher flags such as
+`--app-id=` / `--app=`.
 
 ```bash
 ~/.agents/skills/gnome-wayland-computer-use/scripts/app-identity.sh "ChatGPT"
-~/.agents/skills/gnome-wayland-computer-use/scripts/capture.sh --timing --screen /tmp/screen.png
 ```
 
-From a repository checkout:
+The launcher inventory is cached briefly, so two PWAs backed by the same browser
+remain distinct targets without paying for repeated discovery.
+
+## Computer-use operating model
+
+> **Route once → cheapest truthful evidence → semantic action span → verify at the next decision boundary.**
+
+A confirmed field click can flow directly into complete text entry. A known
+submit shortcut can follow verified typing. A structured driver verdict can be
+verification when it actually proves the requested state.
+
+Fresh evidence belongs at navigation, new dialogs, material list/layout changes,
+stale element identity, pixel-only ambiguity, foreground escalation, or another
+point where the next action depends on new UI state.
+
+## Diagnose
+
+```bash
+~/.agents/skills/gnome-wayland-computer-use/scripts/diagnose.sh
+~/.agents/skills/gnome-wayland-computer-use/scripts/diagnose.sh --json
+```
+
+The capture section proves:
+
+- XDG ScreenCast portal — hot path
+- PipeWire/GStreamer capture stack
+- XDG Screenshot portal — recovery
+- restore-token state — cached or first-capture pending
+- legacy project capture extension — **absent is healthy**
+
+It separately reports AT-SPI, the runtime integration, `/dev/uinput`, and
+`ydotoold`.
+
+A custom-rendered app missing from `list_windows` is not diagnosed as a broken
+capture stack. Capture and semantic inventory are intentionally separate.
+
+## Tests
 
 ```bash
 bash ./tests/skill-ux.sh
@@ -261,27 +207,23 @@ bash ./tests/latency-routing.sh
 ./tests/run.sh
 ```
 
-The regression suite covers routing, capture order, portal cancellation, atomic
-failure behavior, local and curl-pipe installation, skill preservation,
-teardown restoration, runtime authority, and the sub-60-character description
-contract. The latency guard additionally covers cache-only first use, browser/PWA
-identity including wrapped launchers, published-site consistency, semantic-action
-spans, decision-boundary verification, fast screenshot fallbacks, and service recovery.
+The regression suite protects portal-first capture, restore-token persistence,
+atomic writes, cancellation behavior, the absence of Shell-helper dependencies,
+pixel-only recovery guidance, installed-web-app identity, and the runtime skill
+contract.
 
 ## Operational notes
 
-- The supported GNOME Shell extension metadata covers Shell 45–50; Ubuntu 26.04
-  is the production target.
-- GNOME 49+ blocks the legacy `gnome-screenshot` D-Bus path, so the helper skips
-  it and uses the Screenshot portal.
-- Accessibility quality depends on the target app's AT-SPI implementation.
-  Electron apps may need accessibility enabled by their launcher.
-- Synthetic input requires a GNOME session reload after first joining the
-  `input` group.
-- In Hermes mode, the installer may modify `~/.hermes/SOUL.md`, but only inside
-  a marked managed block. Existing content is preserved.
-- Hermes skill archives live under
-  `~/.hermes/backups/gnome-wayland-computer-use/`.
+- Ubuntu 26.04 / GNOME 50 is the production target.
+- XDG ScreenCast v4+ supplies persistent restore tokens; newer portal versions
+  remain compatible with the node-ID stream path used here.
+- Accessibility quality depends on the target application's AT-SPI support.
+- `ydotool` is a last resort, not the screen-capture architecture.
+- The runtime may have its own imperfect window inventory. The skill treats it
+  as advisory and uses pixels for visible custom surfaces.
+- Hermes skill archives remain under
+  `~/.hermes/backups/gnome-wayland-computer-use/` and can be restored by
+  teardown.
 
 ## Uninstall
 
@@ -289,34 +231,25 @@ spans, decision-boundary verification, fast screenshot fallbacks, and service re
 ~/.agents/skills/gnome-wayland-computer-use/scripts/teardown.sh
 ```
 
-Teardown interactively removes managed services, routing, skills, the udev rule,
-and the Shell extension, and offers to restore every archived skill. It leaves
-Ubuntu packages and input-group membership as explicit manual cleanup choices.
-Use `--force` only when you want every managed teardown prompt accepted.
+Teardown removes managed services/routing/skills and restores archived Hermes
+skills. It also cleans up this project's legacy capture extension if an old
+install left one behind. It does not touch unrelated Shell extensions such as a
+user-installed WinRects helper.
 
 ## Repository map
 
 | Path | Purpose |
 |---|---|
-| `install.sh` | Self-contained local and curl-pipe installer |
-| `index.html` | Published landing page; kept aligned with the runtime latency contract |
-| `AGENTS.md` | Install, use, and maintenance funnel for repository-aware agents |
-| `SKILL.md` | Hermes-native `computer-use` skill |
-| `runtimes/openai/SKILL.md` | OpenAI-native Agent Skill payload |
-| `agents/openai.yaml` | OpenAI skill-list metadata and implicit-trigger policy |
-| `references/skill-ux-contract.md` | Workflow phases, decisions, mutations, and completion proof |
-| `CAPABILITIES.md` | Complete computer-use capability spread and operating model |
-| `PERF_NOTES.md` | Separated latency budgets, regression evidence, and measurement guidance |
-| `VERSION` | Published skill-bundle release version |
-| `gnome-shell-extension/` | Focus-free desktop-layer capture service |
-| `lib/checks.sh` | Shared environment and health checks |
-| `scripts/app-identity.sh` | Cached installed-browser/PWA/Electron launcher identity resolver |
-| `scripts/capture.sh` | Atomic desktop/screen capture router with timing diagnostics |
-| `scripts/check-update.sh` | Cache-only hot-path and explicit cached release update check |
-| `scripts/diagnose.sh` | Human and JSON diagnostics |
-| `scripts/serve.sh` | Persistent `cua-driver` backend |
-| `scripts/teardown.sh` | Managed removal and skill restoration |
-| `tests/skill-ux.sh` | Constitutional and metadata regression checks |
-| `tests/latency-routing.sh` | End-to-end latency, PWA routing, site, and recovery guards |
-| `tests/run.sh` | End-to-end shell regression suite |
-| `assets/` | Landing-page and repository social artwork |
+| `install.sh` | self-contained local and curl-pipe installer |
+| `SKILL.md` | Hermes-native computer-use contract |
+| `runtimes/openai/SKILL.md` | portable/OpenAI-native contract |
+| `scripts/capture.sh` | ScreenCast/PipeWire capture + recovery ladder |
+| `scripts/app-identity.sh` | cached browser/PWA/Electron identity resolver |
+| `scripts/diagnose.sh` | human + JSON host diagnostics |
+| `scripts/serve.sh` | Hermes `cua-driver` backend wrapper |
+| `scripts/teardown.sh` | managed removal and skill restoration |
+| `lib/checks.sh` | shared health predicates |
+| `CAPABILITIES.md` | capability map and degradation rules |
+| `PERF_NOTES.md` | latency model and measurement guidance |
+| `references/skill-ux-contract.md` | workflow/authorization proof contract |
+| `tests/` | regression, routing, and skill UX guards |
