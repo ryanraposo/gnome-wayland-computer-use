@@ -27,13 +27,20 @@ portable_description=$(skill_description "$ROOT/runtimes/openai/SKILL.md")
 [ "$hermes_description" = "$portable_description" ] || fail "runtime descriptions stay identical"
 pass "runtime descriptions are identical and below 60 characters"
 
-for heading in 'Workflow contract' 'Execution state machine' 'Latency-first interaction' 'Pixel-only surfaces'; do
+for heading in 'Workflow contract' 'Execution state machine' 'One-call action spans' 'Latency-first interaction' 'Pixel-only surfaces'; do
     grep -qi "^## ${heading}$" "$ROOT/SKILL.md" || fail "Hermes skill lost: $heading"
 done
-for heading in 'Workflow contract' 'Latency-first interaction' 'Pixel-only surfaces'; do
+for heading in 'Workflow contract' 'One-call action spans' 'Latency-first interaction' 'Pixel-only surfaces'; do
     grep -qi "^## ${heading}$" "$ROOT/runtimes/openai/SKILL.md" || fail "portable skill lost: $heading"
 done
-pass "both runtime payloads own execution, latency, and pixel-only recovery"
+for skill in "$ROOT/SKILL.md" "$ROOT/runtimes/openai/SKILL.md"; do
+    grep -q 'MUST cross the model/tool boundary exactly' "$skill" || fail "$(basename "$skill") softened the one-call invariant"
+    grep -q 'keep going inside the same call' "$skill" || fail "$(basename "$skill") lost same-call continuation rule"
+    grep -q 'computer-use.sh.*span --actions-json' "$skill" || fail "$(basename "$skill") does not route deterministic spans through installed surface"
+done
+grep -q 'span)' "$ROOT/scripts/computer-use.sh" || fail "installed command surface lost action spans"
+grep -q 'ONE model/tool boundary' "$ROOT/scripts/computer-use.sh" || fail "installed command surface lost one-boundary contract"
+pass "both runtime payloads require one outer call for predetermined consecutive actions"
 
 grep -q '^## Maintaining this repository$' "$ROOT/AGENTS.md" || fail "repository guide owns maintenance routing"
 grep -q 'Keep `AGENTS.md` repository-facing and `SKILL.md` invocation-facing' "$ROOT/AGENTS.md" || \
