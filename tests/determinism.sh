@@ -3,7 +3,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 fail(){ printf 'not ok - %s\n' "$1" >&2; exit 1; }; pass(){ printf 'ok - %s\n' "$1"; }
 skill="$ROOT/SKILL.md"; installer="$ROOT/install.sh"; uninstaller="$ROOT/uninstall.sh"; teardown="$ROOT/scripts/teardown.sh"
-diagnose="$ROOT/scripts/diagnose.sh"; capture="$ROOT/scripts/capture.sh"; profile="$ROOT/scripts/profile.sh"
+diagnose="$ROOT/scripts/diagnose.sh"; capture="$ROOT/scripts/capture.sh"; profile="$ROOT/scripts/profile.sh"; truths="$ROOT/scripts/truths.py"
 
 grep -q 'Cua Driver as the control authority' "$skill" || fail "skill does not name one control authority"
 grep -q 'Never retry the same failed delivery shape blindly' "$skill" || fail "skill permits ritual retry"
@@ -15,10 +15,24 @@ pass "agent hot path delegates mechanics to Cua"
 grep -q 'route)' "$profile" || fail "profile route composer missing"
 grep -q 'recover)' "$profile" || fail "profile recovery composer missing"
 grep -q 'managed)' "$profile" || fail "managed preference surface missing"
+grep -q 'truths)' "$profile" || fail "truth status surface missing"
+grep -q 'truth_lookup' "$profile" || fail "route does not consume local truth"
 grep -q '"$IDENTITY" --resolve --machine' "$profile" || fail "route does not compose deterministic identity locally"
 grep -q 'current=$(refresh_profile' "$profile" || fail "recovery does not compose stale-profile refresh locally"
 grep -q 'gwcu.route.v1' "$profile" || fail "composed route schema missing"
 pass "programs compose recurring mechanics locally"
+
+[ -f "$truths" ] || fail ".gwcu truth helper missing"
+grep -q 'SCHEMA = "gwcu.truths.v1"' "$truths" || fail ".gwcu schema is not explicit"
+grep -q 'nearest_existing' "$truths" || fail "non-Git ancestor scope resolution missing"
+grep -q 'rev-parse.*--show-toplevel' "$truths" || fail "Git-root scope resolution missing"
+grep -q '"/.gwcu"' "$truths" || fail "Git ignore protection missing"
+grep -q 'GENERATED_SECTIONS' "$truths" || fail "generated truth ownership missing"
+pass ".gwcu is a versioned repo/workspace truth contract"
+
+! grep -Eq 'gwcu:desktop-truths|gwcu:app:v1|managed project .*AGENTS|Managed AGENTS' "$ROOT/AGENTS.md" || fail "AGENTS.md still acts as a machine-truth store"
+grep -q 'Persistent machine/user truth never belongs in AGENTS.md' "$ROOT/AGENTS.md" || fail "AGENTS truth boundary missing"
+pass "AGENTS.md is repository instruction only"
 
 [ ! -f "$ROOT/install-core.sh" ] || fail "runtime-patched installer architecture still exists"
 [ ! -f "$ROOT/lib/checks.sh" ] || fail "obsolete shared check library still exists"
@@ -26,15 +40,18 @@ grep -q 'GWCU_CUA_DRIVER_RS_VERSION:-0.19.3' "$installer" || fail "Cua version i
 grep -q 'portal_has RemoteDesktop' "$installer" || fail "RemoteDesktop portal is not a readiness requirement"
 grep -q 'portal-control.py.*--authorize' "$installer" || fail "installer does not establish one-time control consent"
 grep -q 'GNOME permission prompt may appear in %s' "$installer" || fail "installer lost consent countdown"
-grep -q 'managed AGENTS.md blocks' "$installer" || fail "installer does not ask managed-memory preference"
-grep -q '100%% for repeat identity-routing setup' "$installer" || fail "installer memory-savings claim is not scoped"
+grep -q 'Enable managed .gwcu local truths?' "$installer" || fail "installer does not ask managed-truth preference"
+grep -q 'scripts/teardown.sh scripts/truths.py' "$installer" || fail "installer does not ship .gwcu machinery"
 grep -q 'hermes plugins enable "$NAME"' "$installer" || fail "installer does not enable Hermes command plugin"
-grep -q 'runtimes/hermes/plugin.yaml' "$installer" || fail "Hermes plugin manifest is not installed"
-grep -q 'scripts/computer-use.sh' "$installer" || fail "human command backend is not shipped"
-grep -q 'scripts/portal-control.py' "$installer" || fail "portal verification helper is not shipped"
 ! grep -Eq 'add_pkg ydotool|modprobe uinput|usermod .*input|CUA_DRIVER_RS_ENABLE_WAYLAND' "$installer" || fail "installer provisions shadow input"
 ! grep -Eq 'ExecStart=.*serve\.sh|enable .*gnome-wayland-computer-use\.service' "$installer" || fail "installer owns a Cua daemon"
 pass "installation owns one-time setup without adding a second control plane"
+
+grep -q 'managed-agents' "$installer" || fail "installer does not migrate pre-.gwcu preference"
+grep -q 'managed-truths' "$installer" || fail "new managed-truth preference is not persistent"
+grep -q 'managed-truths' "$teardown" || fail "new managed-truth preference is not reversible"
+grep -q 'managed-agents' "$teardown" || fail "legacy preference cleanup missing"
+pass "pre-.gwcu installer state migrates cleanly"
 
 grep -q 'doctor_mentions_drm' "$installer" || fail "video group path is not doctor-gated"
 grep -q 'adduser "$LOGIN_USER" video' "$installer" || fail "DRM recovery path missing"
@@ -44,9 +61,8 @@ pass "privilege escalation stays evidence-bound"
 grep -q -- '--remove-cua' "$uninstaller" || fail "root uninstall cannot reverse provisioned Cua"
 grep -q 'distro_foundation_owned.*False' "$installer" || fail "Ubuntu packages are not marked host-owned"
 grep -q 'plugins disable "$NAME"' "$teardown" || fail "Hermes plugin is not disabled on teardown"
-grep -q 'managed-agents' "$teardown" || fail "managed preference is not removed on teardown"
-grep -q 'GNOME portal permission state were preserved' "$teardown" || fail "portal ownership message missing"
-pass "teardown distinguishes installer-owned, project-owned and host-owned state"
+grep -q 'Repo/workspace .gwcu files' "$teardown" || fail "teardown truth ownership message missing"
+pass "teardown distinguishes installer-owned and workspace-owned state"
 
 ! grep -Eq 'ydotool|/dev/uinput|org\.cua\.WinRects' "$capture" || fail "observation fallback crosses authority boundary"
 grep -q 'org.freedesktop.portal.Screenshot' "$capture" || fail "portal-only direct fallback missing"
@@ -62,11 +78,13 @@ d=json.load(open(sys.argv[1])); assert d['schema']=='gwcu.diagnose.v2'; assert d
 PY
 pass "machine verdict cannot confidently lie"
 
-for doc in README.md CAPABILITIES.md DETERMINISM.md AGENTS.md PERF_NOTES.md; do
+for doc in README.md GWCU.md CAPABILITIES.md DETERMINISM.md AGENTS.md PERF_NOTES.md; do
     grep -qi 'Cua' "$ROOT/$doc" || fail "$doc lost Cua authority"
     ! grep -Eq 'four-plane|Input recovery' "$ROOT/$doc" || fail "$doc retains obsolete architecture"
 done
 grep -q 'Four hard advantages' "$ROOT/README.md" || fail "README lost high-level product advantages"
-grep -q 'Four hard advantages' "$ROOT/index.html" || fail "site lost high-level product advantages"
+grep -q 'Execution trees' "$ROOT/README.md" || fail "README lost literal execution experience"
+grep -q 'Non-Git general workspace' "$ROOT/README.md" || fail "README lost non-Git truth story"
+grep -q 'gwcu.truths.v1' "$ROOT/GWCU.md" || fail "public .gwcu contract missing"
 pass "documentation shares the final architecture"
 printf 'ok - determinism constitution complete\n'
