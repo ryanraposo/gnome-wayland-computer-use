@@ -4,11 +4,13 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DIAGNOSE="${GWCU_DIAGNOSE_BIN:-$ROOT/scripts/diagnose.sh}"
 IDENTITY="${GWCU_IDENTITY_BIN:-$ROOT/scripts/app-identity.sh}"
+TRUTHS="${GWCU_TRUTHS_BIN:-$ROOT/scripts/truths.py}"
 PYTHON="${GNOME_WAYLAND_SYSTEM_PYTHON:-/usr/bin/python3}"
 [ -x "$PYTHON" ] || PYTHON="$(command -v python3 2>/dev/null || true)"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/gnome-wayland-computer-use"
 PROFILE="$STATE_DIR/profile.json"
-MANAGED_PREF="$STATE_DIR/managed-agents"
+MANAGED_PREF="$STATE_DIR/managed-truths"
+LEGACY_MANAGED_PREF="$STATE_DIR/managed-agents"
 QUIET=false
 MACHINE=false
 ACTION="${1:-read}"
@@ -19,7 +21,7 @@ while [ "$#" -gt 0 ]; do
         --machine) MACHINE=true ;;
         --quiet) QUIET=true ;;
         --help|-h)
-            echo "usage: $0 read|refresh|invalidate|route|recover|managed [--machine] [--quiet] [args]"
+            echo "usage: $0 read|refresh|invalidate|route|recover|managed|truths [--machine] [--quiet] [args]"
             exit 0
             ;;
         --) shift; ARGS+=("$@"); break ;;
@@ -29,11 +31,13 @@ while [ "$#" -gt 0 ]; do
     shift
 done
 [ -n "$PYTHON" ] || { echo "python3 is required" >&2; exit 30; }
+[ -f "$TRUTHS" ] || { echo "GWCU truth helper is missing: $TRUTHS" >&2; exit 30; }
 
 managed_default() {
-    local pref
-    if [ -s "$MANAGED_PREF" ]; then
-        IFS= read -r pref <"$MANAGED_PREF" || true
+    local pref file="$MANAGED_PREF"
+    [ -s "$file" ] || file="$LEGACY_MANAGED_PREF"
+    if [ -s "$file" ]; then
+        IFS= read -r pref <"$file" || true
         case "${pref,,}" in
             on|yes|true|1) printf 'on\n'; return ;;
             off|no|false|0) printf 'off\n'; return ;;
@@ -42,8 +46,13 @@ managed_default() {
     printf 'on\n'
 }
 
-project_memory_enabled() {
+truths_enabled() {
     local v pref
+    if [ "${GWCU_TRUTHS+x}" = x ]; then
+        v="${GWCU_TRUTHS,,}"
+        case "$v" in 0|false|off|no) return 1 ;; *) return 0 ;; esac
+    fi
+    # Backward-compatible runtime override from the pre-.gwcu PR shape.
     if [ "${GWCU_PROJECT_MEMORY+x}" = x ]; then
         v="${GWCU_PROJECT_MEMORY,,}"
         case "$v" in 0|false|off|no) return 1 ;; *) return 0 ;; esac
@@ -55,25 +64,46 @@ project_memory_enabled() {
 write_managed_preference() {
     local value="$1" tmp
     mkdir -p "$STATE_DIR"; chmod 700 "$STATE_DIR" 2>/dev/null || true
-    tmp=$(mktemp "$STATE_DIR/.managed-agents.XXXXXX")
+    tmp=$(mktemp "$STATE_DIR/.managed-truths.XXXXXX")
     printf '%s\n' "$value" >"$tmp"
     chmod 600 "$tmp"
     mv -f "$tmp" "$MANAGED_PREF"
+    rm -f "$LEGACY_MANAGED_PREF"
+}
+
+truth_status_json() {
+    set +e
+    local out
+    out=$("$PYTHON" "$TRUTHS" status 2>/dev/null)
+    set -e
+    [ -n "$out" ] && printf '%s\n' "$out" || printf '%s\n' '{"schema":"gwcu.truths.v1","ok":false,"code":"unavailable"}'
 }
 
 managed_result() {
-    local value source
+    local value source scope
     value=$(managed_default)
-    if [ "${GWCU_PROJECT_MEMORY+x}" = x ]; then
+    if [ "${GWCU_TRUTHS+x}" = x ] || [ "${GWCU_PROJECT_MEMORY+x}" = x ]; then
         source=environment
-        if project_memory_enabled; then value=on; else value=off; fi
+        if truths_enabled; then value=on; else value=off; fi
     elif [ -s "$MANAGED_PREF" ]; then
         source=installer
+    elif [ -s "$LEGACY_MANAGED_PREF" ]; then
+        source=legacy_installer
     else
         source=default
     fi
-    printf '{"schema":"gwcu.preferences.v1","ok":true,"code":"managed_agents_%s","managed_agents":%s,"source":"%s","path":"%s","max_repeat_identity_route_setup_savings_percent":100}\n' \
-        "$value" "$([ "$value" = on ] && printf true || printf false)" "$source" "$MANAGED_PREF"
+    scope=$(truth_status_json)
+    "$PYTHON" - "$value" "$source" "$MANAGED_PREF" "$scope" <<'PY'
+import json,sys
+value,source,path,scope_raw=sys.argv[1:5]
+try: scope=json.loads(scope_raw)
+except Exception: scope={"schema":"gwcu.truths.v1","ok":False,"code":"unavailable"}
+print(json.dumps({
+    "schema":"gwcu.preferences.v1","ok":True,"code":f"managed_truths_{value}",
+    "managed_truths":value=="on","source":source,"path":path,"scope":scope,
+    "max_repeat_identity_resolution_savings_percent":100,
+},separators=(",",":")))
+PY
 }
 
 read_profile() {
@@ -88,6 +118,33 @@ if d.get("schema")!="gwcu.profile.v2" or (boot and s.get("boot_id") and boot!=s[
     print(json.dumps({"schema":"gwcu.profile.v2","ok":False,"code":"profile_stale","next":{"action":"refresh_profile"}},separators=(",",":")))
     raise SystemExit(30)
 print(json.dumps(d,separators=(",",":")))
+PY
+}
+
+sync_existing_truths() {
+    truths_enabled || return 0
+    local status generated
+    set +e; status=$("$PYTHON" "$TRUTHS" status 2>/dev/null); local status_rc=$?; set -e
+    [ "$status_rc" -eq 0 ] || return 0
+    generated=$("$PYTHON" - "$PROFILE" <<'PY'
+import json,pathlib,sys
+p=json.loads(pathlib.Path(sys.argv[1]).read_text())
+s=p.get('state') or {}; host=s.get('host') or {}; obs=s.get('observation') or {}; cua=s.get('cua') or {}
+print(json.dumps({
+  'observed': {k:v for k,v in {'session_type':host.get('session'),'desktop':host.get('desktop')}.items() if v not in (None,'unknown','')},
+  'capabilities': {
+    'gnome_wayland': bool(host.get('ok')),
+    'whole_screen': obs.get('status')=='ready',
+    'cua_control': cua.get('status')=='ready',
+  }
+},separators=(',',':')))
+PY
+)
+    "$PYTHON" - "$generated" "$TRUTHS" <<'PY' >/dev/null 2>&1 || true
+import json,subprocess,sys
+value=json.loads(sys.argv[1]); tool=sys.argv[2]
+for section in ('observed','capabilities'):
+    subprocess.run([sys.executable,tool,'merge','--section',section,'--json',json.dumps(value[section],separators=(',',':'))],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,check=False)
 PY
 }
 
@@ -115,146 +172,53 @@ out=pathlib.Path(sys.argv[2]); out.write_text(json.dumps(p,separators=(",",":"))
 PY
     mv -f "$out" "$PROFILE"
     rm -f "$diag"
+    sync_existing_truths
     cat "$PROFILE"
     return "$rc"
 }
 
-project_root() {
-    project_memory_enabled || return 1
-    if [ -n "${GWCU_PROJECT_ROOT:-}" ]; then
-        [ -d "$GWCU_PROJECT_ROOT" ] || return 1
-        (cd "$GWCU_PROJECT_ROOT" && pwd -P)
-        return
-    fi
-    command -v git >/dev/null 2>&1 || return 1
-    git -C "${GWCU_WORKDIR:-$PWD}" rev-parse --show-toplevel 2>/dev/null
-}
-
-project_memory() {
-    local action="$1" target="$2" identity_json="${3:-}" root agents
-    [ -n "$identity_json" ] || identity_json='{}'
-    if ! project_memory_enabled; then
-        printf '%s\n' '{"schema":"gwcu.project-memory.v1","ok":false,"code":"disabled","changed":false}'
+truth_lookup() {
+    local target="$1"
+    if ! truths_enabled; then
+        printf '%s\n' '{"schema":"gwcu.truths.v1","ok":false,"code":"disabled","changed":false}'
         return 10
     fi
-    root=$(project_root 2>/dev/null || true)
-    if [ -z "$root" ]; then
-        printf '%s\n' '{"schema":"gwcu.project-memory.v1","ok":false,"code":"no_project","changed":false}'
+    "$PYTHON" "$TRUTHS" lookup --target "$target"
+}
+
+truth_remember() {
+    local target="$1" identity_json="$2"
+    if ! truths_enabled; then
+        printf '%s\n' '{"schema":"gwcu.truths.v1","ok":false,"code":"disabled","changed":false}'
         return 10
     fi
-    agents="${GWCU_AGENTS_FILE:-$root/AGENTS.md}"
-    "$PYTHON" - "$action" "$target" "$identity_json" "$agents" <<'PY'
-import json,os,pathlib,re,stat,sys
-
-action,target,identity_raw,agents_raw=sys.argv[1:5]
-path=pathlib.Path(agents_raw)
-START='<!-- gwcu:desktop-truths:v1:start -->'
-END='<!-- gwcu:desktop-truths:v1:end -->'
-PREFIX='<!-- gwcu:app:v1 '
-SUFFIX=' -->'
-MAX=24
-
-def compact(x):
-    return json.dumps(x,separators=(',',':'),sort_keys=True,ensure_ascii=True).replace('<','\\u003c').replace('>','\\u003e').replace('&','\\u0026')
-def result(ok,code,**kw):
-    print(compact({'schema':'gwcu.project-memory.v1','ok':ok,'code':code,'path':str(path),**kw}))
-def norm(s): return re.sub(r'[^a-z0-9]+','-',str(s or '').casefold()).strip('-')
-def load_text():
-    try:return path.read_text(encoding='utf-8')
-    except FileNotFoundError:return ''
-    except OSError:return ''
-def parse_entries(text):
-    out=[]
-    for line in text.splitlines():
-        if line.startswith(PREFIX) and line.endswith(SUFFIX):
-            try:
-                d=json.loads(line[len(PREFIX):-len(SUFFIX)])
-                if isinstance(d,dict) and d.get('key'): out.append(d)
-            except Exception: pass
-    return out
-def matches(entry,q):
-    qn=norm(q)
-    vals=[entry.get('name'),entry.get('desktop_id'),entry.get('app_id'),entry.get('startup_wm_class'),entry.get('key')]
-    for v in vals:
-        if not v: continue
-        raw=str(v).casefold()
-        stem=raw[:-8] if raw.endswith('.desktop') else raw
-        if q.casefold()==raw or q.casefold()==stem or (qn and qn in {norm(raw),norm(stem)}): return True
-    return False
-
-text=load_text(); entries=parse_entries(text)
-if action=='lookup':
-    hits=[e for e in entries if matches(e,target)]
-    if len(hits)==1:
-        result(True,'hit',changed=False,identity=hits[0]); raise SystemExit(0)
-    if len(hits)>1:
-        result(False,'ambiguous',changed=False,candidates=hits[:8]); raise SystemExit(10)
-    result(False,'miss',changed=False); raise SystemExit(10)
-if action!='remember':
-    result(False,'bad_action',changed=False); raise SystemExit(2)
-try: identity=json.loads(identity_raw)
-except Exception:
-    result(False,'invalid_identity',changed=False); raise SystemExit(10)
-if not isinstance(identity,dict):
-    result(False,'invalid_identity',changed=False); raise SystemExit(10)
-entry={
-    'key': identity.get('desktop_id') or identity.get('app_id') or norm(identity.get('display_name') or target),
-    'name': identity.get('display_name') or target,
-    'desktop_id': identity.get('desktop_id'),
-    'app_id': identity.get('app_id'),
-    'startup_wm_class': identity.get('startup_wm_class'),
-    'kind': identity.get('kind'),
-}
-entry={k:v for k,v in entry.items() if v not in (None,'')}
-if not entry.get('key'):
-    result(False,'insufficient_identity',changed=False); raise SystemExit(10)
-by_key={e.get('key'):e for e in entries}
-old=by_key.get(entry['key'])
-if old==entry:
-    result(True,'unchanged',changed=False,identity=entry); raise SystemExit(0)
-if old is None and len(by_key)>=MAX:
-    result(False,'full',changed=False,limit=MAX); raise SystemExit(10)
-by_key[entry['key']]=entry
-rows=[by_key[k] for k in sorted(by_key,key=lambda x:str(x).casefold())]
-block='\n'.join([
-    START,
-    '## GWCU desktop truths',
-    'Stable local identities learned by computer-use routing. Live Cua state wins on contradiction.',
-    *[PREFIX+compact(e)+SUFFIX for e in rows],
-    END,
-])
-if START in text and END in text and text.index(START)<text.index(END):
-    a=text.index(START); b=text.index(END,a)+len(END)
-    new=text[:a]+block+text[b:]
-else:
-    base=text.rstrip()
-    new=(base+'\n\n' if base else '')+block+'\n'
-try:
-    path.parent.mkdir(parents=True,exist_ok=True)
-    if path.is_symlink():
-        result(False,'symlink_refused',changed=False); raise SystemExit(10)
-    mode=stat.S_IMODE(path.stat().st_mode) if path.exists() else 0o644
-    tmp=path.with_name(path.name+'.gwcu.tmp')
-    if tmp.exists() or tmp.is_symlink(): tmp.unlink()
-    tmp.write_text(new,encoding='utf-8')
-    os.chmod(tmp,mode)
-    os.replace(tmp,path)
-except OSError as exc:
-    result(False,'write_failed',changed=False,detail=str(exc)); raise SystemExit(10)
-result(True,'recorded',changed=True,identity=entry)
-PY
+    "$PYTHON" "$TRUTHS" remember --target "$target" --identity-json "$identity_json"
 }
 
 case "$ACTION" in
     managed)
         sub="${ARGS[0]:-status}"
         case "${sub,,}" in
-            on|yes|true|1) write_managed_preference on ;;
-            off|no|false|0) write_managed_preference off ;;
+            on|yes|true|1)
+                write_managed_preference on
+                "$PYTHON" "$TRUTHS" init >/dev/null
+                ;;
+            off|no|false|0)
+                write_managed_preference off
+                ;;
             status) ;;
             *) echo "managed expects on|off|status" >&2; exit 2 ;;
         esac
         managed_result
+        ;;
+    truths)
+        sub="${ARGS[0]:-status}"
+        case "$sub" in
+            status|scope|init|regenerate)
+                "$PYTHON" "$TRUTHS" "$sub"
+                ;;
+            *) echo "truths expects status|scope|init|regenerate" >&2; exit 2 ;;
+        esac
         ;;
     invalidate)
         rm -f "$PROFILE"
@@ -273,16 +237,16 @@ case "$ACTION" in
         set +e; cached=$(read_profile 2>/dev/null); cached_rc=$?; set -e
         [ -n "${cached:-}" ] && host_json="$cached"
 
-        set +e; memory_json=$(project_memory lookup "$TARGET" '{}' 2>/dev/null); memory_rc=$?; set -e
-        [ -n "${memory_json:-}" ] || memory_json='{"schema":"gwcu.project-memory.v1","ok":false,"code":"unavailable","changed":false}'
+        set +e; memory_json=$(truth_lookup "$TARGET" 2>/dev/null); memory_rc=$?; set -e
+        [ -n "${memory_json:-}" ] || memory_json='{"schema":"gwcu.truths.v1","ok":false,"code":"unavailable","changed":false}'
         if [ "$memory_rc" -eq 0 ]; then
             "$PYTHON" - "$TARGET" "$memory_json" "$host_json" "$cached_rc" <<'PY'
 import json,sys
 query=sys.argv[1]; mem=json.loads(sys.argv[2]); host=json.loads(sys.argv[3]); hrc=int(sys.argv[4])
 host_view={'code':host.get('code','unknown'),'ok':bool(host.get('ok',False)),'cached':hrc==0}
 p={'schema':'gwcu.route.v1','mode':'target','query':query,'host':host_view,'ok':True,'code':'target_resolved',
-   'identity':mem.get('identity'),'evidence':['project_agents_truth'],'project_memory':{'code':mem.get('code'),'path':mem.get('path'),'changed':False},
-   'next':{'action':'cua_target_state','query':query,'identity_source':'project_agents'}}
+   'identity':mem.get('identity'),'evidence':['gwcu_truth'],'truths':{k:mem.get(k) for k in ('code','path','root','source','changed') if mem.get(k) is not None},
+   'next':{'action':'cua_target_state','query':query,'identity_source':'gwcu'}}
 print(json.dumps(p,separators=(',',':')))
 PY
             exit 0
@@ -290,7 +254,7 @@ PY
 
         set +e; identity_json=$("$IDENTITY" --resolve --machine "$TARGET" 2>/dev/null); identity_rc=$?; set -e
         [ -n "$identity_json" ] || identity_json='{"schema":"gwcu.identity.v1","ok":false,"code":"identity_unavailable","candidates":[],"next":{"action":"use_live_window_identity"}}'
-        remembered='{"schema":"gwcu.project-memory.v1","ok":false,"code":"not_recorded","changed":false}'
+        remembered='{"schema":"gwcu.truths.v1","ok":false,"code":"not_recorded","changed":false}'
         if [ "$identity_rc" -eq 0 ]; then
             set +e
             identity_result=$("$PYTHON" - "$identity_json" <<'PY'
@@ -298,17 +262,17 @@ import json,sys
 print(json.dumps(json.loads(sys.argv[1]).get('result') or {},separators=(',',':')))
 PY
 )
-            remembered=$(project_memory remember "$TARGET" "$identity_result" 2>/dev/null)
+            remembered=$(truth_remember "$TARGET" "$identity_result" 2>/dev/null)
             set -e
-            [ -n "${remembered:-}" ] || remembered='{"schema":"gwcu.project-memory.v1","ok":false,"code":"not_recorded","changed":false}'
+            [ -n "${remembered:-}" ] || remembered='{"schema":"gwcu.truths.v1","ok":false,"code":"not_recorded","changed":false}'
         fi
         "$PYTHON" - "$TARGET" "$identity_json" "$identity_rc" "$host_json" "$cached_rc" "$remembered" <<'PY'
 import json,sys
 query=sys.argv[1]; ident=json.loads(sys.argv[2]); irc=int(sys.argv[3]); host=json.loads(sys.argv[4]); hrc=int(sys.argv[5]); mem=json.loads(sys.argv[6])
 host_view={"code":host.get("code","unknown"),"ok":bool(host.get("ok",False)),"cached":hrc==0}
-mem_view={k:mem.get(k) for k in ('code','path','changed') if mem.get(k) is not None}
+mem_view={k:mem.get(k) for k in ('code','path','root','source','gitignore','changed') if mem.get(k) is not None}
 code=ident.get("code","identity_unavailable")
-base={"schema":"gwcu.route.v1","mode":"target","query":query,"host":host_view,"project_memory":mem_view}
+base={"schema":"gwcu.route.v1","mode":"target","query":query,"host":host_view,"truths":mem_view}
 if irc==0 and ident.get("ok") and code=="resolved":
     base.update({"ok":True,"code":"target_resolved","identity":ident.get("result"),"evidence":ident.get("evidence",[]),
                  "next":{"action":"cua_target_state","query":query,"identity_source":"launcher"}})
@@ -346,7 +310,7 @@ raise SystemExit(0 if ok else 30)
 PY
         ;;
     *)
-        echo "usage: $0 read|refresh|invalidate|route|recover|managed [--machine] [--quiet] [args]" >&2
+        echo "usage: $0 read|refresh|invalidate|route|recover|managed|truths [--machine] [--quiet] [args]" >&2
         exit 2
         ;;
 esac
