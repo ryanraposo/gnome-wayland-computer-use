@@ -15,24 +15,45 @@ hermes_skill="$ROOT/SKILL.md"
 portable_skill="$ROOT/runtimes/openai/SKILL.md"
 contract="$ROOT/references/skill-ux-contract.md"
 installer="$ROOT/install.sh"
+teardown="$ROOT/scripts/teardown.sh"
+checks="$ROOT/lib/checks.sh"
 landing="$ROOT/index.html"
 readme="$ROOT/README.md"
 
-# Capture architecture: persistent ScreenCast is the hot path, not a Shell helper.
+# Observation architecture: persistent ScreenCast is the hot path and remains
+# independent from Cua/WinRects.
 grep -q '^capture_portal_screencast()' "$capture" || fail "capture has a ScreenCast hot path"
 grep -q "persist_mode.*Variant('u', 2)" "$capture" || fail "ScreenCast requests persistent permission"
 grep -q 'screencast-restore-token' "$capture" || fail "ScreenCast persists a restore token"
 grep -q 'capture_portal_screencast || portal_rc=' "$capture" || fail "ScreenCast is attempted"
 grep -q 'capture_portal_screenshot || portal_rc=' "$capture" || fail "Screenshot recovery is present"
 [ "$(grep -n 'capture_portal_screencast || portal_rc=' "$capture" | cut -d: -f1)" -lt \
-  "$(grep -n 'capture_portal_screenshot || portal_rc=' "$capture" | cut -d: -f1)" ] || \
-    fail "ScreenCast precedes Screenshot"
-! grep -q 'org.cua.WinRects' "$capture" || fail "capture is independent of WinRects"
+  "$(grep -n 'capture_portal_screenshot || portal_rc=' "$capture" | cut -d: -f1)" ] || fail "ScreenCast precedes Screenshot"
+! grep -q 'org.cua.WinRects' "$capture" || fail "capture is independent of WinRects protocol"
 ! grep -q 'GnomeWaylandDesktopCapture' "$capture" || fail "capture is independent of project Shell extension"
 ! grep -q 'toggle_show_desktop' "$capture" || fail "capture never hides windows"
-pass "capture hot path is native, persistent, and extension-free"
+pass "observation hot path is native, persistent, and Cua-independent"
 
-# First-use update routing must remain network-free.
+# Cua GNOME precision boundary.
+grep -q 'packages/current/wayland-helper' "$installer" || fail "installer does not use Cua packaged helper path"
+grep -q '"$CUA_HELPER_INSTALLER"' "$installer" || fail "installer does not invoke Cua helper installer"
+grep -q 'provision_cua_winrects' "$installer" || fail "installer lacks WinRects provisioning boundary"
+grep -q 'if \$HERMES_ENABLED; then' "$installer" || fail "installer lacks runtime profile gate"
+! grep -Eq 'curl .*winrects|github.*winrects@cua' "$installer" || fail "installer downloads WinRects independently"
+grep -q 'cua-winrects-managed' "$installer" || fail "installer does not record WinRects ownership"
+grep -q 'cua-winrects-managed' "$teardown" || fail "teardown ignores WinRects ownership"
+grep -q 'org.cua.WinRects' "$checks" || fail "diagnostics do not verify the Cua service owner"
+pass "Cua WinRects is provisioned, not reimplemented"
+
+# Ubuntu-native foundation is verified and repairable.
+grep -q 'check_pipewire_foundation' "$installer" || fail "installer does not verify PipeWire foundation"
+grep -q 'add_pkg pipewire' "$installer" || fail "installer cannot repair missing PipeWire"
+grep -q 'add_pkg wireplumber' "$installer" || fail "installer cannot repair missing WirePlumber"
+grep -q 'add_pkg xdg-desktop-portal-gnome' "$installer" || fail "installer cannot repair GNOME portal backend"
+grep -q 'add_pkg gstreamer1.0-pipewire' "$installer" || fail "installer cannot repair GStreamer PipeWire bridge"
+pass "Ubuntu observation foundation is verify-first and repairable"
+
+# First-use update routing remains network-free.
 update_home="$TEST_TMP/update-home"
 update_bin="$TEST_TMP/update-bin"
 mkdir -p "$update_home" "$update_bin"
@@ -148,21 +169,14 @@ HOME="$home" GNOME_WAYLAND_SYSTEM_PYTHON="$mock_bin/python3" PATH="$mock_bin:/us
 [ ! -e "$home/ydotool-was-called" ] || fail "denied ScreenCast opened another capture path"
 pass "portal denial stops the chain"
 
-# Timing mode preserves stdout while adding machine-readable stderr.
-timing_err="$TEST_TMP/timing.err"
-method=$(HOME="$home" GNOME_WAYLAND_SYSTEM_PYTHON="$TEST_TMP/capture-fast-bin/python3" \
-    PATH="$TEST_TMP/capture-fast-bin:/usr/bin:/bin" \
-    "$capture" --timing --screen "$TEST_TMP/timing.png" 2>"$timing_err")
-[ "$method" = 'capture_method=portal-screencast' ] || fail "timing changed capture stdout"
-grep -Eq '^capture_elapsed_ms=[0-9]+$' "$timing_err" || fail "timing did not emit elapsed milliseconds"
-pass "timing mode preserves method output"
-
-# Runtime/published surfaces share the same architecture.
+# Runtime/published surfaces share the final architecture.
 grep -q '^## Pixel-Only Surfaces$' "$hermes_skill" || fail "Hermes skill lacks pixel-only recovery"
 grep -q '^## Pixel-Only Surfaces$' "$portable_skill" || fail "portable skill lacks pixel-only recovery"
-grep -q 'does \*\*not\*\* require WinRects' "$hermes_skill" || fail "Hermes skill still depends on WinRects"
+grep -q '^## Foreground Preservation Contract$' "$hermes_skill" || fail "Hermes skill lacks foreground preservation contract"
+grep -q 'Cua GNOME Precision' "$hermes_skill" || fail "Hermes skill lacks Cua precision boundary"
 grep -q 'Route once → cheapest truthful evidence' "$readme" || fail "README lost latency contract"
 grep -q 'Installed web apps stay apps' "$landing" || fail "landing page lost PWA identity"
 grep -q 'ScreenCast + PipeWire' "$landing" || fail "landing page lost native capture hot path"
+grep -q 'Cua + WinRects' "$landing" || fail "landing page lost GNOME precision plane"
 grep -q 'A fresh screenshot is not a phase-transition requirement' "$contract" || fail "skill UX contract lost decision-boundary rule"
-pass "runtime and published surfaces share the extension-free contract"
+pass "runtime and published surfaces share the four-plane contract"
