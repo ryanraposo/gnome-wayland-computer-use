@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# computer-use.sh — human-facing command surface used by Hermes /computer-use.
+# computer-use.sh — installed GWCU command/composition surface.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PROFILE="$ROOT/scripts/profile.sh"
@@ -31,6 +31,9 @@ usage() {
   /computer-use doctor
       Run the deterministic installed-system diagnosis.
 
+  computer-use.sh span --actions-json '<json>'
+      Execute an already-decided Cua action span behind one model/tool call.
+
   /computer-use help
       Show this command surface.
 HELP
@@ -46,9 +49,141 @@ print(json.dumps(d,indent=2,ensure_ascii=False))
 PY
 }
 
+run_action_span() {
+    "$PYTHON" - "$@" <<'PY'
+from __future__ import annotations
+import argparse,json,os,pathlib,selectors,shutil,subprocess,sys,time
+
+SCHEMA="gwcu.action-span.v1"
+REQUEST_SCHEMA="gwcu.action-span.request.v1"
+PROTOCOL="2024-11-05"
+MAX_ACTIONS=64
+
+def compact(v): return json.dumps(v,separators=(",",":"),ensure_ascii=True)
+def envelope(ok,code,requested=0,completed=0,results=None,boundary=None,detail=None):
+    out={"schema":SCHEMA,"ok":ok,"code":code,"requested":requested,"completed":completed,
+         "results":results or [],"boundary":boundary}
+    if detail: out["detail"]=detail
+    return out
+
+def resolve_driver(explicit):
+    if explicit: return explicit
+    env=os.environ.get("CUA_DRIVER_BIN")
+    if env: return env
+    found=shutil.which("cua-driver")
+    if found: return found
+    p=pathlib.Path.home()/".local/bin/cua-driver"
+    return str(p) if p.is_file() and os.access(p,os.X_OK) else None
+
+def send(proc,payload):
+    proc.stdin.write(compact(payload)+"\n"); proc.stdin.flush()
+
+def recv_for(proc,request_id,timeout):
+    sel=selectors.DefaultSelector(); sel.register(proc.stdout,selectors.EVENT_READ)
+    deadline=time.monotonic()+timeout
+    try:
+        while True:
+            left=deadline-time.monotonic()
+            if left<=0 or not sel.select(left): raise TimeoutError(f"timed out waiting for MCP response id={request_id}")
+            line=proc.stdout.readline()
+            if not line: raise RuntimeError("cua-driver MCP exited before responding")
+            msg=json.loads(line)
+            if msg.get("id")==request_id: return msg
+    finally: sel.close()
+
+def normalize(response):
+    result=response.get("result")
+    if not isinstance(result,dict): return result
+    structured=result.get("structuredContent")
+    if structured is None: structured=result.get("structured_content")
+    return structured if structured is not None else result.get("content",result)
+
+def boundary_reason(response):
+    if "error" in response: return "mcp_error"
+    result=response.get("result")
+    if not isinstance(result,dict): return "invalid_result"
+    if result.get("isError") is True: return "cua_error"
+    structured=result.get("structuredContent")
+    if structured is None: structured=result.get("structured_content")
+    if isinstance(structured,dict):
+        if structured.get("refused") is True: return "cua_refusal"
+        if structured.get("ok") is False or structured.get("success") is False: return "cua_failure"
+    return None
+
+def parse_actions(raw):
+    value=json.loads(raw)
+    if isinstance(value,dict):
+        if value.get("schema") not in (None,REQUEST_SCHEMA): raise ValueError("unsupported request schema")
+        value=value.get("actions")
+    if not isinstance(value,list) or not value: raise ValueError("actions must be a non-empty JSON array")
+    if len(value)>MAX_ACTIONS: raise ValueError(f"action span exceeds {MAX_ACTIONS} actions")
+    out=[]
+    for i,a in enumerate(value):
+        if not isinstance(a,dict): raise ValueError(f"action {i} must be an object")
+        name=a.get("name"); arguments=a.get("arguments",{})
+        if not isinstance(name,str) or not name.strip(): raise ValueError(f"action {i} requires a name")
+        if not isinstance(arguments,dict): raise ValueError(f"action {i} arguments must be an object")
+        out.append({"name":name,"arguments":arguments})
+    return out
+
+def execute(driver,actions,timeout):
+    try:
+        proc=subprocess.Popen([driver,"mcp"],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,
+                              text=True,encoding="utf-8",errors="replace",bufsize=1)
+    except OSError as exc:
+        return envelope(False,"driver_unavailable",requested=len(actions),detail=str(exc)),50
+    results=[]
+    try:
+        send(proc,{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":PROTOCOL,"capabilities":{},
+             "clientInfo":{"name":"gwcu-action-span","version":"2.3.0"}}})
+        init=recv_for(proc,1,timeout)
+        if "error" in init or not isinstance(init.get("result"),dict):
+            return envelope(False,"mcp_initialize_failed",requested=len(actions),detail=compact(init)),50
+        send(proc,{"jsonrpc":"2.0","method":"notifications/initialized"})
+        for index,action in enumerate(actions):
+            rid=index+2
+            send(proc,{"jsonrpc":"2.0","id":rid,"method":"tools/call",
+                       "params":{"name":action["name"],"arguments":action["arguments"]}})
+            response=recv_for(proc,rid,timeout)
+            results.append({"index":index,"name":action["name"],"result":normalize(response)})
+            reason=boundary_reason(response)
+            if reason:
+                return envelope(False,"boundary",requested=len(actions),completed=index,results=results,
+                                boundary={"index":index,"name":action["name"],"reason":reason}),30
+        return envelope(True,"completed",requested=len(actions),completed=len(actions),results=results),0
+    except (TimeoutError,RuntimeError,ValueError,json.JSONDecodeError) as exc:
+        return envelope(False,"transport_boundary",requested=len(actions),completed=len(results),results=results,detail=str(exc)),50
+    finally:
+        if proc.poll() is None:
+            proc.terminate()
+            try: proc.wait(timeout=1)
+            except subprocess.TimeoutExpired:
+                proc.kill(); proc.wait(timeout=1)
+
+parser=argparse.ArgumentParser(description="Execute a predetermined Cua action span behind one model/tool boundary")
+parser.add_argument("--driver")
+parser.add_argument("--timeout",type=float,default=15.0)
+parser.add_argument("--actions-json",required=True)
+args=parser.parse_args(sys.argv[1:])
+try: actions=parse_actions(args.actions_json)
+except (ValueError,json.JSONDecodeError) as exc:
+    print(compact(envelope(False,"invalid_request",detail=str(exc)))); raise SystemExit(2)
+driver=resolve_driver(args.driver)
+if not driver:
+    print(compact(envelope(False,"driver_missing",requested=len(actions)))); raise SystemExit(50)
+payload,rc=execute(driver,actions,max(1.0,min(args.timeout,120.0)))
+print(compact(payload)); raise SystemExit(rc)
+PY
+}
+
 command="${1:-help}"
 [ "$#" -eq 0 ] || shift
 case "$command" in
+    span)
+        # Hard invariant: this is ONE model/tool boundary for the whole already-decided span.
+        # Cua remains the sole control authority; sequential Cua MCP calls stay inside this process.
+        run_action_span "$@"
+        ;;
     managed)
         mode="${1:-on}"
         case "$mode" in on|off|status) ;; *) printf 'managed expects on|off|status\n' >&2; exit 2 ;; esac
