@@ -106,13 +106,10 @@ fi
 HERMES_ENABLED=false
 case "$RUNTIME_MODE" in
     auto)
-        if command -v hermes &>/dev/null; then
-            HERMES_ENABLED=true
-        fi
+        if command -v hermes &>/dev/null; then HERMES_ENABLED=true; fi
         ;;
     hermes)
-        command -v hermes &>/dev/null || \
-            error "Hermes was explicitly requested but is not on PATH"
+        command -v hermes &>/dev/null || error "Hermes was explicitly requested but is not on PATH"
         HERMES_ENABLED=true
         ;;
     agent) ;;
@@ -131,21 +128,15 @@ SESSION=$(check_get_session)
 DESKTOP=$(check_get_desktop)
 
 if [ "$SESSION" != "wayland" ]; then
-    if $COMPAT; then
-        info "Session: $SESSION (compat mode, continuing)"
-    else
-        error "Session: $SESSION (expected wayland). Re-run with --compat to install anyway."
-    fi
+    if $COMPAT; then info "Session: $SESSION (compat mode, continuing)"
+    else error "Session: $SESSION (expected wayland). Re-run with --compat to install anyway."; fi
 else
     success "Active Wayland session detected."
 fi
 
 if [[ "$DESKTOP" != *"GNOME"* ]]; then
-    if $COMPAT; then
-        info "Desktop: $DESKTOP (compat mode, continuing)"
-    else
-        error "Desktop: $DESKTOP (expected GNOME). Re-run with --compat to install anyway."
-    fi
+    if $COMPAT; then info "Desktop: $DESKTOP (compat mode, continuing)"
+    else error "Desktop: $DESKTOP (expected GNOME). Re-run with --compat to install anyway."; fi
 else
     success "Desktop environment: GNOME"
 fi
@@ -174,15 +165,8 @@ if [ ! -x "$SYSTEM_PYTHON" ]; then
     SYSTEM_PYTHON="$(command -v python3 2>/dev/null || true)"
 fi
 if [ -z "$SYSTEM_PYTHON" ] ||
-   ! "$SYSTEM_PYTHON" -c "import gi; gi.require_version('Gio','2.0'); gi.require_version('Gst','1.0'); from gi.repository import Gio,Gst" 2>/dev/null; then
-    missing_packages+=(python3-gi gir1.2-gstreamer-1.0 gir1.2-gst-plugins-base-1.0)
-fi
-command -v gst-inspect-1.0 &>/dev/null || missing_packages+=(gstreamer1.0-tools)
-if ! gst-inspect-1.0 pipewiresrc &>/dev/null; then
-    missing_packages+=(gstreamer1.0-pipewire)
-fi
-if ! gst-inspect-1.0 pngenc &>/dev/null; then
-    missing_packages+=(gstreamer1.0-plugins-good)
+   ! "$SYSTEM_PYTHON" -c "import gi; gi.require_version('Gio','2.0'); from gi.repository import Gio" 2>/dev/null; then
+    missing_packages+=(python3-gi)
 fi
 
 if [ "${#missing_packages[@]}" -gt 0 ]; then
@@ -192,7 +176,7 @@ if [ "${#missing_packages[@]}" -gt 0 ]; then
     as_root apt-get install -y "${missing_packages[@]}" || \
         error "Package installation failed. Ensure Ubuntu's main and universe repositories are enabled."
 fi
-success "Ubuntu capture stack ready (Screenshot portal + PipeWire + ydotool fallback)"
+success "Ubuntu capture stack ready (XDG Screenshot portal + ydotool fallback)"
 
 # ── 3. Skill Installation ────────────────────────────────────────────────
 info "[3/5] Installing the computer-use skill bundle..."
@@ -213,10 +197,7 @@ SOUL_END="<!-- gnome-wayland-computer-use:end -->"
 SOUL_CREATED_MARKER="${BACKUP_ROOT}/soul-created-by-installer"
 
 archive_hermes_skill() {
-    local src="$1"
-    local reason="$2"
-    local relative dst
-
+    local src="$1" reason="$2" relative dst
     [ -d "$src" ] || return 0
     if [ -z "$BACKUP_BATCH" ]; then
         BACKUP_BATCH="${BACKUP_ROOT}/$(date +%Y%m%d-%H%M%S)-$$"
@@ -231,10 +212,8 @@ archive_hermes_skill() {
 }
 
 is_conflicting_screenshot_skill() {
-    local skill_file="$1"
-    local skill_dir
+    local skill_file="$1" skill_dir
     skill_dir="$(dirname "$skill_file")"
-
     awk '
         NR == 1 && $0 == "---" { frontmatter = 1; next }
         frontmatter && $0 == "---" { exit }
@@ -246,9 +225,30 @@ is_conflicting_screenshot_skill() {
         }
         END { exit !found }
     ' "$skill_file" || [[ "$(basename "$skill_dir" | tr '[:upper:]' '[:lower:]')" =~ screenshot|screen-capture|screen_capture ]] || return 1
+    grep -qiE '(^|[^[:alnum:]_-])(grim|gnome-screenshot|slurp)([^[:alnum:]_-]|$)|org\.gnome\.Shell\.Screenshot' "$skill_file"
+}
 
-    grep -qiE '(^|[^[:alnum:]_-])(grim|gnome-screenshot|slurp)([^[:alnum:]_-]|$)|org\.gnome\.Shell\.Screenshot' \
-        "$skill_file"
+remove_legacy_capture_extension() {
+    local uuid="desktop-capture@gnome-wayland-computer-use"
+    local extension_dir="${HOME}/.local/share/gnome-shell/extensions/${uuid}"
+    local enabled updated
+
+    if command -v gnome-extensions >/dev/null 2>&1; then
+        gnome-extensions disable "$uuid" 2>/dev/null || true
+    fi
+    rm -rf "$extension_dir"
+
+    enabled=$(gsettings get org.gnome.shell enabled-extensions 2>/dev/null || true)
+    if [ -n "$enabled" ] && { [[ "$enabled" == *"'$uuid'"* ]] || [[ "$enabled" == *"\"$uuid\""* ]]; }; then
+        updated=$("$SYSTEM_PYTHON" - "$enabled" "$uuid" <<'PY'
+import ast
+import sys
+items = ast.literal_eval(sys.argv[1])
+print(repr([item for item in items if item != sys.argv[2]]))
+PY
+)
+        gsettings set org.gnome.shell enabled-extensions "$updated" || true
+    fi
 }
 
 install_soul_routing() {
@@ -271,38 +271,29 @@ install_soul_routing() {
     {
         printf '%s\n' "$SOUL_START"
         cat <<'SOUL'
-## Ubuntu GNOME Wayland desktop capture
+## Ubuntu GNOME Wayland screen capture
 
-This instruction is always active. For every request to capture the desktop,
-wallpaper, or desktop icons, do not call
-`computer_use` first and do not search the current repository for utilities.
-Immediately run this exact terminal workflow:
+This instruction is always active. For requests to capture the desktop, screen,
+or what is currently visible, run the installed capture helper directly:
 
 ```bash
 HERMES_SKILLS_HOME="${HERMES_HOME:-$HOME/.hermes}"
-"$HERMES_SKILLS_HOME/skills/computer-use/scripts/capture.sh" --media
+"$HERMES_SKILLS_HOME/skills/computer-use/scripts/capture.sh" --media --screen
 ```
 
 The helper emits the `MEDIA:` attachment line itself. Preserve that line in the
-response. Do not analyze or describe the screenshot unless the user asks. Its
-primary compositor path captures the wallpaper/icons layer without changing
-focus, workspace, or window state. Its compatibility path briefly shows the
-desktop, captures it, restores the windows, and verifies restoration.
-For "capture my screen" or "capture what I am looking at", add `--screen`; that
-mode includes visible windows. Never use `--screen` for a desktop request.
-Never improvise with `computer_use(app="screen")`, `gnome-screenshot`, `grim`,
-`slurp`, ImageMagick `import`, or raw GNOME screenshot D-Bus calls.
+response. Do not analyze or describe the screenshot unless the user asks.
+Capture is the real visible display through the XDG Screenshot portal; no GNOME
+Shell extension or window-hiding transaction is part of the path. `--desktop`
+is a compatibility alias for the same visible-screen capture.
 SOUL
         printf '%s\n' "$SOUL_END"
-        if [ -s "$clean" ]; then
-            printf '\n'
-            cat "$clean"
-        fi
+        if [ -s "$clean" ]; then printf '\n'; cat "$clean"; fi
     } > "$next"
     chmod 600 "$next"
     mv "$next" "$SOUL_FILE"
     rm -f "$clean"
-    success "Hermes desktop-capture routing activated in ${SOUL_FILE/$HOME/\~}"
+    success "Hermes screen-capture routing activated in ${SOUL_FILE/$HOME/\~}"
 }
 
 install_bundle() {
@@ -317,26 +308,23 @@ install_bundle() {
         "scripts/diagnose.sh"
         "scripts/serve.sh"
         "scripts/teardown.sh"
-        "gnome-shell-extension/extension.js"
-        "gnome-shell-extension/metadata.json"
     )
     local file
 
-    mkdir -p "$dst/references" "$dst/lib" "$dst/scripts" "$dst/gnome-shell-extension"
+    mkdir -p "$dst/references" "$dst/lib" "$dst/scripts"
+    rm -rf "$dst/gnome-shell-extension"
     if [ -n "$SELF" ] && [ -f "$SELF/SKILL.md" ]; then
         cp "$SELF/SKILL.md" "$dst/SKILL.md"
     else
         command -v curl &>/dev/null || error "curl is required for remote installation"
-        curl -fsSL --retry 3 -o "$dst/SKILL.md" "$BASE_URL/SKILL.md" || \
-            error "Could not download SKILL.md"
+        curl -fsSL --retry 3 -o "$dst/SKILL.md" "$BASE_URL/SKILL.md" || error "Could not download SKILL.md"
     fi
     for file in "${files[@]}"; do
         if [ -n "$SELF" ] && [ -f "$SELF/$file" ]; then
             cp "$SELF/$file" "$dst/$file"
         else
             command -v curl &>/dev/null || error "curl is required for remote installation"
-            curl -fsSL --retry 3 -o "$dst/$file" "$BASE_URL/$file" || \
-                error "Could not download $file"
+            curl -fsSL --retry 3 -o "$dst/$file" "$BASE_URL/$file" || error "Could not download $file"
         fi
     done
     chmod +x "$dst/scripts/"*.sh
@@ -351,10 +339,8 @@ install_openai_payload() {
         cp "$SELF/agents/openai.yaml" "$dst/agents/openai.yaml"
     else
         command -v curl &>/dev/null || error "curl is required for remote installation"
-        curl -fsSL --retry 3 -o "$dst/SKILL.md" "$BASE_URL/runtimes/openai/SKILL.md" || \
-            error "Could not download the OpenAI skill payload"
-        curl -fsSL --retry 3 -o "$dst/agents/openai.yaml" "$BASE_URL/agents/openai.yaml" || \
-            error "Could not download OpenAI skill metadata"
+        curl -fsSL --retry 3 -o "$dst/SKILL.md" "$BASE_URL/runtimes/openai/SKILL.md" || error "Could not download the OpenAI skill payload"
+        curl -fsSL --retry 3 -o "$dst/agents/openai.yaml" "$BASE_URL/agents/openai.yaml" || error "Could not download OpenAI skill metadata"
     fi
 }
 
@@ -370,8 +356,7 @@ install_hermes_skill() {
     fi
     install_bundle "$HERMES_DIR"
 
-    if [ -d "$LEGACY_HERMES_DIR" ] &&
-       grep -q '^name: gnome-wayland-computer-use$' "$LEGACY_HERMES_DIR/SKILL.md" 2>/dev/null; then
+    if [ -d "$LEGACY_HERMES_DIR" ] && grep -q '^name: gnome-wayland-computer-use$' "$LEGACY_HERMES_DIR/SKILL.md" 2>/dev/null; then
         archive_hermes_skill "$LEGACY_HERMES_DIR" "legacy managed skill location"
     fi
 
@@ -379,9 +364,7 @@ install_hermes_skill() {
     local -a conflicting_skills=()
     while IFS= read -r -d '' skill_file; do
         [ "$(dirname "$skill_file")" = "$HERMES_DIR" ] && continue
-        if is_conflicting_screenshot_skill "$skill_file"; then
-            conflicting_skills+=("$(dirname "$skill_file")")
-        fi
+        if is_conflicting_screenshot_skill "$skill_file"; then conflicting_skills+=("$(dirname "$skill_file")"); fi
     done < <(find "${HERMES_HOME}/skills" -type f -name SKILL.md -print0 2>/dev/null)
     for skill_file in "${conflicting_skills[@]}"; do
         [ -d "$skill_file" ] || continue
@@ -392,51 +375,13 @@ install_hermes_skill() {
     success "Hermes computer-use override installed → ${HERMES_DIR/$HOME/\~}"
 }
 
-install_capture_extension() {
-    local uuid="desktop-capture@gnome-wayland-computer-use"
-    local extension_dir="${HOME}/.local/share/gnome-shell/extensions/${uuid}"
-    local enabled updated
-
-    mkdir -p "$extension_dir"
-    cp "$PRIMARY_DIR/gnome-shell-extension/extension.js" "$extension_dir/extension.js"
-    cp "$PRIMARY_DIR/gnome-shell-extension/metadata.json" "$extension_dir/metadata.json"
-
-    enabled=$(gsettings get org.gnome.shell enabled-extensions 2>/dev/null || true)
-    [ -n "$enabled" ] || enabled='[]'
-    if [[ "$enabled" != *"'$uuid'"* ]] && [[ "$enabled" != *"\"$uuid\""* ]]; then
-        updated=$("$SYSTEM_PYTHON" - "$enabled" "$uuid" <<'PY'
-import ast
-import sys
-
-items = ast.literal_eval(sys.argv[1])
-if sys.argv[2] not in items:
-    items.append(sys.argv[2])
-print(repr(items))
-PY
-)
-        gsettings set org.gnome.shell enabled-extensions "$updated"
-    fi
-
-    if command -v gnome-extensions >/dev/null 2>&1; then
-        if gnome-extensions enable "$uuid" 2>/dev/null; then
-            success "Focus-free GNOME desktop-layer capture extension enabled"
-        else
-            SESSION_RELOAD_NEEDED=true
-            warn "Desktop capture extension queued; sign out of the GNOME session and sign back in once to load it"
-        fi
-    else
-        warn "gnome-extensions not found; enable $uuid after installing GNOME Shell tools"
-    fi
-}
-
+remove_legacy_capture_extension
 install_shared_skill
-install_capture_extension
 if $HERMES_ENABLED; then
     install_hermes_skill
     install_soul_routing
 fi
-info "Desktop capture uses the compositor without changing focus or window state."
-info "Compatibility capture briefly toggles Show Desktop, captures, then restores it."
+success "Capture uses the XDG Screenshot portal; no GNOME Shell extension is installed."
 
 # ── 4. Input Permissions & Hardware Emulation ────────────────────────────
 info "[4/5] Configuring synthetic input (/dev/uinput + ydotoold)..."
@@ -449,7 +394,7 @@ else
     if ! check_is_input_group_member; then
         as_root usermod -aG input "$TARGET_USER"
         SESSION_RELOAD_NEEDED=true
-        warn "Added $TARGET_USER to the input group; the same GNOME sign-out/sign-in makes it effective"
+        warn "Added $TARGET_USER to the input group; sign out and back in once to make it effective"
     else
         success "User $TARGET_USER belongs to the input group"
     fi
@@ -476,7 +421,7 @@ if command -v ydotoold &>/dev/null; then
         success "Ubuntu ydotool.service enabled and running"
     else
         mkdir -p "$HOME/.config/systemd/user"
-        cat << 'SERVICE' > "$HOME/.config/systemd/user/ydotoold.service"
+        cat <<'SERVICE' > "$HOME/.config/systemd/user/ydotoold.service"
 [Unit]
 Description=ydotool uinput daemon
 [Service]
@@ -506,7 +451,7 @@ if $HERMES_ENABLED; then
     cua-driver telemetry disable &>/dev/null || true
 
     mkdir -p "$HOME/.config/systemd/user"
-    cat << 'SERVICE' > "$HOME/.config/systemd/user/gnome-wayland-computer-use.service"
+    cat <<'SERVICE' > "$HOME/.config/systemd/user/gnome-wayland-computer-use.service"
 [Unit]
 Description=cua-driver backend for GNOME Wayland computer use
 After=graphical-session.target
@@ -524,24 +469,17 @@ TimeoutStopSec=2s
 WantedBy=graphical-session.target
 SERVICE
 
-    systemctl --user import-environment \
-        DISPLAY WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE DBUS_SESSION_BUS_ADDRESS 2>/dev/null || true
+    systemctl --user import-environment DISPLAY WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE DBUS_SESSION_BUS_ADDRESS 2>/dev/null || true
     systemctl --user daemon-reload
     systemctl --user enable gnome-wayland-computer-use.service
     systemctl --user restart gnome-wayland-computer-use.service
     backend_ready=false
     for _ in {1..40}; do
-        if cua-driver status &>/dev/null; then
-            backend_ready=true
-            break
-        fi
+        if cua-driver status &>/dev/null; then backend_ready=true; break; fi
         sleep 0.1
     done
-    if $backend_ready; then
-        success "Hermes computer_use backend enabled and running"
-    else
-        error "Hermes computer_use backend did not start. Inspect: journalctl --user -u gnome-wayland-computer-use.service"
-    fi
+    if $backend_ready; then success "Hermes computer_use backend enabled and running"
+    else error "Hermes computer_use backend did not start. Inspect: journalctl --user -u gnome-wayland-computer-use.service"; fi
 else
     info "[5/5] Finalizing shared agent integration..."
     success "Shared GNOME host stack ready; use your agent's native computer-use tool."
