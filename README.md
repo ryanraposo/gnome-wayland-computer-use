@@ -11,9 +11,9 @@
 
 Fast, closed-loop computer use for Ubuntu GNOME Wayland.
 
-**Accessibility when semantics exist. Pixels when they do not. Compositor precision when GNOME requires it.**
+**Accessibility when semantics exist. Pixels when they do not. Compositor precision when GNOME requires it. Machine verdicts instead of ritual deliberation.**
 
-[Install](#install) · [Architecture](#architecture) · [Capture](#native-screen-capture) · [Diagnose](#diagnose)
+[Install](#install) · [Architecture](#architecture) · [Observation](#whole-screen-observation) · [Determinism](#deterministic-agent-experience) · [Diagnose](#diagnose)
 </div>
 
 ---
@@ -23,46 +23,58 @@ It preserves the human foreground whenever the platform exposes a safe route,
 then escalates deliberately when the requested interaction cannot be delivered
 otherwise.
 
+The governing split is simple:
+
+> **The agent decides intent. The operating layer decides mechanics.**
+
 Version 2.3 has four planes:
 
 | Plane | Surface | Job |
 |---|---|---|
 | **Observation** | XDG ScreenCast + PipeWire | truthful visible pixels |
-| **Semantics** | AT-SPI / runtime AX | background-first structured control |
+| **Semantics** | AT-SPI / Cua AX | background-first structured control |
 | **GNOME precision** | Cua + `winrects@cua` | authoritative Mutter geometry, verified activation, Cua compositor capture and agent cursor |
-| **Recovery** | portal/libei foreground input → `/dev/uinput` + `ydotool` | explicit last-resort delivery |
+| **Recovery** | verified foreground → `/dev/uinput` + `ydotool` | explicit last-resort delivery |
 
 The project-owned `desktop-capture@gnome-wayland-computer-use` extension is gone.
 Screen observation requires no GNOME Shell extension. The full Hermes/Cua profile
 uses **Cua's own WinRects GNOME adapter** for compositor knowledge; this repository
-never vendors it and `capture.sh` never calls its D-Bus protocol.
+never vendors it and project observation never calls its D-Bus protocol.
 
 ## Architecture
 
 ```text
-                         AGENT
-                           │
-               gnome-wayland-computer-use
-                    policy / routing
-                           │
-          ┌────────────────┴────────────────┐
-          │                                 │
-          ▼                                 ▼
-     OBSERVATION                         CONTROL
- XDG ScreenCast                       Cua Driver
-       │                                  │
-   PipeWire                         ┌──────┴──────┐
-       │                            │             │
- visible pixels                  AT-SPI       WinRects
-                                    │             │
-                              semantic AX     Mutter truth
-                                                │
-                                        geometry / activation
-                                        Cua cursor / capture
-                                        focus verification
+                              AGENT
+                                │
+                    intent / semantic choice
+                                │
+                         Cua target state
+                      tree + target pixels
+                                │
+                 ┌──────────────┴──────────────┐
+                 │                             │
+                 ▼                             ▼
+            SEMANTICS                    GNOME PRECISION
+          AT-SPI / Cua AX                Cua + WinRects
+                 │                             │
+          semantic action              geometry / activation
+                 │                     focus verification
+                 └──────────────┬──────────────┘
+                                │
+                        structured verdict
+                  confirmed / px / foreground /
+                    unverifiable / refusal
+                                │
+               whole-screen discovery only if needed
+                                │
+                    XDG ScreenCast + PipeWire
 ```
 
-The rule is:
+Observation remains independent from Cua. Control remains independent from the
+project's whole-screen capture implementation. That gives the system real
+redundancy without duplicating Cua's control protocol.
+
+The foreground rule is:
 
 > **Preserve foreground by default. Change it only when the requested interaction cannot be safely delivered otherwise. Verify the exact target before focus-bound input.**
 
@@ -89,30 +101,47 @@ curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh | 
 --unattended  mark automated execution
 ```
 
+The public installer is a small determinism facade over the proven 2.3 migration
+engine in `install-core.sh`. It verifies the current native foundation, applies
+current Cua/Ubuntu policy, then lets the core perform the established migration,
+skill installation, input recovery, and WinRects ownership work.
+
 ### Ubuntu 26.04 foundation
 
-A normal Ubuntu 26.04 GNOME desktop already includes PipeWire/WirePlumber as
-platform infrastructure. The installer **verifies first** and only repairs an
-incomplete host with official Ubuntu packages such as `pipewire`,
-`pipewire-pulse`, `wireplumber`, `xdg-desktop-portal`,
-`xdg-desktop-portal-gnome`, `gstreamer1.0-pipewire`, and the required GStreamer
-support. These are host foundation packages, not project-owned services.
+A normal Ubuntu 26.04 GNOME desktop is already PipeWire/WirePlumber based. The
+installer **verifies first** and only repairs an incomplete host with official
+Ubuntu packages required by the actual computer-use path:
+
+- `pipewire`
+- `wireplumber`
+- `xdg-desktop-portal`
+- `xdg-desktop-portal-gnome`
+- `gstreamer1.0-pipewire`
+- the required GStreamer base/good/tooling packages
+- Python GI/GStreamer bindings when missing
+- AT-SPI when missing
+- `ydotool` only for the recovery plane
+
+`pipewire-pulse` is an audio compatibility service, **not** a ScreenCast readiness
+requirement. The project does not install it merely to make computer-use capture
+work.
+
+These distro packages are host foundation. Teardown never treats them as
+project-owned packages.
 
 ### Hermes / Cua profile
 
 When Hermes integration is selected, the installer:
 
-1. installs/locates `cua-driver`;
+1. locates `cua-driver`, installing it from Cua's official Driver installer when absent;
 2. uses Cua's documented packaged helper only:
    `~/.cua-driver/packages/current/wayland-helper/install.sh`;
 3. installs/updates `winrects@cua` from that Cua package;
-4. records `cua-winrects-managed` only if this project caused WinRects to be
-   installed;
+4. records `cua-winrects-managed` only if this project caused WinRects to be installed;
 5. reports whether GNOME precision is ready or requires one session reload.
 
-If the installed Cua package does not contain the helper, the precision
-capability degrades cleanly. The project does **not** download a guessed copy of
-the extension.
+If the installed Cua package does not contain the helper, precision degrades
+cleanly. The project does **not** download, vendor, or recreate the extension.
 
 ### One session reload, explained
 
@@ -124,47 +153,115 @@ SESSION RELOAD REQUIRED
 └── WinRects newly installed/updated and not loaded
 ```
 
-Native ScreenCast capture and AT-SPI can already be ready before that reload.
+Native ScreenCast observation and AT-SPI may already be ready before that reload.
 
-## Native screen capture
+## Deterministic agent experience
+
+The common path is deliberately boring:
+
+```text
+known target
+→ one Cua target/window state
+→ AX when semantics ground the control
+→ otherwise PX from the same target screenshot
+→ consume the runtime's effect/escalation verdict
+→ exact foreground only when required
+→ verify only at a true decision boundary
+```
+
+A normal named-target task should require:
+
+```text
+0 update checks
+0 broad diagnose calls
+0 app/window enumeration when identity is already usable
+0 whole-screen captures when target-level evidence is sufficient
+0 blind retries of the same failed delivery rung
+```
+
+The agent should not re-derive whether a toolkit is GTK, Electron, browser-backed,
+or pixel-only before acting. It tries the cheapest correct target-scoped route and
+consumes the runtime's result.
+
+### Machine verdicts
+
+Project-owned helpers answer deterministic host questions with compact,
+versioned JSON:
+
+| Command | Contract | Purpose |
+|---|---|---|
+| `scripts/observe.sh --machine` | `gwcu.observe.v1` | whole-screen observation result |
+| `scripts/observer.py client ...` | `gwcu.observer.v1` | persistent ScreenCast broker IPC |
+| `scripts/app-identity.sh --resolve --machine NAME` | `gwcu.identity.v1` | resolved / ambiguous / missing launcher identity |
+| `scripts/diagnose.sh --machine` | `gwcu.diagnose.v1` | one atomic four-plane diagnostic |
+| `scripts/profile.sh read|refresh --machine` | `gwcu.profile.v1` | passive session capability state |
+
+Coarse process exit classes remain small; JSON carries the precise `code`,
+`retryable`, `terminal`, and deterministic `next` action. Scripts own fixed
+fallback ladders. The model only decides when genuine semantic ambiguity remains.
+
+## Whole-screen observation
+
+The normal whole-screen entry point is:
 
 ```bash
-CAPTURE="$HOME/.agents/skills/gnome-wayland-computer-use/scripts/capture.sh"
+OBSERVE="$HOME/.agents/skills/gnome-wayland-computer-use/scripts/observe.sh"
 
-"$CAPTURE" --screen /tmp/screen.png
-"$CAPTURE" --timing --screen /tmp/screen.png
-"$CAPTURE" --media --screen
+"$OBSERVE" --screen /tmp/screen.png
+"$OBSERVE" --machine --screen /tmp/screen.png
+"$OBSERVE" --media --screen
 ```
 
 `--desktop` remains a compatibility alias for the visible display. Wallpaper is
 configuration data; the project never hides application windows to manufacture
 a special desktop layer.
 
-Capture order stays independent from Cua:
+### Lazy persistent ScreenCast broker
 
-1. **XDG ScreenCast + PipeWire** — hot path, with persistent permission and
-   rotating restore token where supported;
-2. **XDG Screenshot portal** — one-shot recovery;
-3. **`gnome-screenshot`** — older-GNOME compatibility only;
-4. **Shift+Print through `ydotool`** — final hardware-level recovery.
+The observer socket is enabled in the user session, but **socket activation does
+not request screen access**. The broker starts on the first capture request.
 
-If the user denies ScreenCast consent, denial is authoritative. The helper does
-not surprise them with another permission UI. Writes are atomic.
+During an active task burst it keeps one:
+
+```text
+XDG ScreenCast session
+→ portal-scoped PipeWire remote
+→ GStreamer raw-frame pipeline
+```
+
+warm and returns the first fresh frame after each request. It closes the live
+portal/PipeWire session after an idle timeout; the private socket remains ready
+for later activation.
+
+On ScreenCast v6 the broker prefers `pipewire-serial` through PipeWire
+`target-object` when supported, retaining the numeric-node path for older
+portal/plugin compatibility.
+
+The broker is a speed layer, not a new authority or single point of failure.
+`scripts/capture.sh` remains the independent direct path underneath it.
+
+Technical broker failure can fall through to the direct capture ladder:
+
+1. **XDG ScreenCast + PipeWire**;
+2. **XDG Screenshot portal**;
+3. **`gnome-screenshot`** on older compatible GNOME only;
+4. **Shift+Print through `ydotool`** as final recovery.
+
+A user-cancelled ScreenCast interaction is terminal for that request. The system
+does not answer cancellation by opening another permission UI.
 
 ## Semantics and GNOME precision
 
 AT-SPI remains the cheapest and least disruptive route when applications expose
 roles/actions/values.
 
-Cua's WinRects adapter belongs to **control**, not capture routing. On GNOME it
-can give Cua authoritative window/frame geometry, reconstruct screen coordinates
-for GTK4 AT-SPI cases, activate an exact Shell window, verify focus before
-focus-bound portal/libei input, capture from the compositor for Cua's own
-window/capture path, and draw the compositor-owned agent cursor.
+Cua's WinRects adapter belongs to **control**, not project observation. On GNOME
+Cua may use it for authoritative window/frame geometry, GTK4 coordinate
+reconstruction, exact Shell activation, focus verification before focus-bound
+input, its own compositor capture path, and the compositor-owned agent cursor.
 
 This repository provisions that adapter for the Cua-backed profile and diagnoses
-its state. It does not duplicate the helper protocol or call it from
-`scripts/capture.sh`.
+its state. It does not duplicate the helper protocol.
 
 ## Pixel-only surfaces are real citizens
 
@@ -175,136 +272,157 @@ semantic reachability, **not visual existence**.
 Routing becomes:
 
 ```text
-target known?
+target known
     │
-    ├─ semantic target available
+    ├─ semantics grounded
     │      → AX / background first
     │
-    └─ semantic target unavailable
+    └─ semantics missing for the control
            │
-           ├─ Cua can resolve a GNOME window
-           │      → WinRects-backed geometry + pixels
-           │      → verified foreground when necessary
+           ├─ Cua has the GNOME target
+           │      → use target pixels + compositor geometry
+           │      → verified foreground only when required
            │
-           └─ no trustworthy window target
-                  → visible-screen pixels
-                  → normal foreground discovery
-                  → retry target binding
+           └─ target cannot be bound
+                  → whole-screen pixels
+                  → bind the visible target
+                  → return to target-scoped operation
 ```
 
-A visible custom renderer is therefore **pixel-only**, not absent. WinRects may
-make its window precisely addressable even when its controls remain non-semantic.
-An occluded custom renderer with no trustworthy target route should escalate to
-foreground discovery or refuse rather than guess.
+A visible custom renderer is therefore **pixel-only**, not absent. An occluded
+custom renderer with no trustworthy target route should escalate to foreground
+discovery or refuse instead of guessing.
 
 ## Latency model
 
 > **Route once → cheapest truthful evidence → deterministic action span → verify at the next decision boundary.**
 
-ScreenCast remains independently useful even if Cua/WinRects is unavailable.
-Conversely, Cua's own GNOME control/capture path can remain useful if this
-project's ScreenCast path is degraded. That is real redundancy instead of a
-chain of duplicated helpers.
+The largest speed gains are deliberately architectural:
+
+- no task-time update preflight;
+- no broad diagnosis on success;
+- no enumeration when the user already supplied the target;
+- AX and PX reuse one Cua target state where the runtime provides both;
+- whole-screen capture is discovery/explicit observation, not ritual;
+- repeated screen frames reuse one warm ScreenCast/PipeWire session;
+- actions piggyback verification when the runtime can prove the result.
+
+Performance budgets in `DETERMINISM.md` are release targets until a nominated
+GNOME 50 machine records real p50/p95 distributions. They are not represented as
+measurements before that live evidence exists.
 
 ## Diagnose
 
+Human diagnostics:
+
 ```bash
 ~/.agents/skills/gnome-wayland-computer-use/scripts/diagnose.sh
-~/.agents/skills/gnome-wayland-computer-use/scripts/diagnose.sh --json
 ```
 
-Diagnostics are capability-oriented:
+Atomic agent diagnostic:
+
+```bash
+~/.agents/skills/gnome-wayland-computer-use/scripts/diagnose.sh --machine
+```
+
+Passive failure-path profile:
+
+```bash
+~/.agents/skills/gnome-wayland-computer-use/scripts/profile.sh read --machine
+~/.agents/skills/gnome-wayland-computer-use/scripts/profile.sh refresh --machine
+```
+
+Do **not** run these before a healthy normal task. They exist to turn a capability
+contradiction into information without an investigative agent loop.
+
+Capabilities remain the four planes:
 
 ```text
-── Observation
-✓ XDG ScreenCast
-✓ PipeWire core
-✓ WirePlumber
-✓ GStreamer PipeWire bridge
-✓ ScreenCast restore token state
-✓ XDG Screenshot recovery
-
-── Semantic control
-✓ toolkit accessibility
-✓ AT-SPI bus/socket
-
-── Cua GNOME precision
-✓ cua-driver
-✓ Cua package wayland-helper
-✓ Cua WinRects installed
-✓ winrects@cua ACTIVE
-✓ org.cua.WinRects served by GNOME Shell
-
-── Input recovery
-✓ /dev/uinput
-✓ input group
-✓ ydotoold
-
-── Migration
-✓ obsolete project capture extension removed
-
-Observation:       READY
-Semantic control:  READY
-GNOME precision:   READY
-Input recovery:    READY
+Observation:       ready | degraded
+Semantics:         ready | degraded
+GNOME precision:   ready | reload_required | degraded | not_selected
+Recovery:          ready | degraded
 ```
 
-Before the one required GNOME reload, precision reports `RELOAD REQUIRED`
-instead of pretending the adapter is live.
+Diagnostics may verify that `org.cua.WinRects` is genuinely served by GNOME
+Shell. Operational routing still goes through Cua rather than the project calling
+WinRects methods itself.
 
 ## Ownership and teardown
 
-State owned by this project lives under:
+Project state lives under:
 
 ```text
 ~/.local/state/gnome-wayland-computer-use/
     screencast-restore-token
-    cua-winrects-managed   # only when this installer caused installation
+    cua-winrects-managed       # migration ownership marker
+    profile.json               # disposable capability state
+    ownership.json             # durable project ownership
 ```
 
-Teardown offers to remove WinRects only when that ownership marker exists. A
-pre-existing Cua WinRects installation is preserved. The obsolete project
-capture extension is always treated as migration debris and removed if found.
+The restore token remains private and is never copied into `profile.json`.
+
+Teardown may remove WinRects only when the authoritative managed marker says this
+project caused its installation. A pre-existing Cua WinRects installation is
+preserved. The obsolete project capture extension is always migration debris.
+Observer user units/runtime files are project-owned and removable. Ubuntu desktop
+foundation packages remain installed.
 
 ## Tests and release smoke
 
 ```bash
 bash ./tests/skill-ux.sh
 bash ./tests/latency-routing.sh
+bash ./tests/determinism.sh
 ./tests/run.sh
 ```
 
-The regression contract protects the boundary:
+The regression constitution protects both capability and behavior:
 
-- `capture.sh` contains no WinRects call or project Shell service;
-- ScreenCast remains the first capture rung;
-- portal denial remains terminal;
+- direct ScreenCast remains independent of Cua/WinRects;
+- persistent observer is lazy, private, v6-aware, and crash-fallback safe;
+- portal cancellation remains terminal;
 - restore tokens rotate;
-- Cua's own helper installer is used only for the Cua-backed profile;
+- deterministic identity distinguishes resolved / ambiguous / missing;
+- machine diagnostics emit one document;
+- capability state is passive and secret-free;
+- successful named-target routing performs no update/diagnose/list ritual;
+- Cua's own helper installer remains the only WinRects source;
 - agent-only setup never acquires Cua solely for WinRects;
-- installed/active/reload-required WinRects states are distinct;
 - pre-existing WinRects ownership is preserved;
 - pixel-only surface guidance remains first-class.
 
-Required live GNOME 50 smoke before release includes cold/warm ScreenCast,
-restore-token rotation, AT-SPI background action, WinRects ACTIVE after reload,
-verified target activation, pixel-only GLFW/Vulkan grounding, GNOME 50 legacy
-capture avoidance, and teardown preserving unrelated extensions.
+Required live Ubuntu 26.04 / GNOME 50 smoke before release includes:
 
-Mutter Devkit is a strong future automation target for HiDPI/fractional-scaling
-and virtual multi-monitor validation, but it is not a 2.3 runtime dependency.
+- first ScreenCast consent;
+- warm broker captures with recorded p50/p95 latency;
+- restore-token rotation across restored sessions;
+- broker idle/restart and crash fallback;
+- AT-SPI semantic background action without foreground theft;
+- WinRects ACTIVE after the required session reload;
+- exact foreground escalation with a two-window input sentinel;
+- pixel-only GLFW/Vulkan grounding;
+- teardown preserving unrelated/pre-existing extensions and distro foundation.
+
+Mutter Devkit remains a strong validation target for HiDPI/fractional-scaling and
+virtual multi-monitor scenarios, not a 2.3 runtime dependency.
 
 ## Repository map
 
 | Path | Purpose |
 |---|---|
-| `install.sh` | host foundation, skill install, Cua profile provisioning |
-| `SKILL.md` | Hermes-native computer-use contract |
-| `runtimes/openai/SKILL.md` | portable/OpenAI-native contract |
-| `scripts/capture.sh` | independent ScreenCast/PipeWire observation ladder |
-| `scripts/diagnose.sh` | capability-oriented human + JSON diagnostics |
+| `install.sh` | current Ubuntu/Cua policy + determinism installer facade |
+| `install-core.sh` | proven 2.3 host provisioning / migration engine |
+| `SKILL.md` | reflex-oriented Hermes computer-use contract |
+| `runtimes/openai/SKILL.md` | portable/OpenAI runtime contract |
+| `scripts/observe.sh` | normal whole-screen observation facade |
+| `scripts/observer.py` | lazy persistent ScreenCast/PipeWire broker |
+| `scripts/capture.sh` | independent direct ScreenCast recovery ladder |
+| `scripts/app-identity.sh` | cached deterministic app/PWA identity resolver |
+| `scripts/profile.sh` | passive capability state |
+| `scripts/diagnose.sh` | capability-oriented human + machine diagnostics |
 | `scripts/teardown.sh` | ownership-aware removal and restoration |
-| `lib/checks.sh` | shared capability predicates |
+| `DETERMINISM.md` | machine contracts, latency constitution, design boundaries |
 | `CAPABILITIES.md` | delivery-strength capability map |
 | `PERF_NOTES.md` | latency and redundancy model |
-| `tests/` | architecture/routing/skill UX guards |
+| `tests/` | architecture, determinism, routing, and skill UX guards |
