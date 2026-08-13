@@ -28,6 +28,8 @@ jobs:
         run: bash ./tests/latency-routing.sh
       - name: Truth scope isolation
         run: bash ./tests/truth-scope.sh
+      - name: One-call action spans
+        run: bash ./tests/action-span.sh
       - name: Determinism contract
         run: bash ./tests/determinism.sh
       - name: Regression suite
