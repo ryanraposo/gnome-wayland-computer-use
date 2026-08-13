@@ -16,9 +16,9 @@ metadata:
 # Computer Use on Ubuntu GNOME
 
 Use **Cua Driver as the control authority**. GWCU prepares Ubuntu/GNOME once,
-turns recurring mechanics into deterministic local programs, remembers only
-stable project-local routing truths when allowed, and keeps whole-screen
-observation independent.
+turns recurring mechanics into deterministic local programs, stores only useful
+durable local truth in `.gwcu` when managed truth is enabled, and keeps
+whole-screen observation independent.
 
 > **The model decides intent. Programs collapse mechanics. Cua executes.**
 
@@ -27,7 +27,7 @@ verified activation, input delivery, cursor behavior, effects, escalation, and
 structured refusals. Never recreate those mechanisms with AT-SPI scripts,
 WinRects D-Bus calls, `ydotool`, `/dev/uinput`, or guessed focus.
 
-## GNOME Portal Contract
+## GNOME portal contract
 
 GNOME Wayland is the intended session. **No X11 or XWayland session is
 required.**
@@ -36,13 +36,12 @@ Cua uses GNOME's `org.freedesktop.portal.RemoteDesktop` API to obtain a local
 pointer/keyboard EIS/libei session. The installer normally establishes this
 one-time permission before declaring the machine ready. GNOME may label the UI
 "Remote Desktop" or "remote control"; this integration does not install an
-RDP/VNC server, a raw-input daemon, or a project input udev rule.
+RDP/VNC server, raw-input daemon, or project input udev rule.
 
 A separate explicit whole-screen observation uses ScreenCast and may have its
-own screen-selection consent. A denial/cancellation is terminal for that
-attempt and must not be bypassed.
+own screen-selection consent. Denial/cancellation is terminal for that attempt.
 
-## Call Budget
+## Call budget
 
 Spend a model/tool round-trip only when it can change the next action.
 
@@ -55,15 +54,15 @@ Spend a model/tool round-trip only when it can change the next action.
 
 A known target goes directly to Cua. Do not ceremonially preflight the host.
 
-## Workflow Contract
+## Workflow contract
 
 Take control and do the requested work. Ask only when target, outcome, or
-authorization is materially ambiguous. For a terminal/admin task, use the
+authorization is materially ambiguous. For terminal/admin tasks, use the
 terminal directly.
 
 Keep normal computer use target-scoped. Diagnostics, update checks, host
-inventories, and whole-screen capture stay off the success path unless the task
-or returned evidence genuinely requires them.
+inventories, and whole-screen capture stay off the success path unless returned
+evidence or the task genuinely requires them.
 
 Use the execution mechanism that matches the work:
 
@@ -77,12 +76,11 @@ interactive desktop action  → parent Cua loop
 ```
 
 Keep portal consent and user-facing desktop decisions in the parent session.
-Delegate independent research/context work, not the interactive control loop.
-When `clarify` offers choices, put the recommended choice first. Prefer
-`execute_code` over a chain of agent/tool calls when the sequence is one-off but
-fully programmatic.
+Delegate independent reasoning, not the interactive control loop. Prefer
+`execute_code` over a chain of model/tool calls when a sequence is fully
+programmatic.
 
-## Execution State Machine
+## Execution state machine
 
 ### Known target
 
@@ -108,45 +106,45 @@ ROOT="$HOME/.agents/skills/gnome-wayland-computer-use"
 "$ROOT/scripts/profile.sh" route --machine "<target name>"
 ```
 
-Inside that call:
+Inside that one call:
 
 ```text
-project AGENTS truth lookup
-→ launcher/PWA resolver only on miss
-→ stable truth write-back only when enabled + confidently resolved
+repo/workspace .gwcu lookup
+→ deterministic launcher/PWA resolver only on miss
+→ stable exact identity written back only when managed truth is enabled
 → gwcu.route.v1
 ```
 
 `gwcu.route.v1` returns one of:
 
 ```text
-target_resolved  → give the original target + identity evidence to Cua
-live_target      → stable launcher metadata is absent; ask Cua for live target state
+target_resolved  → give target + identity evidence to Cua
+live_target      → launcher metadata is absent; ask Cua for live target state
 target_ambiguous → disambiguate only the returned candidates
 ```
 
-Managed project truths are acceleration hints, never authority. **Live Cua state
+`.gwcu` is an acceleration surface, never control authority. **Live Cua state
 wins on contradiction.** Do not separately call `app-identity.sh`,
-`profile.sh read`, and app/window enumeration when this route call answers the
-uncertainty.
+`profile.sh read`, diagnostics, and app/window enumeration when `route` already
+answers the uncertainty.
 
 ### Host contradiction
 
-If a result contradicts the installed/runtime state, make **one recovery call**:
+If a result contradicts installed/runtime state, make **one recovery call**:
 
 ```bash
 "$ROOT/scripts/profile.sh" recover --machine
 ```
 
 That command reads cached session truth and, only when stale/missing, refreshes
-through `diagnose.sh` inside the same shell invocation.
+through `diagnose.sh` inside the same invocation.
 
 Do not make the model perform `read → refresh → diagnose` as separate tool calls.
 
 ### Whole screen
 
-For an explicit whole-screen/desktop request, or only when target-scoped Cua
-evidence cannot bind the requested object:
+For an explicit whole-screen request, or only when target-scoped Cua evidence
+cannot bind the requested object:
 
 ```bash
 "$ROOT/scripts/observe.sh" --machine --screen /tmp/screen.png
@@ -156,29 +154,67 @@ evidence cannot bind the requested object:
 The lazy observer keeps a portal-scoped PipeWire stream warm for a short task
 burst. Installation/login itself does not open ScreenCast consent.
 
-## Managed Project Truths
+## `.gwcu`: local truths, not prompt prose
 
-When enabled, `profile.sh route` may maintain a bounded managed block in the
-current Git worktree's root `AGENTS.md`.
+Persistent machine/workspace truth belongs in a single `.gwcu` file, **never in
+`AGENTS.md`**.
 
-Only stable low-churn identity fields are eligible: display name, desktop ID,
-app ID, `StartupWMClass`, and app kind. Never store screenshots, user text,
-timestamps, health snapshots, coordinates, geometry, focus, task history, or
-other transient state.
+Scope resolution is deterministic:
 
-The managed block is bounded, deterministic, regex-addressable, comment-safe,
-and preserves user-authored content outside its markers. A warm project-memory
-hit can remove **100% of the repeat identity-routing setup call**.
+```text
+GWCU_SCOPE_ROOT override
+→ nearest ancestor already containing .gwcu
+→ Git worktree root
+→ current working directory
+```
 
-Persistent preference:
+That makes non-Git workspaces first-class. If a general workspace such as
+`~/.gwcw/` contains `~/.gwcw/.gwcu`, work in its descendants reuses that file.
+
+When managed truth is enabled in a Git worktree, GWCU adds `/.gwcu` to the root
+`.gitignore` **before** creating the file. If it cannot safely establish the
+ignore rule, it refuses the persistent write.
+
+`.gwcu` is canonical JSON with schema `gwcu.truths.v1` and explicit sections:
+
+```json
+{
+  "apps": {},
+  "calibration": {},
+  "capabilities": {},
+  "observed": {},
+  "preferences": {},
+  "schema": "gwcu.truths.v1"
+}
+```
+
+- `observed`: low-churn facts directly observed from the environment.
+- `capabilities`: compact current capability conclusions.
+- `calibration`: stable learned measurements/mappings.
+- `preferences`: user-authored behavior preferences; preserve on regeneration.
+- `apps`: stable launcher/PWA target identity.
+
+Never persist screenshots, user text, task/conversation history, credentials,
+clipboard contents, raw health dumps, transient focus, or transient geometry.
+Generated truth stores conclusions, not observation transcripts.
+
+Useful truth controls:
 
 ```bash
 "$ROOT/scripts/profile.sh" managed on --machine
 "$ROOT/scripts/profile.sh" managed off --machine
 "$ROOT/scripts/profile.sh" managed status --machine
+"$ROOT/scripts/profile.sh" truths status --machine
+"$ROOT/scripts/profile.sh" truths scope --machine
+"$ROOT/scripts/profile.sh" truths regenerate --machine
 ```
 
-`GWCU_PROJECT_MEMORY=off` is the runtime override.
+`GWCU_TRUTHS=off` is the runtime override. The older
+`GWCU_PROJECT_MEMORY=off` override remains accepted for compatibility.
+
+A warm exact `.gwcu` app hit skips repeated launcher/PWA resolution. It does not
+claim to remove the Cua action itself or the outer route call when routing is
+still needed.
 
 ## Hermes `/computer-use`
 
@@ -188,17 +224,17 @@ When the Hermes plugin is installed, its native command registry exposes:
 /computer-use status
 /computer-use managed
 /computer-use managed on|off|status
+/computer-use truths
 /computer-use consent
 /computer-use doctor
 /computer-use help
 ```
 
-`/computer-use managed` enables managed project truths. `/computer-use consent`
-explains and verifies the local RemoteDesktop → EIS/libei contract. The command
-is registered through Hermes's plugin API so `/computer-use` appears in command
-discovery/autocomplete with its description and argument hint.
+`managed on` enables persistence and initializes the current scope. `truths`
+shows the active `.gwcu` scope/path/counts. `consent` explains and verifies the
+RemoteDesktop → EIS/libei contract.
 
-## Latency-First Interaction
+## Latency-first interaction
 
 - Known app means no `list_apps` / `list_windows` ceremony.
 - No update checks, broad diagnostics, capability inventories, or whole-screen
@@ -210,7 +246,7 @@ discovery/autocomplete with its description and argument hint.
 - Let a confirmed click flow into deterministic typing when appropriate.
 - Use Cua read-back when it already proves the postcondition.
 - Wait only for a real asynchronous transition.
-- Cache stable identity through the managed project truth layer when enabled.
+- Consume `.gwcu` before repeating deterministic identity discovery.
 - Never retry the same failed delivery shape blindly.
 - Never answer a Cua refusal with raw pointer/keyboard injection.
 
@@ -220,7 +256,7 @@ The ideal runtime shape is intentionally boring:
 Cua state once → useful action span → next decision boundary
 ```
 
-## Foreground Preservation
+## Foreground preservation
 
 Preserve the user's foreground by default. Cua owns exact target activation
 through its GNOME integration. If foreground delivery is required, let Cua
@@ -229,7 +265,7 @@ labels such as GTK, Electron, browser, Vulkan, or GLFW.
 
 A structured refusal is capability information, not permission to bypass Cua.
 
-## Pixel-Only Surfaces
+## Pixel-only surfaces
 
 An AT-SPI-empty Vulkan, GLFW, game, canvas, video, or custom-rendered window is
 **pixel-only**, not absent.
@@ -237,7 +273,7 @@ An AT-SPI-empty Vulkan, GLFW, game, canvas, video, or custom-rendered window is
 If Cua resolves the GNOME window, use that target's pixels and compositor
 geometry. Do not launch a desktop-wide search because the AX tree is empty.
 
-## Deterministic Script Surface
+## Deterministic script surface
 
 The agent-facing helpers are deliberately small:
 
@@ -251,7 +287,7 @@ The agent-facing helpers are deliberately small:
 # explicit whole-screen evidence → one observation
 "$ROOT/scripts/observe.sh" --machine --screen /tmp/screen.png
 
-# user-facing installed-system commands
+# installed-system/truth status
 "$ROOT/scripts/computer-use.sh" status
 ```
 
@@ -260,20 +296,21 @@ model turns:
 
 ```text
 app-identity.sh     deterministic launcher/PWA identity
+truths.py           .gwcu scope/read/write/regeneration contract
 profile.sh read     passive cached session truth
 profile.sh refresh  → diagnose.sh → Cua health + GNOME observation health
 portal-control.py   RemoteDesktop contract + one-time pointer-only authorization
 cua-health.py       thin transport for Cua health_report structuredContent
 ```
 
-Prefer the composed commands above. Call lower-level helpers directly only for
-maintenance, testing, or when their raw detail is the requested output.
+Prefer composed commands above. Call lower-level helpers directly only for
+maintenance, testing, or when raw detail is the requested output.
 
 Top-level `ok=true` means the installed system is ready now. `cua-driver doctor
 --json` is supplemental diagnostic detail; Cua's stable `health_report` is
 upstream control-health truth.
 
-## Cua GNOME Integration
+## Cua GNOME integration
 
 GWCU qualifies Cua Driver **0.19.3**. Agents must not update Cua as task-time
 housekeeping.
