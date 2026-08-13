@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-# capture.sh — truthful visible-screen capture for GNOME Wayland
+# capture.sh — native visible-screen capture for GNOME Wayland
 #
-# There is intentionally no synthetic "desktop layer" here. On Wayland, the
-# stable user-facing capture surface is the XDG Screenshot portal. --desktop is
-# retained as a compatibility alias for --screen so older callers keep working
-# without hiding windows, mutating GNOME Shell actors, or depending on an
-# extension that happens to be installed.
+# Hot path: XDG ScreenCast + PipeWire with a persistent restore token.
+# Recovery: one-shot Screenshot portal -> legacy gnome-screenshot -> Shift+Print.
+#
+# There is intentionally no synthetic "desktop layer". --desktop remains a
+# compatibility alias for the real visible display so older callers keep
+# working without hiding windows, mutating Shell actors, or requiring an
+# extension.
 set -euo pipefail
 
 MEDIA_MODE=false
@@ -26,10 +28,7 @@ while [ "$#" -gt 0 ]; do
         --screen) REQUESTED_SCOPE=screen ;;
         -*) usage; exit 2 ;;
         *)
-            if [ -n "$OUT" ]; then
-                usage
-                exit 2
-            fi
+            if [ -n "$OUT" ]; then usage; exit 2; fi
             OUT="$1"
             ;;
     esac
@@ -43,12 +42,221 @@ TMP=$(mktemp "$OUTDIR/.capture.XXXXXX.png")
 MARKER=$(mktemp "$OUTDIR/.capture-marker.XXXXXX")
 trap 'rm -f "$TMP" "$MARKER"' EXIT
 
-capture_portal_screenshot() {
-    local portal_python="${GNOME_WAYLAND_SYSTEM_PYTHON:-/usr/bin/python3}"
-    [ -x "$portal_python" ] || portal_python="$(command -v python3 2>/dev/null || true)"
-    [ -n "$portal_python" ] || return 1
+portal_python() {
+    local python="${GNOME_WAYLAND_SYSTEM_PYTHON:-/usr/bin/python3}"
+    [ -x "$python" ] || python="$(command -v python3 2>/dev/null || true)"
+    [ -n "$python" ] || return 1
+    printf '%s\n' "$python"
+}
 
-    timeout 8 "$portal_python" - "$TMP" <<'PYEOF'
+capture_portal_screencast() {
+    local python
+    python=$(portal_python) || return 1
+
+    timeout 30 "$python" - "$TMP" <<'PYEOF'
+import os
+import pathlib
+import signal
+import sys
+import uuid
+
+import gi
+gi.require_version('Gio', '2.0')
+gi.require_version('Gst', '1.0')
+from gi.repository import Gio, GLib, Gst
+
+Gst.init(None)
+out_path = sys.argv[1]
+bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+portal = Gio.DBusProxy.new_sync(
+    bus,
+    Gio.DBusProxyFlags.NONE,
+    None,
+    'org.freedesktop.portal.Desktop',
+    '/org/freedesktop/portal/desktop',
+    'org.freedesktop.portal.ScreenCast',
+    None,
+)
+
+sender = bus.get_unique_name().lstrip(':').replace('.', '_')
+session_handle = None
+active_request_path = None
+
+state_dir = pathlib.Path(
+    os.environ.get('XDG_STATE_HOME', pathlib.Path.home() / '.local' / 'state')
+) / 'gnome-wayland-computer-use'
+token_file = state_dir / 'screencast-restore-token'
+
+class PortalDenied(Exception):
+    pass
+
+def close_dbus_object(path, interface):
+    if not path:
+        return
+    try:
+        bus.call_sync(
+            'org.freedesktop.portal.Desktop',
+            path,
+            interface,
+            'Close',
+            None,
+            None,
+            Gio.DBusCallFlags.NONE,
+            1000,
+            None,
+        )
+    except Exception:
+        pass
+
+def cleanup():
+    close_dbus_object(active_request_path, 'org.freedesktop.portal.Request')
+    close_dbus_object(session_handle, 'org.freedesktop.portal.Session')
+
+def on_signal(signum, _frame):
+    cleanup()
+    raise SystemExit(128 + signum)
+
+signal.signal(signal.SIGTERM, on_signal)
+signal.signal(signal.SIGINT, on_signal)
+
+def request(method, signature, values, timeout_seconds=20):
+    global active_request_path
+    token = 'gwcu_' + uuid.uuid4().hex
+    request_path = f'/org/freedesktop/portal/desktop/request/{sender}/{token}'
+    active_request_path = request_path
+    loop = GLib.MainLoop()
+    response = {}
+
+    def on_response(_connection, _sender, _path, _interface, _signal, parameters):
+        response['value'] = parameters.unpack()
+        loop.quit()
+
+    subscription = bus.signal_subscribe(
+        'org.freedesktop.portal.Desktop',
+        'org.freedesktop.portal.Request',
+        'Response',
+        request_path,
+        None,
+        Gio.DBusSignalFlags.NONE,
+        on_response,
+    )
+    try:
+        values[-1]['handle_token'] = GLib.Variant('s', token)
+        portal.call_sync(
+            method,
+            GLib.Variant(signature, tuple(values)),
+            Gio.DBusCallFlags.NONE,
+            3000,
+            None,
+        )
+        timeout_id = GLib.timeout_add_seconds(timeout_seconds, lambda: (loop.quit(), False)[1])
+        loop.run()
+        if GLib.MainContext.default().find_source_by_id(timeout_id):
+            GLib.source_remove(timeout_id)
+    finally:
+        bus.signal_unsubscribe(subscription)
+
+    if 'value' not in response:
+        close_dbus_object(request_path, 'org.freedesktop.portal.Request')
+        active_request_path = None
+        raise RuntimeError(f'{method} timed out')
+
+    code, results = response['value']
+    active_request_path = None
+    if code != 0:
+        raise PortalDenied(f'{method} denied with code {code}')
+    return results
+
+try:
+    created = request(
+        'CreateSession',
+        '(a{sv})',
+        [{
+            'session_handle_token': GLib.Variant('s', 'gwcu_session_' + uuid.uuid4().hex),
+        }],
+        5,
+    )
+    session_handle = created['session_handle']
+
+    select_options = {
+        'types': GLib.Variant('u', 1),
+        'multiple': GLib.Variant('b', False),
+    }
+
+    cursor_modes = portal.get_cached_property('AvailableCursorModes')
+    if cursor_modes is not None and cursor_modes.unpack() & 2:
+        select_options['cursor_mode'] = GLib.Variant('u', 2)
+
+    version_v = portal.get_cached_property('version')
+    version = version_v.unpack() if version_v is not None else 0
+    if version >= 4:
+        select_options['persist_mode'] = GLib.Variant('u', 2)
+        if token_file.is_file():
+            restore_token = token_file.read_text(encoding='utf-8').strip()
+            if restore_token:
+                select_options['restore_token'] = GLib.Variant('s', restore_token)
+
+    request('SelectSources', '(oa{sv})', [session_handle, select_options], 5)
+    started = request('Start', '(osa{sv})', [session_handle, '', {}], 20)
+    streams = started.get('streams', [])
+    if not streams:
+        raise RuntimeError('portal returned no streams')
+
+    node_id, stream_props = streams[0]
+    restore_token = started.get('restore_token')
+    if restore_token:
+        state_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        tmp_token = token_file.with_suffix('.tmp')
+        tmp_token.write_text(restore_token, encoding='utf-8')
+        tmp_token.chmod(0o600)
+        tmp_token.replace(token_file)
+
+    reply, fd_list = portal.call_with_unix_fd_list_sync(
+        'OpenPipeWireRemote',
+        GLib.Variant('(oa{sv})', (session_handle, {})),
+        Gio.DBusCallFlags.NONE,
+        3000,
+        None,
+        None,
+    )
+    fd = fd_list.get(reply.unpack()[0])
+
+    pipeline = Gst.parse_launch(
+        f'pipewiresrc fd={fd} path={node_id} do-timestamp=true num-buffers=1 ! '
+        f'videoconvert ! pngenc ! filesink location={GLib.shell_quote(out_path)}'
+    )
+    pipeline_bus = pipeline.get_bus()
+    pipeline.set_state(Gst.State.PLAYING)
+    message = pipeline_bus.timed_pop_filtered(
+        5 * Gst.SECOND,
+        Gst.MessageType.ERROR | Gst.MessageType.EOS,
+    )
+    pipeline.set_state(Gst.State.NULL)
+    os.close(fd)
+
+    if not message or message.type != Gst.MessageType.EOS:
+        if message and message.type == Gst.MessageType.ERROR:
+            error, debug = message.parse_error()
+            raise RuntimeError(f'PipeWire capture failed: {error}; {debug or ""}')
+        raise RuntimeError('PipeWire capture timed out')
+    if not os.path.exists(out_path) or os.path.getsize(out_path) == 0:
+        raise RuntimeError('capture produced an empty image')
+except PortalDenied as exc:
+    print(f'portal_status=denied api=screencast reason={exc}', file=sys.stderr)
+    raise SystemExit(20)
+except Exception as exc:
+    print(f'portal_status=failed api=screencast reason={exc}', file=sys.stderr)
+    raise SystemExit(1)
+finally:
+    cleanup()
+PYEOF
+}
+
+capture_portal_screenshot() {
+    local python
+    python=$(portal_python) || return 1
+
+    timeout 8 "$python" - "$TMP" <<'PYEOF'
 import os
 import signal
 import sys
@@ -79,15 +287,9 @@ response = {}
 def close_request():
     try:
         bus.call_sync(
-            'org.freedesktop.portal.Desktop',
-            request_path,
-            'org.freedesktop.portal.Request',
-            'Close',
-            None,
-            None,
-            Gio.DBusCallFlags.NONE,
-            1000,
-            None,
+            'org.freedesktop.portal.Desktop', request_path,
+            'org.freedesktop.portal.Request', 'Close', None, None,
+            Gio.DBusCallFlags.NONE, 1000, None,
         )
     except Exception:
         pass
@@ -104,15 +306,9 @@ def on_response(_connection, _sender, _path, _interface, _signal, parameters):
     loop.quit()
 
 subscription = bus.signal_subscribe(
-    'org.freedesktop.portal.Desktop',
-    'org.freedesktop.portal.Request',
-    'Response',
-    request_path,
-    None,
-    Gio.DBusSignalFlags.NONE,
-    on_response,
+    'org.freedesktop.portal.Desktop', 'org.freedesktop.portal.Request',
+    'Response', request_path, None, Gio.DBusSignalFlags.NONE, on_response,
 )
-
 try:
     options = {
         'handle_token': GLib.Variant('s', token),
@@ -125,11 +321,8 @@ try:
             options['target'] = GLib.Variant('u', 1)
 
     portal.call_sync(
-        'Screenshot',
-        GLib.Variant('(sa{sv})', ('', options)),
-        Gio.DBusCallFlags.NONE,
-        3000,
-        None,
+        'Screenshot', GLib.Variant('(sa{sv})', ('', options)),
+        Gio.DBusCallFlags.NONE, 3000, None,
     )
     timeout_id = GLib.timeout_add_seconds(5, lambda: (loop.quit(), False)[1])
     loop.run()
@@ -165,15 +358,10 @@ PYEOF
 capture_gnome_screenshot() {
     local shell_major
     command -v gnome-screenshot >/dev/null 2>&1 || return 1
-
-    # GNOME 49 removed the old Shell screenshot D-Bus path used by this tool.
     if command -v gnome-shell >/dev/null 2>&1; then
         shell_major=$(gnome-shell --version 2>/dev/null | grep -oE '[0-9]+' | head -1)
-        if [ -n "$shell_major" ] && [ "$shell_major" -ge 49 ]; then
-            return 1
-        fi
+        if [ -n "$shell_major" ] && [ "$shell_major" -ge 49 ]; then return 1; fi
     fi
-
     timeout 2 gnome-screenshot --file "$TMP" 2>/dev/null && [ -s "$TMP" ]
 }
 
@@ -193,15 +381,10 @@ wait_for_new_screenshot() {
 }
 
 capture_ydotool_printscreen() {
-    local ss_dir="${HOME}/Pictures/Screenshots"
-    local latest
-
+    local ss_dir="${HOME}/Pictures/Screenshots" latest
     command -v ydotool >/dev/null 2>&1 || return 1
     mkdir -p "$ss_dir"
     touch "$MARKER"
-
-    # Shift+Print is GNOME's direct full-screen capture shortcut. Plain Print
-    # opens the interactive screenshot UI and therefore is not a fallback.
     timeout 1 ydotool key 42:1 99:1 99:0 42:0 2>/dev/null || return 1
     latest=$(wait_for_new_screenshot "$ss_dir") || return 1
     cp "$latest" "$TMP"
@@ -217,11 +400,9 @@ finish_capture() {
 
 report_capture() {
     local method="$1" now_ms elapsed_ms
-
     if [ "$REQUESTED_SCOPE" = desktop ]; then
         printf 'capture_scope=visible-screen requested=desktop\n' >&2
     fi
-
     if "$TIMING_MODE"; then
         now_ms=$(date +%s%3N 2>/dev/null || printf '0')
         if [[ "$CAPTURE_STARTED_MS" =~ ^[0-9]+$ ]] && [[ "$now_ms" =~ ^[0-9]+$ ]] && \
@@ -230,7 +411,6 @@ report_capture() {
             printf 'capture_elapsed_ms=%s\n' "$elapsed_ms" >&2
         fi
     fi
-
     if "$MEDIA_MODE"; then
         printf 'MEDIA:%s\n' "$OUT"
         printf 'capture_method=%s\n' "$method" >&2
@@ -239,6 +419,19 @@ report_capture() {
     fi
 }
 
+portal_rc=0
+capture_portal_screencast || portal_rc=$?
+if [ "$portal_rc" -eq 0 ] && [ -s "$TMP" ]; then
+    finish_capture
+    report_capture "portal-screencast"
+    exit 0
+fi
+if [ "$portal_rc" -eq 20 ]; then
+    echo "capture_method=portal-denied" >&2
+    exit 1
+fi
+
+rm -f "$TMP"
 portal_rc=0
 capture_portal_screenshot || portal_rc=$?
 if [ "$portal_rc" -eq 0 ] && [ -s "$TMP" ]; then
