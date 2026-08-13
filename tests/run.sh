@@ -67,7 +67,7 @@ cat >"$data/app.desktop" <<'D'
 [Desktop Entry]
 Type=Application
 Name=ChatGPT
-Exec=/usr/bin/chrome --app-id=chatgpt_app
+Exec=/usr/bin/google-chrome-stable --app-id=chatgpt_app
 StartupWMClass=crx_chatgpt_app
 D
 HOME="$idh" XDG_DATA_HOME="$data" XDG_DATA_DIRS="$TMP/empty" XDG_RUNTIME_DIR="$idh/runtime" \
