@@ -26,6 +26,8 @@ jobs:
         run: bash ./tests/skill-ux.sh
       - name: End-to-end latency and routing guards
         run: bash ./tests/latency-routing.sh
+      - name: Truth scope isolation
+        run: bash ./tests/truth-scope.sh
       - name: Determinism contract
         run: bash ./tests/determinism.sh
       - name: Regression suite
