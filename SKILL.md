@@ -163,13 +163,15 @@ Scope resolution is deterministic:
 
 ```text
 GWCU_SCOPE_ROOT override
-→ nearest ancestor already containing .gwcu
-→ Git worktree root
+→ Git worktree root, when inside Git
+→ nearest ancestor already containing .gwcu, outside Git
 → current working directory
 ```
 
-That makes non-Git workspaces first-class. If a general workspace such as
-`~/.gwcw/` contains `~/.gwcw/.gwcu`, work in its descendants reuses that file.
+Git repositories are always isolated to their own root truth file. A repo nested
+inside a general workspace such as `~/.gwcw/` does **not** inherit
+`~/.gwcw/.gwcu`. Outside Git, descendants of `~/.gwcw/` can reuse that workspace
+truth file until a more specific non-Git `.gwcu` exists.
 
 When managed truth is enabled in a Git worktree, GWCU adds `/.gwcu` to the root
 `.gitignore` **before** creating the file. If it cannot safely establish the
