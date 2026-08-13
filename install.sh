@@ -8,10 +8,8 @@ BASE_URL="${GWCU_BASE_URL:-https://ryanraposo.github.io/gnome-wayland-computer-u
 
 # Deliberately pinned. Do not replace this with "latest".
 # Cua Driver 0.19.3's standard Linux release artifact is built with
-# `--features cua-driver/portal-input`, the modern successor to the older
-# `portal-libei` feature discussed in trycua/cua#1982. On GNOME/Mutter this
-# supplies xdg-desktop-portal RemoteDesktop + EIS input without a second binary.
-# Override only for deliberate release qualification.
+# `--features cua-driver/portal-input`. On GNOME/Mutter this supplies
+# xdg-desktop-portal RemoteDesktop + EIS input without a second binary.
 CUA_DRIVER_RS_VERSION="${GWCU_CUA_DRIVER_RS_VERSION:-0.19.3}"
 
 SELF=""
@@ -166,44 +164,83 @@ doctor_mentions_drm() {
 maybe_add_video_group() {
     local out="$1" err="$2"
     doctor_mentions_drm "$out" "$err" || return 1
-    id -nG "$USER" | tr ' ' '\n' | grep -qx video && return 1
+    id -nG "$LOGIN_USER" | tr ' ' '\n' | grep -qx video && return 1
 
     local add=false response
     if $UNATTENDED; then
         add=true
     else
-        printf 'Cua reported a DRM access problem. Add %s to the video group? [Y/n] ' "$USER"
+        printf 'Cua reported a DRM access problem. Add %s to the video group? [Y/n] ' "$LOGIN_USER"
         read -r response || true
         [[ ! "$response" =~ ^[nN] ]] && add=true
     fi
     $add || return 1
 
-    as_root adduser "$USER" video || die "Could not add $USER to the video group"
+    as_root adduser "$LOGIN_USER" video || die "Could not add $LOGIN_USER to the video group"
     : >"$STATE/video-group-added"
-    warn "Added $USER to video because Cua explicitly reported DRM access trouble."
+    warn "Added $LOGIN_USER to video because Cua explicitly reported DRM access trouble."
     warn "Group membership takes effect after signing out of GNOME and back in."
     return 0
 }
 
+managed_agents_setup() {
+    local pref="$STATE/managed-agents" response value=on
+    if [ -s "$pref" ]; then
+        IFS= read -r value <"$pref" || value=on
+        case "${value,,}" in off|no|false|0) value=off ;; *) value=on ;; esac
+        ok "Managed AGENTS.md blocks already configured: $value"
+        return 0
+    fi
+
+    if ! $EXPLICIT_UNATTENDED && [ -r /dev/tty ]; then
+        printf 'Would you like to allow managed AGENTS.md blocks? They can reduce turns/calls by up to 100%% for repeat identity-routing setup [Y/n]: ' >/dev/tty
+        read -r response </dev/tty || response=""
+        [[ "$response" =~ ^[nN] ]] && value=off
+    fi
+    printf '%s\n' "$value" >"$pref.tmp"
+    chmod 600 "$pref.tmp"
+    mv -f "$pref.tmp" "$pref"
+    if [ "$value" = on ]; then
+        ok "Managed AGENTS.md blocks enabled (bounded stable app identity only)"
+    else
+        ok "Managed AGENTS.md blocks disabled"
+    fi
+}
+
+countdown_portal() {
+    local n
+    info "GNOME calls its compositor-approved local pointer/keyboard permission “Remote Desktop”."
+    info "Cua uses that portal only to obtain an EIS/libei input session; GWCU installs no RDP/VNC server or raw-input daemon."
+    info "The one-time handshake sends no click or key. It only moves the pointer once."
+    printf '\n'
+    for n in 3 2 1; do
+        printf '\r\033[34m[INFO]\033[0m GNOME permission prompt may appear in %s… ' "$n"
+        sleep 1
+    done
+    printf '\r\033[34m[INFO]\033[0m Approve the GNOME Remote Desktop / remote-control prompt if it appears.          \n'
+}
+
 COMPAT=false
 UNATTENDED=false
+EXPLICIT_UNATTENDED=false
 HERMES_MODE=auto
 for arg in "$@"; do
     case "$arg" in
         --compat) COMPAT=true ;;
-        --unattended) UNATTENDED=true ;;
+        --unattended) UNATTENDED=true; EXPLICIT_UNATTENDED=true ;;
         --hermes) HERMES_MODE=require ;;
         --agent-only) HERMES_MODE=skip ;;
         --help|-h)
             cat <<'HELP'
 Usage: install.sh [--compat] [--unattended] [--hermes|--agent-only]
-  --hermes      require and install the Hermes skill integration
+  --hermes      require Hermes and install its skill + /computer-use command plugin
   --agent-only  skip Hermes-specific files; Cua Driver is still the control authority
   --compat      stage files without requiring a live Ubuntu GNOME Wayland session
-  --unattended  automate decisions; privilege/portal prompts may still appear
+  --unattended  accept installer defaults; privilege/portal UI can still appear
 
 Environment:
   GWCU_CUA_DRIVER_RS_VERSION=<version>  deliberate release qualification override
+  GWCU_PROJECT_MEMORY=off               runtime override for managed AGENTS.md memory
 HELP
             exit 0
             ;;
@@ -212,6 +249,7 @@ HELP
 done
 
 [ "$EUID" -ne 0 ] || die "Run as the logged-in desktop user, not with sudo"
+LOGIN_USER="${USER:-$(id -un)}"
 if [ ! -t 0 ] && ! $UNATTENDED; then UNATTENDED=true; fi
 
 HERMES=false
@@ -221,9 +259,9 @@ case "$HERMES_MODE" in
     skip) ;;
 esac
 
-printf '\nGNOME WAYLAND COMPUTER USE // PORTAL-NATIVE\n\n'
+printf '\nCOMPUTER USE // UBUNTU 26\n\n'
 
-info "[1/7] Detecting Ubuntu + desktop session"
+info "[1/8] Detecting Ubuntu + desktop session"
 [ -r /etc/os-release ] || die "/etc/os-release is required for distro selection"
 # shellcheck disable=SC1091
 . /etc/os-release
@@ -245,17 +283,14 @@ if [ "$SESSION" != wayland ] || [[ "$DESKTOP" != *GNOME* ]]; then
     if ! $COMPAT; then die "Expected an active GNOME Wayland session; found session=$SESSION desktop=$DESKTOP"; fi
     warn "Compatibility install: session=$SESSION desktop=$DESKTOP"
 else
-    ok "GNOME Wayland session — no X11/XWayland session is required"
+    ok "GNOME Wayland session"
 fi
 
 STATE="${XDG_STATE_HOME:-$HOME/.local/state}/$NAME"
 mkdir -p "$STATE"; chmod 700 "$STATE" 2>/dev/null || true
 
-info "[2/7] Installing Ubuntu portal/accessibility foundation"
+info "[2/8] Preparing Ubuntu portal/accessibility foundation"
 if [ "$DISTRO_ID" = ubuntu ] && [ "$DISTRO_VERSION" = 26.04 ]; then
-    # Explicit Ubuntu 26.04 foundation. These are distro packages, not vendored
-    # copies. libei1 is installed for a complete host EIS stack; Cua 0.19.3's
-    # portal-input client itself is Rust/reis-backed.
     APT_PACKAGES=(
         ca-certificates curl
         libglib2.0-bin
@@ -300,7 +335,7 @@ if ! $COMPAT; then
     portal_has Screenshot || die "GNOME Screenshot portal is unavailable"
     portal_has RemoteDesktop || die "GNOME RemoteDesktop portal is unavailable; Cua portal input cannot be established"
 fi
-ok "RemoteDesktop, ScreenCast, Screenshot, PipeWire, Python D-Bus/GI and AT-SPI foundation prepared"
+ok "RemoteDesktop, ScreenCast, Screenshot, PipeWire, D-Bus/GI and AT-SPI foundation prepared"
 
 rm -f "$STATE/cua-winrects-managed"
 PREV_ACCESSIBILITY=unknown
@@ -314,13 +349,30 @@ if command -v gsettings >/dev/null 2>&1; then
 fi
 systemctl --user start at-spi-bus-launcher.service 2>/dev/null || true
 
-info "[3/7] Installing pinned portal-input Cua Driver"
+info "[3/8] Installing qualified Cua Driver"
 PATH_BEFORE="$PATH"
 PRE_CUA=$(resolve_cua || true)
 CUA_INSTALLED_BY_GWCU=false
+if [ -f "$STATE/ownership.json" ]; then
+    PRIOR_CUA_OWNED=$(/usr/bin/python3 - "$STATE/ownership.json" <<'PY'
+import json,sys
+try:
+    d=json.load(open(sys.argv[1],encoding="utf-8"))
+    print("true" if d.get("upstream",{}).get("cua_driver",{}).get("provisioned") else "false")
+except Exception:
+    print("false")
+PY
+)
+    [ "$PRIOR_CUA_OWNED" = true ] && CUA_INSTALLED_BY_GWCU=true
+fi
 [ -n "$PRE_CUA" ] || CUA_INSTALLED_BY_GWCU=true
 ensure_managed_path
-refresh_cua
+if [ -n "$PRE_CUA" ] && "$PRE_CUA" --version 2>/dev/null | grep -Fq "$CUA_DRIVER_RS_VERSION"; then
+    CUA="$PRE_CUA"
+    ok "Qualified Cua Driver $CUA_DRIVER_RS_VERSION already installed"
+else
+    refresh_cua
+fi
 "$CUA" describe health_report >/dev/null 2>&1 ||
     die "Pinned Cua Driver does not expose the stable health_report surface"
 ok "Cua Driver $CUA_DRIVER_RS_VERSION: $CUA"
@@ -364,10 +416,11 @@ else
     warn "Cua GNOME helper installed/updated; the current Shell may need one reload/sign-out cycle"
 fi
 
-info "[4/7] Installing the agent operating layer"
+info "[4/8] Installing the agent operating layer"
 PRIMARY="$HOME/.agents/skills/$NAME"
 HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
 HERMES_SKILL="$HERMES_HOME/skills/computer-use"
+HERMES_PLUGIN="$HERMES_HOME/plugins/$NAME"
 BACKUPS="$HERMES_HOME/backups/$NAME"
 MANAGED='.gnome-wayland-computer-use-managed'
 
@@ -390,8 +443,9 @@ install_bundle() {
     get_file "$skill_src" "$dst/SKILL.md"
     get_file uninstall.sh "$dst/uninstall.sh"
     for rel in VERSION references/skill-ux-contract.md \
-        scripts/app-identity.sh scripts/capture.sh scripts/check-update.sh scripts/cua-health.py \
-        scripts/diagnose.sh scripts/observe.sh scripts/observer.py scripts/profile.sh scripts/teardown.sh \
+        scripts/app-identity.sh scripts/capture.sh scripts/check-update.sh scripts/computer-use.sh \
+        scripts/cua-health.py scripts/diagnose.sh scripts/observe.sh scripts/observer.py \
+        scripts/portal-control.py scripts/profile.sh scripts/teardown.sh \
         systemd/user/gnome-wayland-computer-use-observer.socket \
         systemd/user/gnome-wayland-computer-use-observer.service; do
         get_file "$rel" "$dst/$rel"
@@ -405,9 +459,23 @@ install_bundle() {
 install_bundle "$PRIMARY" runtimes/openai/SKILL.md
 mkdir -p "$PRIMARY/agents"
 get_file agents/openai.yaml "$PRIMARY/agents/openai.yaml"
+managed_agents_setup
 
 if $HERMES; then
     install_bundle "$HERMES_SKILL" SKILL.md
+    if [ -d "$HERMES_PLUGIN" ] && [ ! -f "$HERMES_PLUGIN/$MANAGED" ]; then
+        archive_dir "$HERMES_PLUGIN" "plugin-$NAME"
+    fi
+    rm -rf "$HERMES_PLUGIN"
+    mkdir -p "$HERMES_PLUGIN"
+    get_file runtimes/hermes/plugin.yaml "$HERMES_PLUGIN/plugin.yaml"
+    get_file runtimes/hermes/__init__.py "$HERMES_PLUGIN/__init__.py"
+    : >"$HERMES_PLUGIN/$MANAGED"
+    if ! hermes plugins enable "$NAME" >/dev/null 2>&1; then
+        die "Hermes plugin command API is unavailable. Update Hermes, then rerun the installer."
+    fi
+    ok "Hermes /computer-use command registered and enabled"
+
     if [ -d "$HERMES_HOME/skills" ]; then
         while IFS= read -r -d '' f; do
             d=$(dirname "$f")
@@ -418,9 +486,40 @@ if $HERMES; then
         done < <(find "$HERMES_HOME/skills" -type f -name SKILL.md -print0 2>/dev/null)
     fi
 fi
-ok "Agent skill installed"
+ok "Agent operating layer installed"
 
-info "[5/7] Retiring stale project control artifacts"
+info "[5/8] Completing one-time GNOME control consent"
+if ! $COMPAT; then
+    set +e
+    PORTAL_STATUS=$("$PRIMARY/scripts/portal-control.py" --status --driver "$CUA" 2>/dev/null)
+    set -e
+    TOKEN_PRESENT=$(/usr/bin/python3 - "$PORTAL_STATUS" <<'PY'
+import json,sys
+try:d=json.loads(sys.argv[1]); print('true' if d.get('portal',{}).get('restore_token',{}).get('present') else 'false')
+except Exception: print('false')
+PY
+)
+    if [ "$TOKEN_PRESENT" = true ]; then
+        ok "GNOME RemoteDesktop restore token already present; no repeat prompt needed"
+    else
+        countdown_portal
+        AUTH_RC=0
+        "$PRIMARY/scripts/portal-control.py" --authorize --driver "$CUA" --timeout 90 >"$STATE/portal-control.json.tmp" || AUTH_RC=$?
+        if [ "$AUTH_RC" -ne 0 ]; then
+            [ ! -s "$STATE/portal-control.json.tmp" ] || cat "$STATE/portal-control.json.tmp" >&2
+            rm -f "$STATE/portal-control.json.tmp"
+            die "RemoteDesktop authorization was not established. Approve the GNOME prompt and rerun install.sh."
+        fi
+        chmod 600 "$STATE/portal-control.json.tmp"
+        mv -f "$STATE/portal-control.json.tmp" "$STATE/portal-control.json"
+        ok "GNOME RemoteDesktop/EIS control permission established"
+    fi
+    info "Verify anytime with /computer-use consent or $PRIMARY/scripts/portal-control.py --status"
+else
+    warn "Compatibility mode: RemoteDesktop consent will be established in the live Ubuntu GNOME session"
+fi
+
+info "[6/8] Retiring stale project control artifacts"
 LEGACY_SERVICE="$HOME/.config/systemd/user/gnome-wayland-computer-use.service"
 if [ -f "$LEGACY_SERVICE" ]; then
     systemctl --user disable --now gnome-wayland-computer-use.service 2>/dev/null || true
@@ -432,8 +531,6 @@ if [ -f "$LEGACY_YDO" ] && grep -q 'Description=ydotool uinput daemon' "$LEGACY_
     rm -f "$LEGACY_YDO"
 fi
 
-# Current portal/libei architecture needs no custom udev rule. Remove only the
-# exact legacy rule this project itself used to create.
 LEGACY_RULE='/etc/udev/rules.d/80-gnome-wayland-computer-use.rules'
 LEGACY_RULE_VALUE='KERNEL=="uinput", GROUP="input", MODE="0660", TAG+="uaccess", OPTIONS+="static_node=uinput"'
 if [ -f "$LEGACY_RULE" ] && grep -Fxq "$LEGACY_RULE_VALUE" "$LEGACY_RULE"; then
@@ -450,7 +547,7 @@ systemctl --user daemon-reload 2>/dev/null || true
 systemctl --user reset-failed gnome-wayland-computer-use-observer.socket gnome-wayland-computer-use-observer.service gnome-wayland-computer-use.service ydotoold.service 2>/dev/null || true
 ok "No custom udev/input daemon remains"
 
-info "[6/7] Enabling lazy whole-screen observation"
+info "[7/8] Enabling lazy whole-screen observation"
 UNIT_DIR="$HOME/.config/systemd/user"
 mkdir -p "$UNIT_DIR"
 cp "$PRIMARY/systemd/user/gnome-wayland-computer-use-observer.socket" "$UNIT_DIR/"
@@ -478,17 +575,20 @@ if $HERMES; then
     {
         printf '%s\n' "$START"
         cat <<'SOUL'
-## Ubuntu GNOME Wayland computer use
+## Ubuntu GNOME computer use
 
 Use Hermes `computer_use` normally; Cua Driver is the control authority for semantics,
-pixels, geometry, activation, input delivery, verification, and refusals. GNOME Wayland
-is the intended session: no X11 session is required. The first Cua foreground input may
-show GNOME's Remote Desktop portal consent; approve that native portal instead of changing
-sessions. A separate first whole-screen observation may show ScreenCast consent.
+pixels, geometry, activation, input delivery, verification, and refusals. The first
+install establishes GNOME's Remote Desktop portal permission for Cua's local EIS/libei
+pointer/keyboard path; a separate first whole-screen observation may show ScreenCast
+consent.
 
-For an explicit whole-screen/desktop observation, use the installed
-`gnome-wayland-computer-use/scripts/observe.sh` helper. Do not invent a raw-input
-fallback when Cua refuses a delivery shape.
+Use `/computer-use status` for a compact runtime view, `/computer-use consent` to verify
+the local portal contract, `/computer-use managed [on|off|status]` for bounded project
+AGENTS.md identity memory, and `/computer-use doctor` for deterministic diagnosis.
+
+For explicit whole-screen observation, use the installed observer. Do not invent a
+raw-input fallback when Cua refuses a delivery shape.
 SOUL
         printf '%s\n' "$END"
         [ ! -s "$clean" ] || { printf '\n'; cat "$clean"; }
@@ -496,10 +596,8 @@ SOUL
     chmod 600 "$next"; mv "$next" "$SOUL"; rm -f "$clean"
 fi
 
-# Persist ownership before health gates so a partially successful install can be
-# cleanly uninstalled even when Cua doctor finds a host permission problem.
 python3 - "$STATE/ownership.json" "$PREV_ACCESSIBILITY" "$ACCESSIBILITY_CHANGED" \
-    "$CUA_INSTALLED_BY_GWCU" "$CUA_DRIVER_RS_VERSION" <<'PY'
+    "$CUA_INSTALLED_BY_GWCU" "$CUA_DRIVER_RS_VERSION" "$HERMES" <<'PY'
 import json, os, pathlib, sys
 p=pathlib.Path(sys.argv[1]); p.parent.mkdir(parents=True,exist_ok=True)
 d={
@@ -507,6 +605,7 @@ d={
  "toolkit_accessibility":{"previous":sys.argv[2],"changed":sys.argv[3]=="true"},
  "upstream":{"cua_driver":{"provisioned":sys.argv[4]=="true","owned":sys.argv[4]=="true","version":sys.argv[5]},"winrects":{"owned":False}},
  "user_units":{"observer_socket":True,"observer_service":True},
+ "hermes_plugin":{"managed":sys.argv[6]=="true","name":"gnome-wayland-computer-use"},
  "path_marker":"gnome-wayland-computer-use PATH",
  "groups":{"video_added":(p.parent/"video-group-added").exists()},
  "distro_foundation_owned":False,
@@ -514,7 +613,7 @@ d={
 t=p.with_suffix(".tmp"); t.write_text(json.dumps(d,separators=(",",":"))+"\n"); os.chmod(t,0o600); os.replace(t,p)
 PY
 
-info "[7/7] Running Cua doctor + installed-state health"
+info "[8/8] Proving installed-state health"
 if ! $COMPAT; then
     DOCTOR_OUT="$STATE/cua-doctor.json"
     DOCTOR_ERR="$STATE/cua-doctor.stderr"
@@ -552,7 +651,7 @@ if ! $COMPAT; then
 
     if $HERMES; then
         hermes computer-use status >/dev/null 2>&1 || die "Hermes cannot see the installed Cua Driver"
-        ok "Hermes sees Cua Driver"
+        ok "Hermes sees Cua Driver; /computer-use is enabled for the next Hermes process/session"
     fi
 fi
 
@@ -561,11 +660,13 @@ fi
 printf '\n'
 if $RELOAD_REQUIRED; then
     printf 'READY EXCEPT GNOME HELPER RELOAD\n'
-    printf 'Cua portal input and observation substrate are installed. Reload/sign out once so GNOME loads the updated WinRects helper.\n'
+    printf 'Control consent, Cua, and observation are prepared. Reload/sign out once so GNOME loads the updated WinRects helper.\n'
 elif $COMPAT; then
-    printf 'INSTALLED FOR NEXT UBUNTU GNOME WAYLAND SESSION\n'
+    printf 'INSTALLED FOR NEXT UBUNTU GNOME SESSION\n'
 else
-    printf 'READY. Start your agent.\n'
-    printf 'On the first foreground action, GNOME may ask for Remote Desktop control permission once.\n'
+    printf 'READY. One-time setup is complete.\n'
+    if $HERMES; then
+        printf 'Hermes: /computer-use status · /computer-use managed · /computer-use consent · /computer-use doctor\n'
+    fi
 fi
 printf '\n'

@@ -4,75 +4,54 @@
 
 | Capability | Authority | Ubuntu/GNOME substrate | Project role |
 |---|---|---|---|
-| Target discovery/state | Cua Driver | GNOME/AT-SPI/Mutter | instruct agent to use Cua directly |
-| Semantic actions | Cua Driver | AT-SPI | provision accessibility; never reimplement action mechanics |
+| Target discovery/state | Cua Driver | GNOME/AT-SPI/Mutter | instruct the agent to use Cua directly |
+| Semantic actions | Cua Driver | AT-SPI | provision accessibility; do not reimplement actions |
 | Target pixels | Cua Driver | Cua platform capture | none |
-| Window geometry / exact activation | Cua Driver | `winrects@cua` + Mutter | invoke only Cua's packaged helper installer |
-| Foreground input | Cua Driver | RemoteDesktop + EIS/libei | qualify portal substrate |
-| Verification/refusal | Cua Driver | platform-specific | consume structured result |
-| Cua readiness | Cua Driver | stable `health_report` | transport structured result; do not reconstruct it |
-| Whole visible screen | GWCU | XDG ScreenCast + PipeWire | private warm broker + Screenshot portal fallback |
-| App identity | GWCU | desktop entries | deterministic launcher/PWA resolver |
-| Project routing memory | GWCU | project-root `AGENTS.md` | bounded regex-addressable stable identity cache; live Cua wins |
-| Installed-system readiness | GWCU + Cua | session + observation + Cua health + WinRects | one compressed verdict |
-| Real user choice | Hermes when available | `clarify` | structured options; parent session owns the decision |
-| One-off mechanical fan-out | Hermes when available | `execute_code` | collapse tool/program sequences into one inference turn |
-| Independent reasoning | Hermes when available | `delegate_task` | compact delegated result; no interactive portal/user decisions |
-| Bounded long shell work | Hermes when available | managed terminal background | completion notification instead of polling turns |
+| Window geometry / exact activation | Cua Driver | `winrects@cua` + Mutter | install Cua's packaged helper |
+| Foreground input | Cua Driver | RemoteDesktop → EIS/libei | establish one-time portal consent during install |
+| Verification/refusal | Cua Driver | platform-specific | consume structured results |
+| Cua readiness | Cua Driver | stable `health_report` | transport, do not reconstruct |
+| Whole visible screen | GWCU | ScreenCast + PipeWire | private warm broker + Screenshot fallback |
+| App identity | GWCU | desktop entries | deterministic resolver |
+| Stable project routing truth | GWCU | project `AGENTS.md` | bounded optional acceleration cache |
+| Installed-system readiness | GWCU + Cua | session + observation + Cua health | one compressed verdict |
+| Hermes slash commands | Hermes plugin API | user plugin | `/computer-use` status/managed/consent/doctor |
+| User choices | Hermes `clarify` / installer tty | user | explicit decisions only |
 
 ## Explicitly out of architecture
 
-The project does not install or own:
+GWCU does not install or own:
 
 - `/dev/uinput` policy;
-- `ydotool` or `ydotoold` as a control path;
+- `ydotool` / `ydotoold` control;
 - `input` group membership;
 - a project-managed `cua-driver serve` daemon;
-- a private WinRects implementation or D-Bus client;
+- an RDP/VNC server;
+- a private WinRects client;
 - toolkit-specific focus guessing.
 
-A Cua structured refusal is a capability boundary, not a request to construct a
-shadow input stack.
+## RemoteDesktop boundary
 
-## Project-memory boundary
+GNOME's `org.freedesktop.portal.RemoteDesktop` is used as the local
+compositor-approved input API. Cua requests pointer + keyboard, receives an
+EIS/libei session, and may persist GNOME's revocable restore token.
 
-The managed project block is an acceleration cache, not general memory:
+GWCU's bootstrap uses one Cua desktop `move_cursor` action to establish that
+session: no click and no key. `/computer-use consent` and `portal-control.py
+--status` surface the contract and check for retired GWCU raw-input artifacts.
 
-```text
-<!-- gwcu:desktop-truths:v1:start -->
-<!-- gwcu:app:v1 {compact stable identity JSON} -->
-<!-- gwcu:desktop-truths:v1:end -->
-```
+## Managed project truth boundary
 
-It is bounded, timestamp-free, comment-safe, and limited to low-churn app
-identity. User-authored AGENTS content outside the markers is preserved. Live
-Cua state always outranks remembered identity.
-
-## Whole-screen observation
-
-```text
-socket-activated warm ScreenCast broker
-        ↓ technical broker/service failure only
-one-process XDG Screenshot portal fallback
-```
-
-Portal cancellation is terminal for the request. Whole-screen observation is
-used only for explicit screen requests or discovery that target-scoped Cua state
-cannot satisfy.
-
-## Health boundary
-
-Cua's `health_report` is the stable downstream readiness contract. GWCU uses a
-short-lived direct stdio MCP session and preserves the returned structured
-report under `gwcu.cua-health.v1`. `cua-driver doctor --json` is retained as
-excellent diagnostic/install evidence, but not as a replacement health model.
+The managed `AGENTS.md` block stores low-churn identity only, max 24 entries.
+Live Cua state has higher authority. Uninstall never searches arbitrary user
+repositories to remove blocks already written there.
 
 ## Installer completion states
 
 | State | Meaning |
 |---|---|
-| `READY` | Ubuntu substrate, observer, Cua health and active GNOME helper are ready |
-| `READY EXCEPT GNOME HELPER RELOAD` | control/observation are installed; one GNOME reload/sign-in is needed for new helper code |
-| failure | an unresolved dependency, doctor/health failure, or observer problem remains |
+| `READY` | native substrate, control consent, observer, Cua health, and GNOME helper are ready |
+| `READY EXCEPT GNOME HELPER RELOAD` | control consent/health are ready; updated WinRects needs one Shell reload/sign-out |
+| failure | unresolved dependency, consent, Cua health, or observer problem |
 
 There is no successful “mostly installed, diagnose it yourself” state.

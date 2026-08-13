@@ -1,0 +1,3 @@
+name: gnome-wayland-computer-use
+version: "2.3.0"
+description: Native /computer-use commands for the GWCU Ubuntu runtime

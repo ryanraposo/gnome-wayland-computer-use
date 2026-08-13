@@ -1,6 +1,6 @@
 ---
 name: computer-use
-description: Operate Ubuntu GNOME Wayland through Cua Driver.
+description: Operate Ubuntu GNOME through Cua Driver.
 version: 2.3.0
 author: Ryan Raposo
 license: MIT
@@ -13,11 +13,12 @@ metadata:
     requires_toolsets: [computer_use, terminal]
 ---
 
-# Computer Use on Ubuntu GNOME Wayland
+# Computer Use on Ubuntu GNOME
 
 Use **Cua Driver as the control authority**. GWCU prepares Ubuntu/GNOME once,
-keeps whole-screen observation independent, and converts recurring desktop
-reasoning into deterministic local information.
+turns recurring mechanics into deterministic local programs, remembers only
+stable project-local routing truths when allowed, and keeps whole-screen
+observation independent.
 
 > **The model decides intent. Programs collapse mechanics. Cua executes.**
 
@@ -28,23 +29,27 @@ WinRects D-Bus calls, `ydotool`, `/dev/uinput`, or guessed focus.
 
 ## GNOME Portal Contract
 
-**GNOME Wayland is the intended session. No X11 or XWayland session is required.**
+GNOME Wayland is the intended session. **No X11 or XWayland session is
+required.**
 
-The first Cua foreground input may show GNOME's **Remote Desktop / remote
-control** consent. Cua uses the portal-issued EIS/libei session. A denial or
-cancellation is terminal for that attempt and must not be bypassed.
+Cua uses GNOME's `org.freedesktop.portal.RemoteDesktop` API to obtain a local
+pointer/keyboard EIS/libei session. The installer normally establishes this
+one-time permission before declaring the machine ready. GNOME may label the UI
+"Remote Desktop" or "remote control"; this integration does not install an
+RDP/VNC server, a raw-input daemon, or a project input udev rule.
 
-Explicit whole-screen observation uses a separate **ScreenCast** portal session
-and may have its own screen-selection consent.
+A separate explicit whole-screen observation uses ScreenCast and may have its
+own screen-selection consent. A denial/cancellation is terminal for that
+attempt and must not be bypassed.
 
 ## Call Budget
 
-Spend a model/tool boundary only when it can change the next action.
+Spend a model/tool round-trip only when it can change the next action.
 
 | Situation | GWCU setup calls before useful work |
 |---|---:|
 | known app/window | **0** |
-| uncertain app identity | **1** — `profile.sh route` |
+| uncertain installed/PWA identity | **1** — `profile.sh route` |
 | host/runtime contradiction | **1** — `profile.sh recover` |
 | explicit whole-screen observation | **1** — `observe.sh` |
 
@@ -57,8 +62,25 @@ authorization is materially ambiguous. For a terminal/admin task, use the
 terminal directly.
 
 Keep normal computer use target-scoped. Diagnostics, update checks, host
-inventories, and whole-screen capture stay off the success path unless returned
-evidence genuinely requires them.
+inventories, and whole-screen capture stay off the success path unless the task
+or returned evidence genuinely requires them.
+
+Use the execution mechanism that matches the work:
+
+```text
+stable recurring mechanics → repository script
+one-off mechanical fan-out → execute_code
+independent reasoning       → delegate_task
+bounded long process        → terminal(background=true, notify_on_complete=true)
+real user choice            → clarify
+interactive desktop action  → parent Cua loop
+```
+
+Keep portal consent and user-facing desktop decisions in the parent session.
+Delegate independent research/context work, not the interactive control loop.
+When `clarify` offers choices, put the recommended choice first. Prefer
+`execute_code` over a chain of agent/tool calls when the sequence is one-off but
+fully programmatic.
 
 ## Execution State Machine
 
@@ -86,62 +108,40 @@ ROOT="$HOME/.agents/skills/gnome-wayland-computer-use"
 "$ROOT/scripts/profile.sh" route --machine "<target name>"
 ```
 
-The call composes, inside one shell process:
+Inside that call:
 
 ```text
 project AGENTS truth lookup
 → launcher/PWA resolver only on miss
-→ stable truth write-back only on confident resolution
+→ stable truth write-back only when enabled + confidently resolved
 → gwcu.route.v1
 ```
 
 `gwcu.route.v1` returns one of:
 
 ```text
-target_resolved  → Cua target state with identity evidence
-live_target      → no stable launcher truth; ask Cua for live target state
+target_resolved  → give the original target + identity evidence to Cua
+live_target      → stable launcher metadata is absent; ask Cua for live target state
 target_ambiguous → disambiguate only the returned candidates
 ```
 
-Do not separately call `app-identity.sh`, `profile.sh read`, and app/window
-enumeration when this one route call answers the uncertainty.
-
-### Project-local stable memory
-
-When `profile.sh route` confidently resolves a launcher identity inside a Git
-worktree, it maintains a bounded block in the project-root `AGENTS.md`:
-
-```text
-<!-- gwcu:desktop-truths:v1:start -->
-## GWCU desktop truths
-...
-<!-- gwcu:app:v1 {compact JSON stable identity} -->
-<!-- gwcu:desktop-truths:v1:end -->
-```
-
-The block is deliberately boring and regex-addressable. It stores only
-low-churn routing facts such as desktop ID, app ID, StartupWMClass, app kind, and
-display name. It stores no timestamps, screenshots, task history, user text, or
-volatile window geometry. Entries are capped and updated in place.
-
-The next route consults this block **before** scanning launchers. Live Cua state
-wins whenever remembered identity contradicts the desktop. Set
-`GWCU_PROJECT_MEMORY=off` to disable project write-back; set `GWCU_PROJECT_ROOT`
-only for controlled tooling/tests.
+Managed project truths are acceleration hints, never authority. **Live Cua state
+wins on contradiction.** Do not separately call `app-identity.sh`,
+`profile.sh read`, and app/window enumeration when this route call answers the
+uncertainty.
 
 ### Host contradiction
 
-If a result contradicts installed/runtime state, make **one recovery call**:
+If a result contradicts the installed/runtime state, make **one recovery call**:
 
 ```bash
 "$ROOT/scripts/profile.sh" recover --machine
 ```
 
-That command reads cached session truth and, only when stale or missing,
-refreshes through `diagnose.sh` inside the same invocation. It returns
-`host_ready` or `host_recovery` plus one deterministic `next` action.
+That command reads cached session truth and, only when stale/missing, refreshes
+through `diagnose.sh` inside the same shell invocation.
 
-Do not make the model perform `read → refresh → diagnose` as separate calls.
+Do not make the model perform `read → refresh → diagnose` as separate tool calls.
 
 ### Whole screen
 
@@ -153,67 +153,50 @@ evidence cannot bind the requested object:
 "$ROOT/scripts/observe.sh" --media --screen
 ```
 
-The lazy observer keeps a portal-scoped PipeWire stream warm for a bounded task
-burst. Installation/login itself does not open capture consent.
+The lazy observer keeps a portal-scoped PipeWire stream warm for a short task
+burst. Installation/login itself does not open ScreenCast consent.
 
-## Hermes Native Orchestration
+## Managed Project Truths
 
-When Hermes exposes these tools, use its UI and orchestration primitives rather
-than reproducing them in prose or serial turns.
+When enabled, `profile.sh route` may maintain a bounded managed block in the
+current Git worktree's root `AGENTS.md`.
 
-### Clarification is a UI surface
+Only stable low-churn identity fields are eligible: display name, desktop ID,
+app ID, `StartupWMClass`, and app kind. Never store screenshots, user text,
+timestamps, health snapshots, coordinates, geometry, focus, task history, or
+other transient state.
 
-When a genuine user decision blocks progress, call `clarify` instead of writing
-a numbered question in chat. Put up to four selectable choices in `choices`,
-best recommendation first; Hermes marks that first choice as recommended. Use
-`multi_select=true` when several choices may apply. Keep low-stakes reversible
-decisions agent-owned.
+The managed block is bounded, deterministic, regex-addressable, comment-safe,
+and preserves user-authored content outside its markers. A warm project-memory
+hit can remove **100% of the repeat identity-routing setup call**.
 
-Do not delegate a subtask that may need clarification: delegated workers cannot
-ask the user. Keep portal consent, authorization, and interactive desktop
-decisions in the parent session.
+Persistent preference:
 
-### Program mechanical fan-out
+```bash
+"$ROOT/scripts/profile.sh" managed on --machine
+"$ROOT/scripts/profile.sh" managed off --machine
+"$ROOT/scripts/profile.sh" managed status --machine
+```
 
-For a one-off task that needs 3+ terminal/file/web tool calls with deterministic
-branching, filtering, or loops, prefer Hermes `execute_code` so those calls and
-intermediate results occur inside one model turn. Keep **recurrent computer-use
-mechanics in tested GWCU scripts**; task-specific programmatic composition belongs
-in `execute_code`.
+`GWCU_PROJECT_MEMORY=off` is the runtime override.
 
-`execute_code` is not a substitute for Cua's `computer_use` loop. Use it for the
-surrounding mechanical work its sandbox actually exposes.
+## Hermes `/computer-use`
 
-### Delegate reasoning, not mechanics
-
-Use `delegate_task` for independent research/reasoning or context-heavy work
-that can return a compact summary. Batch independent subtasks when useful. If
-Hermes supports async delivery for the current session and the desktop work can
-continue independently, use `background=true`; the consolidated result can
-re-enter the parent conversation when complete.
-
-Do not delegate trivial tool calls, deterministic sequences a script can own, or
-interactive desktop steps. The parent owns user-facing decisions and Cua action
-state.
-
-### Let bounded processes finish asynchronously
-
-For bounded builds/tests/deploy-like shell work that can run beside desktop
-interaction, use Hermes terminal `background=true, notify_on_complete=true`.
-Use silent background only for genuinely long-lived servers/watchers, then
-verify readiness explicitly. Never shell-background with `&`, `nohup`, or
-`setsid` when Hermes can track the process.
-
-The hierarchy is:
+When the Hermes plugin is installed, its native command registry exposes:
 
 ```text
-stable recurring mechanics → repository script
-one-off mechanical fan-out → execute_code
-independent reasoning       → delegate_task
-bounded long process        → terminal background + completion notification
-real user choice            → clarify
-interactive desktop action  → parent Cua loop
+/computer-use status
+/computer-use managed
+/computer-use managed on|off|status
+/computer-use consent
+/computer-use doctor
+/computer-use help
 ```
+
+`/computer-use managed` enables managed project truths. `/computer-use consent`
+explains and verifies the local RemoteDesktop → EIS/libei contract. The command
+is registered through Hermes's plugin API so `/computer-use` appears in command
+discovery/autocomplete with its description and argument hint.
 
 ## Latency-First Interaction
 
@@ -227,11 +210,11 @@ interactive desktop action  → parent Cua loop
 - Let a confirmed click flow into deterministic typing when appropriate.
 - Use Cua read-back when it already proves the postcondition.
 - Wait only for a real asynchronous transition.
-- Reuse project AGENTS identity truth until live evidence contradicts it.
+- Cache stable identity through the managed project truth layer when enabled.
 - Never retry the same failed delivery shape blindly.
 - Never answer a Cua refusal with raw pointer/keyboard injection.
 
-Ideal shape:
+The ideal runtime shape is intentionally boring:
 
 ```text
 Cua state once → useful action span → next decision boundary
@@ -259,7 +242,7 @@ geometry. Do not launch a desktop-wide search because the AX tree is empty.
 The agent-facing helpers are deliberately small:
 
 ```bash
-# uncertainty → memory lookup + resolution + optional write-back
+# target uncertainty → one route
 "$ROOT/scripts/profile.sh" route --machine "ChatGPT"
 
 # host contradiction → one recovery verdict
@@ -267,24 +250,28 @@ The agent-facing helpers are deliberately small:
 
 # explicit whole-screen evidence → one observation
 "$ROOT/scripts/observe.sh" --machine --screen /tmp/screen.png
+
+# user-facing installed-system commands
+"$ROOT/scripts/computer-use.sh" status
 ```
 
-Lower-level helpers exist so programs can compose hard sequences without
-spending model turns:
+Lower-level helpers exist so programs can compose programs without spending
+model turns:
 
 ```text
-app-identity.sh    deterministic launcher/PWA identity
-profile.sh read    passive cached session truth
-profile.sh refresh → diagnose.sh → Cua health + GNOME observation health
-cua-health.py      thin transport for Cua health_report structuredContent
+app-identity.sh     deterministic launcher/PWA identity
+profile.sh read     passive cached session truth
+profile.sh refresh  → diagnose.sh → Cua health + GNOME observation health
+portal-control.py   RemoteDesktop contract + one-time pointer-only authorization
+cua-health.py       thin transport for Cua health_report structuredContent
 ```
 
-Prefer composed commands. Call lower-level helpers directly only for
+Prefer the composed commands above. Call lower-level helpers directly only for
 maintenance, testing, or when their raw detail is the requested output.
 
 Top-level `ok=true` means the installed system is ready now. `cua-driver doctor
---json` is supplemental detail; Cua's stable `health_report` is upstream
-control-health truth.
+--json` is supplemental diagnostic detail; Cua's stable `health_report` is
+upstream control-health truth.
 
 ## Cua GNOME Integration
 
@@ -301,6 +288,7 @@ One GNOME sign-out/in may be required after installing or updating that helper.
 ```bash
 "$ROOT/scripts/check-update.sh" --force
 "$ROOT/scripts/diagnose.sh"
+"$ROOT/scripts/portal-control.py" --status
 ```
 
 Maintenance is explicit and stays off the normal action path.

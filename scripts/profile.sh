@@ -8,6 +8,7 @@ PYTHON="${GNOME_WAYLAND_SYSTEM_PYTHON:-/usr/bin/python3}"
 [ -x "$PYTHON" ] || PYTHON="$(command -v python3 2>/dev/null || true)"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/gnome-wayland-computer-use"
 PROFILE="$STATE_DIR/profile.json"
+MANAGED_PREF="$STATE_DIR/managed-agents"
 QUIET=false
 MACHINE=false
 ACTION="${1:-read}"
@@ -18,7 +19,7 @@ while [ "$#" -gt 0 ]; do
         --machine) MACHINE=true ;;
         --quiet) QUIET=true ;;
         --help|-h)
-            echo "usage: $0 read|refresh|invalidate|route|recover [--machine] [--quiet] [target]"
+            echo "usage: $0 read|refresh|invalidate|route|recover|managed [--machine] [--quiet] [args]"
             exit 0
             ;;
         --) shift; ARGS+=("$@"); break ;;
@@ -28,6 +29,52 @@ while [ "$#" -gt 0 ]; do
     shift
 done
 [ -n "$PYTHON" ] || { echo "python3 is required" >&2; exit 30; }
+
+managed_default() {
+    local pref
+    if [ -s "$MANAGED_PREF" ]; then
+        IFS= read -r pref <"$MANAGED_PREF" || true
+        case "${pref,,}" in
+            on|yes|true|1) printf 'on\n'; return ;;
+            off|no|false|0) printf 'off\n'; return ;;
+        esac
+    fi
+    printf 'on\n'
+}
+
+project_memory_enabled() {
+    local v pref
+    if [ "${GWCU_PROJECT_MEMORY+x}" = x ]; then
+        v="${GWCU_PROJECT_MEMORY,,}"
+        case "$v" in 0|false|off|no) return 1 ;; *) return 0 ;; esac
+    fi
+    pref=$(managed_default)
+    [ "$pref" = on ]
+}
+
+write_managed_preference() {
+    local value="$1" tmp
+    mkdir -p "$STATE_DIR"; chmod 700 "$STATE_DIR" 2>/dev/null || true
+    tmp=$(mktemp "$STATE_DIR/.managed-agents.XXXXXX")
+    printf '%s\n' "$value" >"$tmp"
+    chmod 600 "$tmp"
+    mv -f "$tmp" "$MANAGED_PREF"
+}
+
+managed_result() {
+    local value source
+    value=$(managed_default)
+    if [ "${GWCU_PROJECT_MEMORY+x}" = x ]; then
+        source=environment
+        if project_memory_enabled; then value=on; else value=off; fi
+    elif [ -s "$MANAGED_PREF" ]; then
+        source=installer
+    else
+        source=default
+    fi
+    printf '{"schema":"gwcu.preferences.v1","ok":true,"code":"managed_agents_%s","managed_agents":%s,"source":"%s","path":"%s","max_repeat_identity_route_setup_savings_percent":100}\n' \
+        "$value" "$([ "$value" = on ] && printf true || printf false)" "$source" "$MANAGED_PREF"
+}
 
 read_profile() {
     [ -s "$PROFILE" ] || { printf '{"schema":"gwcu.profile.v2","ok":false,"code":"profile_missing","next":{"action":"refresh_profile"}}\n'; return 30; }
@@ -73,7 +120,7 @@ PY
 }
 
 project_root() {
-    case "${GWCU_PROJECT_MEMORY:-auto}" in 0|false|off|no) return 1 ;; esac
+    project_memory_enabled || return 1
     if [ -n "${GWCU_PROJECT_ROOT:-}" ]; then
         [ -d "$GWCU_PROJECT_ROOT" ] || return 1
         (cd "$GWCU_PROJECT_ROOT" && pwd -P)
@@ -86,6 +133,10 @@ project_root() {
 project_memory() {
     local action="$1" target="$2" identity_json="${3:-}" root agents
     [ -n "$identity_json" ] || identity_json='{}'
+    if ! project_memory_enabled; then
+        printf '%s\n' '{"schema":"gwcu.project-memory.v1","ok":false,"code":"disabled","changed":false}'
+        return 10
+    fi
     root=$(project_root 2>/dev/null || true)
     if [ -z "$root" ]; then
         printf '%s\n' '{"schema":"gwcu.project-memory.v1","ok":false,"code":"no_project","changed":false}'
@@ -93,7 +144,7 @@ project_memory() {
     fi
     agents="${GWCU_AGENTS_FILE:-$root/AGENTS.md}"
     "$PYTHON" - "$action" "$target" "$identity_json" "$agents" <<'PY'
-import json,pathlib,re,sys
+import json,os,pathlib,re,stat,sys
 
 action,target,identity_raw,agents_raw=sys.argv[1:5]
 path=pathlib.Path(agents_raw)
@@ -104,7 +155,6 @@ SUFFIX=' -->'
 MAX=24
 
 def compact(x):
-    # AGENTS.md is agent context: keep learned values data-only inside HTML comments.
     return json.dumps(x,separators=(',',':'),sort_keys=True,ensure_ascii=True).replace('<','\\u003c').replace('>','\\u003e').replace('&','\\u0026')
 def result(ok,code,**kw):
     print(compact({'schema':'gwcu.project-memory.v1','ok':ok,'code':code,'path':str(path),**kw}))
@@ -122,7 +172,6 @@ def parse_entries(text):
                 if isinstance(d,dict) and d.get('key'): out.append(d)
             except Exception: pass
     return out
-
 def matches(entry,q):
     qn=norm(q)
     vals=[entry.get('name'),entry.get('desktop_id'),entry.get('app_id'),entry.get('startup_wm_class'),entry.get('key')]
@@ -182,9 +231,14 @@ else:
     new=(base+'\n\n' if base else '')+block+'\n'
 try:
     path.parent.mkdir(parents=True,exist_ok=True)
+    if path.is_symlink():
+        result(False,'symlink_refused',changed=False); raise SystemExit(10)
+    mode=stat.S_IMODE(path.stat().st_mode) if path.exists() else 0o644
     tmp=path.with_name(path.name+'.gwcu.tmp')
+    if tmp.exists() or tmp.is_symlink(): tmp.unlink()
     tmp.write_text(new,encoding='utf-8')
-    tmp.replace(path)
+    os.chmod(tmp,mode)
+    os.replace(tmp,path)
 except OSError as exc:
     result(False,'write_failed',changed=False,detail=str(exc)); raise SystemExit(10)
 result(True,'recorded',changed=True,identity=entry)
@@ -192,6 +246,16 @@ PY
 }
 
 case "$ACTION" in
+    managed)
+        sub="${ARGS[0]:-status}"
+        case "${sub,,}" in
+            on|yes|true|1) write_managed_preference on ;;
+            off|no|false|0) write_managed_preference off ;;
+            status) ;;
+            *) echo "managed expects on|off|status" >&2; exit 2 ;;
+        esac
+        managed_result
+        ;;
     invalidate)
         rm -f "$PROFILE"
         $QUIET || printf '{"schema":"gwcu.profile.v2","ok":true,"code":"invalidated","next":null}\n'
@@ -282,7 +346,7 @@ raise SystemExit(0 if ok else 30)
 PY
         ;;
     *)
-        echo "usage: $0 read|refresh|invalidate|route|recover [--machine] [--quiet] [target]" >&2
+        echo "usage: $0 read|refresh|invalidate|route|recover|managed [--machine] [--quiet] [args]" >&2
         exit 2
         ;;
 esac

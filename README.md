@@ -11,33 +11,29 @@
 
 **A deterministic computer-use runtime for Ubuntu 26.04 GNOME.**
 
-Cua owns control. GWCU qualifies the machine, keeps observation warm, remembers
-small project-local routing truths, and turns hard desktop sequences into local
-programs before they can become model deliberation.
+Cua owns control. GWCU prepares the machine once, compiles recurring desktop
+mechanics into local programs, remembers only stable routing truths when allowed,
+and keeps agent calls focused on the task.
+
+The qualified session is GNOME Wayland; **no X11 session is required**.
 
 **Ubuntu 26.04 · GNOME 50 · Cua Driver 0.19.3 · RemoteDesktop/EIS/libei · AT-SPI · ScreenCast/PipeWire**
 
-[Install](#install) · [Architecture](#architecture) · [Call budget](#call-budget) · [Programs compose mechanics](#programs-compose-mechanics) · [Project memory](#project-local-desktop-truths) · [Hermes](#hermes-native-orchestration) · [Observation](#whole-screen-observation) · [Uninstall](#uninstall)
+[Install](#install) · [Four hard advantages](#four-hard-advantages) · [Call budget](#call-budget) · [Managed project truths](#managed-project-truths) · [Hermes commands](#hermes-computer-use) · [Consent](#why-gnome-says-remote-desktop) · [Uninstall](#uninstall)
 </div>
 
 ---
 
-## Why this exists
+## Four hard advantages
 
-Ubuntu 26 has the native primitives for serious desktop agents. The useful
-product is making them behave like **one prepared capability** instead of a Linux
-puzzle the model solves again on every task.
+| | Advantage | What it changes |
+|---|---|---|
+| **01** | **Zero-ceremony known-target path** | A known app/window pays **0 GWCU setup calls** before Cua. No update check, broad diagnosis, enumeration, or whole-screen prelude. |
+| **02** | **Programs replace repeated deliberation** | `profile.sh route` and `profile.sh recover` compose hard local sequences internally, so several probes still cost the model **one outer call**. |
+| **03** | **The project can remember stable desktop truths** | With managed `AGENTS.md` blocks enabled, a warm identity hit skips launcher resolution and can remove **100% of the repeat identity-routing setup call**. |
+| **04** | **Installation finishes the one-time work** | Ubuntu dependencies, pinned Cua, GNOME control consent, managed-memory preference, Hermes `/computer-use`, observer setup, health gates, and ownership bookkeeping are handled up front. |
 
-> **The model decides intent. Programs collapse mechanics. Cua executes.**
-
-- **Cua Driver** owns semantic + pixel control, target/window state, geometry,
-  exact activation, input delivery, verification, escalation, and refusal.
-- **GWCU** owns Ubuntu qualification, portal/PipeWire readiness, deterministic
-  routing/recovery, project-local stable routing memory, whole-screen
-  observation, installation, health composition, and teardown.
-- **Hermes**, when present, supplies native clarification, one-turn programmatic
-  fan-out, delegation, and managed background-process lifecycle.
-- **The agent** spends calls on the user's actual task.
+> **Spend agent calls on the task.**
 
 ## Architecture
 
@@ -63,17 +59,24 @@ puzzle the model solves again on every task.
                            GNOME / MUTTER ◀────┘
 ```
 
-There is one control authority. GWCU does not install a shadow input stack: no
-project uinput policy, no ydotool daemon, no custom Cua daemon, and no parallel
-WinRects client.
+**Cua Driver is the sole control authority.** It owns semantic + pixel actions,
+target/window state, GNOME geometry, exact activation, pointer/keyboard delivery,
+verification, escalation, and structured refusal.
 
-Pixel-only Vulkan, GLFW, canvas, game, video, and custom-rendered surfaces are
-first-class. An empty AT-SPI tree means **use target pixels**, not “search the
-whole desktop.”
+**GWCU is the Ubuntu operating layer.** It owns qualification, installation,
+deterministic routing/recovery, project-local stable identity memory,
+whole-screen observation, health composition, and teardown.
+
+**Hermes is used for orchestration when orchestration is actually useful.**
+Recurring mechanics stay in scripts; one-off deterministic fan-out can use
+`execute_code`; independent reasoning can use `delegate_task`; bounded long work
+can use managed background execution; real choices use `clarify`; interactive
+desktop control stays in the parent Cua loop.
+
+There is no project-owned `/dev/uinput` policy, `ydotoold`, custom Cua daemon,
+parallel WinRects client, or model-invented focus stack.
 
 ## Call budget
-
-The north-star metric is **agent/tool boundaries**, not shell cleverness.
 
 | Situation | GWCU setup calls before useful work |
 |---|---:|
@@ -82,57 +85,64 @@ The north-star metric is **agent/tool boundaries**, not shell cleverness.
 | host/runtime contradiction | **1** — `profile.sh recover` |
 | explicit whole-screen request | **1** — `observe.sh` |
 
-A known target goes straight to one Cua target/window state. A normal task has:
+Known target:
 
 ```text
-0 update checks
+one Cua target/window state
+→ AX when grounded / PX from the same state when visual
+→ useful action span
+→ verify only when the next decision depends on new state
+```
+
+A healthy known-target task has:
+
+```text
+0 task-time update checks
 0 broad diagnostics
-0 known-target enumeration
-0 whole-screen prelude when target evidence is enough
-0 toolkit-driven focus speculation
-0 blind retries of the same failed delivery shape
+0 app/window enumeration
+0 whole-screen prelude
+0 toolkit classification
+0 blind retries
 0 raw-input bypasses
 ```
 
-## Programs compose mechanics
+## Programs compose programs
 
-A local subprocess is cheap. A model/tool boundary is expensive. Stable,
-repeating mechanics therefore belong in tested scripts that can call other
-scripts internally.
+A local subprocess is cheap. An agent/tool boundary is expensive.
 
-### Uncertain target: one route
+### Uncertain target: one call
 
 ```bash
 ROOT="$HOME/.agents/skills/gnome-wayland-computer-use"
 "$ROOT/scripts/profile.sh" route --machine "ChatGPT"
 ```
 
-Inside that single outer call:
+Inside that invocation:
 
 ```text
-project AGENTS truth lookup
-→ launcher/PWA resolver only on miss
-→ stable truth write-back only on confident resolution
-→ gwcu.route.v1
+managed project truth lookup
+→ deterministic launcher/PWA resolver only on miss
+→ stable truth write-back only when enabled + confidently resolved
+→ one gwcu.route.v1 result
 ```
 
-The result stays small:
+Possible results stay small:
 
 ```text
 target_resolved  → Cua target state with identity evidence
 live_target      → no stable launcher truth; ask Cua for live target state
-target_ambiguous → disambiguate only the returned candidates
+target_ambiguous → disambiguate only returned candidates
 ```
 
-Routing does not wake diagnostics merely because app identity is uncertain.
+Routing does not wake diagnostics merely because identity is uncertain.
 
-### Host contradiction: one recovery call
+### Host contradiction: one call
 
 ```bash
 "$ROOT/scripts/profile.sh" recover --machine
 ```
 
-Inside that invocation:
+Inside:
 
 ```text
 cached profile read
@@ -142,12 +152,13 @@ cached profile read
 → one deterministic next action
 ```
 
-The model never needs to spend separate turns on `read → refresh → diagnose`.
+The model never pays separate turns for
+`read → interpret → refresh → interpret → diagnose → interpret`.
 
-## Project-local desktop truths
+## Managed project truths
 
-A confident route can piggyback a tiny managed block onto the current Git
-worktree's root `AGENTS.md`:
+Managed memory is intentionally tiny. When enabled, `profile.sh route` may
+maintain one bounded block in the current Git worktree's root `AGENTS.md`:
 
 ```text
 <!-- gwcu:desktop-truths:v1:start -->
@@ -156,96 +167,169 @@ worktree's root `AGENTS.md`:
 <!-- gwcu:desktop-truths:v1:end -->
 ```
 
-This is **an invariant cache, not a task log**. It is bounded to 24 entries and
-stores only low-churn identity facts: display name, desktop ID, app ID,
-StartupWMClass, and app kind. There are no timestamps, screenshots, health
-snapshots, user text, or window coordinates. Values are escaped so learned data
-cannot break out of the managed comment record.
+Eligible fields are deliberately boring:
 
-On the next route, an exact memory hit skips the launcher scan. Repeated hits do
-not rewrite the file. User-authored `AGENTS.md` content outside the markers is
-preserved byte-for-byte. `GWCU_PROJECT_MEMORY=off` disables write-back.
+- display name;
+- desktop ID;
+- app ID;
+- `StartupWMClass`;
+- app kind.
 
-**Live Cua state always wins on contradiction.** Project memory is acceleration,
-never authority.
+It never stores screenshots, user text, timestamps, health snapshots, task
+history, window coordinates, geometry, or transient focus state. The block is
+bounded to 24 entries, deterministic, one-record-per-line, regex-addressable,
+comment-safe, and preserves user-authored `AGENTS.md` content outside the
+markers.
 
-## Hermes native orchestration
+A warm hit skips launcher resolution entirely. That can remove **100% of the
+repeat identity-routing setup call**.
 
-When Hermes exposes the corresponding tools, the skill routes work by kind:
+**Live Cua state always wins on contradiction.** The block is an acceleration
+cache, never authority.
+
+The installer asks once:
 
 ```text
-stable recurring mechanics → repository script
-one-off mechanical fan-out → execute_code
-independent reasoning       → delegate_task
-bounded long process        → terminal background + notify_on_complete
-real user choice            → clarify
-interactive desktop action  → parent Cua loop
+Would you like to allow managed AGENTS.md blocks? They can reduce turns/calls by up to 100% for repeat identity-routing setup [Y/n]:
 ```
 
-`clarify` is used for genuine user decisions, with the recommended choice first
-and multi-select only when appropriate. `execute_code` collapses one-off
-mechanical terminal/file/web fan-out into one model turn. `delegate_task` is for
-independent reasoning or context-heavy work—not portal consent or interactive UI
-steps. Bounded builds/tests can run with Hermes-managed background completion
-instead of polling turns.
+Change it later:
 
-These are optional runtime accelerators, not required skill toolsets; the core
-computer-use skill remains available with `computer_use` + terminal.
+```bash
+/computer-use managed
+/computer-use managed on
+/computer-use managed off
+/computer-use managed status
+```
+
+or, without Hermes:
+
+```bash
+"$ROOT/scripts/profile.sh" managed on --machine
+"$ROOT/scripts/profile.sh" managed off --machine
+"$ROOT/scripts/profile.sh" managed status --machine
+```
+
+`GWCU_PROJECT_MEMORY=off` remains the runtime override.
 
 ## Install
 
-Run as the logged-in desktop user:
+Run as the logged-in desktop user. The installer elevates only for host mutation
+that actually needs root.
 
 ```bash
 curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh | bash
 ```
 
-Hermes integration:
+Require Hermes integration:
 
 ```bash
 curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh | bash -s -- --hermes
 ```
 
-The installer qualifies **Ubuntu 26.04 + GNOME 50 Wayland**, repairs only missing
-host foundation, and elevates through `pkexec` first and `sudo` second when
-needed. It verifies:
+The canonical pipe install still presents the managed-AGENTS choice through
+`/dev/tty`. `--unattended` accepts the default and suppresses that text prompt;
+GNOME permission UI may still appear because compositor consent cannot be
+silently granted.
+
+The installer:
+
+1. qualifies Ubuntu 26.04 + GNOME 50;
+2. repairs only missing portal/PipeWire/AT-SPI/GStreamer foundation;
+3. installs deliberately pinned **Cua Driver 0.19.3** through Cua's official installer;
+4. installs Cua's packaged `winrects@cua` helper;
+5. records the managed-AGENTS preference;
+6. installs + enables the native Hermes `/computer-use` plugin when Hermes is present;
+7. establishes GNOME's one-time local control permission;
+8. enables the private warm whole-screen observer and proves Cua/host health.
+
+The native Ubuntu foundation is explicit:
 
 ```text
-PipeWire >= 0.3.40 + WirePlumber
-RemoteDesktop + ScreenCast + Screenshot portals
+PipeWire + WirePlumber
+XDG Desktop Portal + GNOME portal backend
+RemoteDesktop + ScreenCast + Screenshot interfaces
 EIS/libei + libxkbcommon
 AT-SPI
 Python D-Bus/GI + GStreamer/PipeWire bindings
 ```
 
-It installs deliberately pinned **Cua Driver 0.19.3** through Cua's official
-installer, installs Cua's packaged `winrects@cua` GNOME helper, installs the
-portable/Hermes skill payloads, enables the private observer socket, and runs:
+`cua-driver doctor --json` is a hard install gate, followed by Cua's stable
+`health_report`. `READY` means the system is usable now.
 
-```bash
-cua-driver doctor --json
+## Why GNOME says “Remote Desktop”
+
+> [!TIP]
+> **This is GNOME's local compositor permission for agent input—not an RDP/VNC login service.**
+>
+> Cua requests `org.freedesktop.portal.RemoteDesktop` because GNOME exposes
+> compositor-approved pointer + keyboard delivery through that portal. GNOME
+> then gives Cua an **EIS/libei** input session. GWCU does not install an RDP/VNC
+> server, a raw-input daemon, a project input udev rule, or a second control
+> backend.
+>
+> During a fresh install, GWCU explains what is about to happen and counts down
+> **3 → 2 → 1** before the GNOME prompt. The bootstrap uses Cua's public
+> `move_cursor` operation only to establish the session: **one pointer move, no
+> click, no key**. Cua can then persist GNOME's revocable restore token at
+> `~/.config/cua-driver/libei-persistent.token`, so the normal case does not ask
+> again.
+>
+> Verify the contract any time with **`/computer-use consent`** or:
+>
+> ```bash
+> ~/.agents/skills/gnome-wayland-computer-use/scripts/portal-control.py --status
+> ```
+>
+> The status reports the RemoteDesktop portal, EIS/libei transport, restore-token
+> path, and the absence of GWCU's retired raw-input/control-daemon machinery.
+
+ScreenCast is separate. The first explicit whole-screen observation may ask which
+display to share.
+
+## Hermes `/computer-use`
+
+When Hermes is detected, the installer places a user plugin under
+`~/.hermes/plugins/gnome-wayland-computer-use/` and enables it through Hermes's
+own plugin configuration.
+
+The plugin registers `/computer-use` through Hermes's native command API, so it
+appears in command discovery/autocomplete with a description and argument hint:
+
+```text
+/computer-use status
+/computer-use managed
+/computer-use managed on|off|status
+/computer-use consent
+/computer-use doctor
+/computer-use help
 ```
 
-as a hard installation gate before Cua's stable `health_report` readiness check.
-`READY` means usable now; unresolved doctor/health failures abort with the
-recovery information available.
+The command backend is itself deterministic:
 
-The normal portal path creates no new GWCU udev rule. `video` membership is
-considered only when Cua doctor specifically identifies a DRM/render-node
-permission problem, and teardown owns the inverse when GWCU made that change.
+```bash
+~/.hermes/skills/computer-use/scripts/computer-use.sh
+```
 
-## Portal consent
+`managed` changes the persistent project-memory preference. `consent` shows the
+RemoteDesktop/EIS verification surface. `doctor` runs deterministic host
+diagnosis. `status` composes the useful high-level facts without forcing the
+agent to rediscover them.
 
-The system uses GNOME's native permission surfaces.
+## Semantic and pixel surfaces are equal citizens
 
-- **Control:** the first Cua foreground pointer/keyboard operation may show
-  **Remote Desktop / remote control** consent. Cua uses the portal-issued
-  EIS/libei input session.
-- **Observation:** the first explicit whole-screen request may separately show
-  **ScreenCast / screen selection** consent.
+A browser button and a Vulkan viewport are different surfaces, not different
+classes of legitimacy.
 
-No X11 session is required. A denied/cancelled portal request ends that attempt;
-the agent does not answer consent with a raw-input workaround.
+```text
+semantic evidence → Cua AX action
+visual evidence   → Cua PX action
+```
+
+An AT-SPI-empty Vulkan, GLFW, canvas, game, video, or custom-rendered target is
+**pixel-only, not absent**. The agent stays attached to the real target rather
+than escalating into whole-desktop discovery because semantic structure is
+sparse.
 
 ## Whole-screen observation
 
@@ -257,19 +341,20 @@ OBSERVE="$HOME/.agents/skills/gnome-wayland-computer-use/scripts/observe.sh"
 
 The private socket-activated observer keeps one portal-scoped ScreenCast session,
 PipeWire remote, and GStreamer stream warm for a bounded task burst. Repeated
-frames do not rebuild the capture chain. `capture.sh` is a direct XDG
-Screenshot-portal fallback only; observation cannot inject input or call Cua.
+frames do not rebuild the capture chain.
+
+`scripts/capture.sh` is an XDG Screenshot-portal-only fallback. Observation
+cannot inject input or call Cua.
 
 ## Diagnose
 
 ```bash
-~/.agents/skills/gnome-wayland-computer-use/scripts/diagnose.sh
 ~/.agents/skills/gnome-wayland-computer-use/scripts/diagnose.sh --machine
 ```
 
 Top-level `ok=true` means the installed system is actually ready. Cua's stable
 `health_report` remains upstream control-health truth; GWCU composes it only with
-the GNOME/observation facts it owns.
+the Ubuntu/GNOME facts it owns.
 
 ## Uninstall
 
@@ -277,40 +362,40 @@ the GNOME/observation facts it owns.
 curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/uninstall.sh | bash
 ```
 
-Uninstall reverses project-managed skills, observer units, managed Hermes
-routing, PATH blocks, accessibility changes, exact legacy artifacts, project
-state, and a GWCU-added `video` membership. It does **not** delete the managed
-blocks GWCU wrote into user projects: those are project files, not installation
-state.
+Uninstall reverses project-managed skills, the Hermes command plugin, observer
+units, managed Hermes routing, PATH blocks, accessibility changes, exact legacy
+artifacts, project state, and a GWCU-added `video` membership.
 
 Cua is removed only when GWCU provisioned it. `--keep-cua` always preserves it;
 `--purge-cua` explicitly removes it. Ubuntu's portal/PipeWire/accessibility
-packages remain host-owned.
+packages and GNOME permission state remain host-owned.
+
+Managed blocks previously written into user repositories remain repository
+content; uninstall does not silently edit arbitrary project files.
 
 ## Release validation
 
-CI guards shell/Python syntax, installer invariants, portal dependencies, Cua
-qualification, ownership, observer lifecycle, skill UX, the 0/1/1/1 call budget,
-managed AGENTS cold-write + warm-hit + opt-out behavior, comment-safe data
-encoding, one-call recovery, Hermes-orchestration guidance, refusal handling,
-and teardown reversibility.
+CI guards:
+
+- the **0 / 1 / 1 / 1** call budget;
+- one-call route/recovery composition;
+- managed-memory cold write, warm hit, opt-out, bounded/comment-safe records;
+- persistent managed preference;
+- pointer-only RemoteDesktop bootstrap;
+- native Hermes `/computer-use` plugin registration;
+- Ubuntu package + portal qualification;
+- Cua pin and health contracts;
+- observer lifecycle and consent boundaries;
+- absence of shadow raw-input machinery;
+- reversible installer-owned state.
 
 Before merge, the remaining release gate is a clean graphical **Ubuntu 26.04 /
-GNOME 50 / Wayland** smoke covering:
-
-- fresh installer + elevation/package repair;
-- successful pinned `cua-driver doctor` and Cua health;
-- first RemoteDesktop consent + real click/type;
-- first ScreenCast consent + repeated warm captures;
-- active `winrects@cua` after any required Shell reload;
-- Hermes `/reload-skills` + complete `computer_use` session;
-- semantic, pixel-only, and exact-foreground actions;
-- managed AGENTS first-write then memory-hit route;
-- Hermes clarification/delegation/background behavior where applicable;
-- uninstall + reinstall with no stale installation-owned state.
+GNOME 50 / Wayland** smoke covering fresh install, actual GNOME consent,
+semantic + pixel-only Cua actions, warm observation, Hermes command discovery,
+managed-AGENTS warm routing, uninstall, and reinstall.
 
 ---
 
 <div align="center">
-<strong>Spend agent calls on the task.</strong>
+<strong>Remember invariants. Program the routine. Reason about the new.</strong>
 </div>

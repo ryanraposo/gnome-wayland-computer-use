@@ -6,6 +6,7 @@ NAME=gnome-wayland-computer-use
 STATE="${XDG_STATE_HOME:-$HOME/.local/state}/$NAME"
 HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
 DEFAULT_CUA_VERSION="0.19.3"
+LOGIN_USER="${USER:-$(id -un)}"
 FORCE=false
 REMOVE_CUA=false
 PURGE_CUA=false
@@ -89,9 +90,7 @@ uninstall_cua() {
         return 0
     fi
     command -v curl >/dev/null 2>&1 || die "curl is required to fetch the pinned Cua uninstaller"
-    case "$CUA_VERSION" in
-        ''|*[!0-9.]* ) CUA_VERSION="$DEFAULT_CUA_VERSION" ;;
-    esac
+    case "$CUA_VERSION" in ''|*[!0-9.]* ) CUA_VERSION="$DEFAULT_CUA_VERSION" ;; esac
     url="https://raw.githubusercontent.com/trycua/cua/cua-driver-rs-v${CUA_VERSION}/libs/cua-driver/scripts/uninstall.sh"
     tmp=$(mktemp)
     curl -fsSL --retry 3 --retry-delay 1 -o "$tmp" "$url" || {
@@ -107,11 +106,10 @@ uninstall_cua() {
     if $PURGE_CUA; then ok "Cua Driver removed and purged"; else ok "GWCU-provisioned Cua Driver removed"; fi
 }
 
-printf '\nGNOME WAYLAND COMPUTER USE // UNINSTALL\n\n'
+printf '\nCOMPUTER USE // UNINSTALL\n\n'
 read_ownership
 removed=0
 
-# Project-owned persistent helper: disable it first so no stale/broken user unit remains.
 for unit in gnome-wayland-computer-use-observer.socket gnome-wayland-computer-use-observer.service; do
     file="$HOME/.config/systemd/user/$unit"
     systemctl --user disable --now "$unit" 2>/dev/null || true
@@ -121,7 +119,6 @@ done
 systemctl --user daemon-reload 2>/dev/null || true
 rm -rf "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/$NAME" 2>/dev/null || true
 
-# Clean exact project-owned legacy artifacts. Cua's portal path needs no custom udev rule.
 legacy="$HOME/.config/systemd/user/gnome-wayland-computer-use.service"
 if [ -f "$legacy" ]; then systemctl --user disable --now gnome-wayland-computer-use.service 2>/dev/null || true; rm -f "$legacy"; ((removed++)) || true; fi
 legacy="$HOME/.config/systemd/user/ydotoold.service"
@@ -134,17 +131,25 @@ if [ -f "$LEGACY_RULE" ] && grep -Fxq "$LEGACY_RULE_VALUE" "$LEGACY_RULE" && con
     ((removed++)) || true
 fi
 
-# Restore shell startup files only where this installer added an exact marked block.
 for rc in "$HOME/.profile" "$HOME/.bashrc" "$HOME/.zshrc"; do remove_managed_path_block "$rc"; done
 
-# Undo the exceptional DRM workaround only when GWCU itself recorded that it added it.
 if [ -f "$STATE/video-group-added" ]; then
-    if getent group video >/dev/null 2>&1 && id -nG "$USER" 2>/dev/null | tr ' ' '\n' | grep -Fxq video; then
-        if confirm "Remove $USER from the video group that GWCU added?"; then
-            as_root gpasswd -d "$USER" video >/dev/null || warn "Could not remove $USER from video group"
+    if getent group video >/dev/null 2>&1 && id -nG "$LOGIN_USER" 2>/dev/null | tr ' ' '\n' | grep -Fxq video; then
+        if confirm "Remove $LOGIN_USER from the video group that GWCU added?"; then
+            as_root gpasswd -d "$LOGIN_USER" video >/dev/null || warn "Could not remove $LOGIN_USER from video group"
         fi
     fi
     rm -f "$STATE/video-group-added"
+fi
+
+HERMES_PLUGIN="$HERMES_HOME/plugins/$NAME"
+if [ -d "$HERMES_PLUGIN" ]; then
+    if [ -f "$HERMES_PLUGIN/.gnome-wayland-computer-use-managed" ]; then
+        command -v hermes >/dev/null 2>&1 && hermes plugins disable "$NAME" >/dev/null 2>&1 || true
+        rm -rf "$HERMES_PLUGIN"; ((removed++)) || true
+    else
+        info "Preserving user-managed Hermes plugin: ${HERMES_PLUGIN/$HOME/\~}"
+    fi
 fi
 
 for dir in "$HOME/.agents/skills/$NAME" "$HERMES_HOME/skills/computer-use" "$HERMES_HOME/skills/$NAME"; do
@@ -173,7 +178,7 @@ if [ -f "$MANIFEST" ]; then
         [ -n "$original" ] && [ -e "$backup" ] || continue
         if [ -e "$original" ]; then
             printf '%s\t%s\n' "$original" "$backup" >>"$remaining"
-        elif confirm "Restore archived skill to ${original/$HOME/\~}?"; then
+        elif confirm "Restore archived component to ${original/$HOME/\~}?"; then
             mkdir -p "$(dirname "$original")"; mv "$backup" "$original"; ((removed++)) || true
         else
             printf '%s\t%s\n' "$original" "$backup" >>"$remaining"
@@ -196,7 +201,6 @@ PY
     fi
 fi
 
-# Cua removal must happen while ownership evidence still exists.
 if $REMOVE_CUA; then uninstall_cua; fi
 
 if [ -e "$STATE/screencast-restore-token" ] && ! $FORCE; then
@@ -204,11 +208,14 @@ if [ -e "$STATE/screencast-restore-token" ] && ! $FORCE; then
 else
     rm -f "$STATE/screencast-restore-token" 2>/dev/null || true
 fi
+
 rm -f "$STATE/profile.json" "$STATE/ownership.json" "$STATE/cua-doctor.json" "$STATE/cua-doctor.stderr" \
-      "$STATE/cua-health.json" "$STATE/cua-winrects-managed" "$STATE/video-group-added"
+      "$STATE/cua-health.json" "$STATE/cua-winrects-managed" "$STATE/video-group-added" \
+      "$STATE/managed-agents" "$STATE/portal-control.json"
 rmdir "$STATE" 2>/dev/null || true
 
 printf '\n'; ok "Teardown complete ($removed project component(s) removed)"
-info "Ubuntu PipeWire/portal packages and portal permission state were preserved."
+info "Ubuntu PipeWire/portal packages and GNOME portal permission state were preserved."
+info "Managed AGENTS.md blocks already written into user repositories were preserved as repository content."
 if ! $REMOVE_CUA; then info "Cua Driver and Cua WinRects were preserved."; fi
 printf '\n'

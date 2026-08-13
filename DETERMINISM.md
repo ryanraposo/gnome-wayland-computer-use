@@ -25,45 +25,60 @@ actually ready. Cua readiness comes from Cua's stable `health_report`
 `structuredContent`; `cua-health.py` transports that report rather than
 reconstructing it. `cua-driver doctor --json` is supplemental detail.
 
-## Rule 4: scripts compose hard sequences
+## Rule 4: scripts compose scripts
 
 A local subprocess is cheap. A model/tool boundary is expensive.
 
 ```text
-unknown target
-→ profile.sh route --machine NAME
-  → project AGENTS truth lookup
-  → app-identity.sh only on miss
-  → stable identity write-back on confident resolution
+uncertain target
+→ profile.sh route
+  → managed project truth
+  → identity resolver only on miss
+  → stable write-back only when allowed
   → gwcu.route.v1
 
 host contradiction
-→ profile.sh recover --machine
-  → cached profile read
+→ profile.sh recover
+  → cached profile
   → refresh only if stale/missing
      → diagnose.sh
-        → Cua health + GNOME observation facts
   → gwcu.route.v1
 ```
 
-The agent sees one structured result, not the helper fan-out.
+`route` never refreshes diagnostics merely because target identity is uncertain.
+`recover` is the deliberate expensive path but still costs one outer agent call.
 
-## Rule 5: project memory contains invariants, not history
+## Rule 5: stable truths may persist; transient state may not
 
-The project-root `AGENTS.md` managed block is a bounded acceleration cache.
-Records are one-line `gwcu:app:v1` compact JSON beneath exact start/end markers.
+Managed `AGENTS.md` blocks are bounded acceleration caches.
 
-Allowed facts are low-churn routing identity: display name, desktop ID, app ID,
-StartupWMClass, and app kind. No timestamps, screenshots, health state, task
-history, user text, or window coordinates belong there.
+Eligible: display name, desktop ID, app ID, `StartupWMClass`, app kind.
 
-The route script reads this cache before launcher scanning and updates it only on
-a confident deterministic resolution. User AGENTS content outside the markers is
-untouchable. Live Cua state always outranks remembered identity.
+Forbidden: screenshots, user text, timestamps, health snapshots, task history,
+window geometry, coordinates, focus state, or other transient task state.
 
-## Rule 6: remove ritual from the hot path
+Live Cua state always wins on contradiction. `GWCU_PROJECT_MEMORY=off` is the
+runtime override, and the installer's persistent preference is user-controlled.
 
-A known target triggers **zero GWCU setup calls** before Cua.
+## Rule 6: one-time setup belongs in installation
+
+The installer owns one-time machine/user setup:
+
+- Ubuntu foundation repair;
+- qualified Cua installation;
+- Cua GNOME helper installation;
+- managed-AGENTS preference;
+- RemoteDesktop/EIS control authorization;
+- Hermes `/computer-use` plugin registration when Hermes is present;
+- observer installation;
+- health proof and ownership bookkeeping.
+
+A rerun skips already-qualified Cua and already-established RemoteDesktop consent
+where the recorded local state proves they are already done.
+
+## Rule 7: remove ritual from the hot path
+
+A known target should trigger **zero GWCU setup calls** before Cua.
 
 It should not trigger update checks, broad diagnostics, app/window enumeration,
 whole-screen capture, toolkit classification, fallback speculation, or blind
@@ -73,9 +88,7 @@ retries.
 one target state → useful actions → verification at a real decision boundary
 ```
 
-## Rule 7: use native orchestration by kind of work
-
-When Hermes exposes its orchestration tools:
+## Rule 8: use Hermes primitives by job shape
 
 ```text
 stable recurring mechanics → repository script
@@ -86,17 +99,16 @@ real user choice            → clarify
 interactive desktop action  → parent Cua loop
 ```
 
-Do not delegate work that may need user clarification or portal consent.
+Portal consent and interactive desktop decisions stay in the parent session.
 
-## Rule 8: refusals are information
+## Rule 9: refusals are information
 
 If Cua says a delivery shape is unsafe or unavailable, the agent may choose a
 genuinely different supported Cua route or report the limitation. It must not
 inject raw input into the currently focused application.
 
-## Rule 9: installation is a deterministic program
+## Rule 10: installation is a deterministic program
 
 There is one installer source. It verifies first, repairs only missing Ubuntu
-foundation, provisions Cua through upstream-supported paths, enables the
-observer, and validates the finished system against Cua's own stable health
-contract. Runtime patching of a second installer is forbidden.
+foundation, provisions through upstream-supported paths, and validates the
+finished system. Runtime patching of a second installer is forbidden.

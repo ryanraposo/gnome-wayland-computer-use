@@ -6,7 +6,21 @@
 <meta name="description" content="A deterministic, call-efficient computer-use runtime for Ubuntu 26.04 GNOME.">
 <title>gnome-wayland-computer-use</title>
 <style>
-:root{color-scheme:dark;--bg:#080808;--panel:#101010;--line:#292929;--ink:#f6f6f2;--muted:#a8a8a2;--blue:#8ab4ff;--green:#9ce8b5;--violet:#c6b2ff;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:radial-gradient(900px 560px at 82% -8%,#18223a 0,transparent 58%),var(--bg);color:var(--ink)}a{color:var(--blue)}.wrap{max-width:1100px;margin:auto;padding:70px 24px 100px}.mark{white-space:pre;color:var(--blue);line-height:1.05}.eyebrow{margin-top:34px;color:var(--muted);letter-spacing:.14em;text-transform:uppercase;font-size:.78rem}.hero h1{font-size:clamp(3rem,8vw,6.6rem);letter-spacing:-.075em;line-height:.86;margin:15px 0 28px;max-width:1000px}.lede{max-width:900px;font-size:clamp(1.05rem,2vw,1.35rem);line-height:1.65}.lede strong{color:white}.pills{display:flex;flex-wrap:wrap;gap:7px;margin:28px 0 50px}.pill{border:1px solid #343434;border-radius:999px;padding:8px 11px;color:#c8c8c2;font-size:.83rem;background:#0d0d0d}.cta{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;border:1px solid var(--line);border-radius:18px;padding:18px 20px;background:#050505;overflow:auto}.cta code{white-space:nowrap;color:#e9edf8}.cta span{color:var(--green);font-size:.82rem}section{margin-top:74px}h2{font-size:1rem;text-transform:uppercase;letter-spacing:.16em;margin:0 0 22px;color:#d8d8d2}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.card{border:1px solid var(--line);border-radius:18px;padding:24px;background:linear-gradient(180deg,#121212,#0d0d0d);min-height:190px}.card b{display:block;font-size:.95rem;margin-bottom:13px}.card p{margin:0;color:var(--muted);line-height:1.65}.metric{border:1px solid var(--line);border-radius:18px;padding:20px;background:#0d0d0d}.metric strong{display:block;font-size:2.7rem;letter-spacing:-.08em;margin-bottom:8px}.metric span{color:var(--muted);line-height:1.5;font-size:.88rem}.blue{color:var(--blue)}.green{color:var(--green)}.violet{color:var(--violet)}.flow{border:1px solid var(--line);border-radius:18px;padding:25px;background:#0c0c0c;overflow:auto;white-space:pre;color:#d9d9d4;line-height:1.65}.consent{display:grid;grid-template-columns:1fr 1fr;gap:14px}.consent .card{min-height:0}.num{font-size:2.2rem;letter-spacing:-.06em;color:#555;margin-bottom:12px}.truth{font-size:clamp(1.45rem,3vw,2.4rem);line-height:1.25;letter-spacing:-.035em;max-width:900px}.truth strong{color:var(--green)}.small{color:var(--muted);line-height:1.7;max-width:900px}.footer{margin-top:90px;border-top:1px solid var(--line);padding-top:28px;color:#777;font-size:.9rem}@media(max-width:820px){.grid,.grid4,.consent{grid-template-columns:1fr 1fr}}@media(max-width:620px){.grid,.grid4,.consent{grid-template-columns:1fr}.cta{grid-template-columns:1fr}.cta span{display:none}.wrap{padding-top:42px}.hero h1{font-size:clamp(2.8rem,16vw,5rem)}}
+:root{color-scheme:dark;--bg:#080808;--panel:#101010;--line:#292929;--ink:#f6f6f2;--muted:#aaa9a2;--blue:#8ab4ff;--green:#9ce8b5;--violet:#c6b2ff;--gold:#f4dc98;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:radial-gradient(900px 560px at 82% -8%,#18223a 0,transparent 58%),var(--bg);color:var(--ink)}
+.wrap{max-width:1120px;margin:auto;padding:70px 24px 100px}.mark{white-space:pre;color:var(--blue);line-height:1.05}.eyebrow{margin-top:34px;color:var(--muted);letter-spacing:.14em;text-transform:uppercase;font-size:.78rem}
+.hero h1{font-size:clamp(3rem,8vw,6.8rem);letter-spacing:-.078em;line-height:.86;margin:15px 0 28px;max-width:1000px}.lede{max-width:900px;font-size:clamp(1.05rem,2vw,1.35rem);line-height:1.65}.lede strong{color:white}
+.pills{display:flex;flex-wrap:wrap;gap:7px;margin:28px 0 50px}.pill{border:1px solid #343434;border-radius:999px;padding:8px 11px;color:#c8c8c2;font-size:.83rem;background:#0d0d0d}
+.cta{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;border:1px solid var(--line);border-radius:18px;padding:18px 20px;background:#050505;overflow:auto}.cta code{white-space:nowrap;color:#e9edf8}.cta span{color:var(--green);font-size:.82rem}
+section{margin-top:74px}h2{font-size:1rem;text-transform:uppercase;letter-spacing:.16em;margin:0 0 22px;color:#d8d8d2}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.card{border:1px solid var(--line);border-radius:18px;padding:23px;background:linear-gradient(180deg,#121212,#0d0d0d);min-height:220px}.card .num{font-size:.75rem;letter-spacing:.16em;color:#676761;margin-bottom:26px}.card b{display:block;font-size:1rem;line-height:1.35;margin-bottom:14px}.card p{margin:0;color:var(--muted);line-height:1.62;font-size:.92rem}
+.blue{color:var(--blue)}.green{color:var(--green)}.violet{color:var(--violet)}.gold{color:var(--gold)}
+.flow{border:1px solid var(--line);border-radius:18px;padding:25px;background:#0c0c0c;overflow:auto;white-space:pre;color:#d9d9d4;line-height:1.65}
+.truth{font-size:clamp(1.45rem,3vw,2.4rem);line-height:1.25;letter-spacing:-.035em;max-width:920px}.truth strong{color:var(--green)}.small{color:var(--muted);line-height:1.7;max-width:920px}
+.notice{border:1px solid #285437;border-radius:18px;padding:23px;background:linear-gradient(180deg,#0c1710,#0b110d);max-width:940px}.notice b{color:var(--green)}.notice p{color:#c3c9c2;line-height:1.7;margin:.7rem 0 0}
+.commands{display:grid;grid-template-columns:1fr 1fr;gap:12px}.command{border:1px solid var(--line);border-radius:14px;background:#0d0d0d;padding:18px}.command code{color:#f3f3ee}.command span{display:block;color:var(--muted);margin-top:8px;line-height:1.5;font-size:.88rem}
+.footer{margin-top:90px;border-top:1px solid var(--line);padding-top:28px;color:#777;font-size:.9rem}
+@media(max-width:900px){.grid{grid-template-columns:1fr 1fr}}@media(max-width:650px){.grid,.commands{grid-template-columns:1fr}.cta{grid-template-columns:1fr}.cta span{display:none}.wrap{padding-top:42px}.hero h1{font-size:clamp(2.8rem,16vw,5rem)}}
 </style>
 </head>
 <body><main class="wrap">
@@ -18,104 +32,78 @@
      ▀▀   ▀▀</div>
 <div class="eyebrow">gnome-wayland-computer-use</div>
 <h1>Spend calls<br>on the task.</h1>
-<p class="lede"><strong>A deterministic computer-use runtime for Ubuntu 26.04 GNOME.</strong> Cua owns control. GWCU turns recurring desktop mechanics into programs, remembers tiny stable project truths, and lets the agent spend reasoning on the outcome.</p>
+<p class="lede"><strong>A deterministic computer-use runtime for Ubuntu 26.04 GNOME.</strong> Cua owns control. GWCU finishes one-time setup, compiles recurring mechanics into local programs, and remembers only stable project truths when you allow it.</p>
 <div class="pills"><span class="pill">Ubuntu 26.04</span><span class="pill">GNOME 50</span><span class="pill">Cua 0.19.3 pinned</span><span class="pill">RemoteDesktop + EIS/libei</span><span class="pill">AT-SPI</span><span class="pill">ScreenCast + PipeWire</span></div>
-<div class="cta"><code>curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh | bash</code><span>one installer → READY</span></div>
+<div class="cta"><code>curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh | bash</code><span>setup once → READY</span></div>
 </header>
 
 <section>
-<h2>Call budget</h2>
-<div class="grid4">
-<div class="metric"><strong class="green">0</strong><span>known target<br>GWCU setup calls</span></div>
-<div class="metric"><strong class="blue">1</strong><span>uncertain identity<br><code>profile.sh route</code></span></div>
-<div class="metric"><strong class="violet">1</strong><span>host contradiction<br><code>profile.sh recover</code></span></div>
-<div class="metric"><strong>1</strong><span>whole screen<br><code>observe.sh</code></span></div>
-</div>
-<p class="small">A local process is cheap. An agent/tool boundary is expensive. Programs compose hard sequences locally and return one structured answer.</p>
-</section>
-
-<section>
-<h2>Three layers, one job</h2>
+<h2>Four hard advantages</h2>
 <div class="grid">
-<div class="card"><b class="blue">CUA → CONTROL</b><p>Semantic + pixel actions, target state, GNOME geometry, exact activation, portal input, effects, verification, escalation and refusal.</p></div>
-<div class="card"><b class="green">GWCU → MECHANICS + MEMORY</b><p>Ubuntu qualification, deterministic route/recover programs, project AGENTS truths and a private warm whole-screen observer.</p></div>
-<div class="card"><b class="violet">HERMES → ORCHESTRATION</b><p>Structured clarification, one-turn programmatic fan-out, independent delegation and managed background completion when those tools are available.</p></div>
+<div class="card"><div class="num">01</div><b class="green">ZERO-CEREMONY HOT PATH</b><p>A known app/window pays <strong>0 GWCU setup calls</strong> before Cua. No update ritual, broad diagnosis, enumeration, or desktop-wide prelude.</p></div>
+<div class="card"><div class="num">02</div><b class="blue">PROGRAMS COLLAPSE MECHANICS</b><p>Route and recovery scripts compose their own lower-level probes. Several local operations still cost the agent <strong>one outer call</strong>.</p></div>
+<div class="card"><div class="num">03</div><b class="violet">PROJECT TRUTHS GET WARMER</b><p>Managed AGENTS.md identity records can skip repeat launcher resolution entirely—up to <strong>100% of repeat identity-routing setup</strong>.</p></div>
+<div class="card"><div class="num">04</div><b class="gold">INSTALL ONCE, USE IT</b><p>Dependencies, pinned Cua, GNOME control consent, managed-memory preference, Hermes commands, observer lifecycle, and health proof happen up front.</p></div>
 </div>
 </section>
 
 <section>
-<h2>The hot path</h2>
-<div class="flow">known target
-  → one Cua target/window state
+<h2>The operating model</h2>
+<div class="flow">remember stable invariants
+  → program recurring mechanics
+    → use native Hermes orchestration when orchestration is real
+      → let the model reason only about what is new
+        → Cua executes through one control authority</div>
+<p class="small">Cua owns semantic + pixel actions, target/window state, GNOME geometry, exact activation, input delivery, verification, escalation, and refusal. GWCU owns the Ubuntu substrate, deterministic routing/recovery, bounded project memory, and whole-screen observation.</p>
+</section>
+
+<section>
+<h2>Known target</h2>
+<div class="flow">one Cua target/window state
   → AX when grounded / PX from that same state
   → useful action span
-  → verify only when the next decision depends on it</div>
-<p class="small">Zero task-time updates. Zero broad diagnostics. Zero known-target enumeration. Zero whole-screen prelude when target evidence is enough. Zero blind replay of the same failed delivery shape.</p>
+  → verify only when the next decision depends on new state</div>
+<p class="small">Zero task-time update checks. Zero broad diagnostics. Zero known-target enumeration. Zero whole-screen prelude when target evidence is enough. Zero blind retry of the same failed delivery shape.</p>
 </section>
 
 <section>
-<h2>Programs compose mechanics</h2>
-<div class="flow">uncertain target
-  → profile.sh route "NAME"
-    → project AGENTS truth lookup
-    → launcher/PWA identity only on miss
-    → stable truth write-back on confident resolution
-  → one gwcu.route.v1 answer
-
-host contradiction
-  → profile.sh recover
-    → cached profile read
-    → refresh only if stale/missing
-      → diagnose.sh
-        → Cua health + GNOME observation facts
-  → one gwcu.route.v1 answer</div>
-<p class="small">The model sees the decision result, not the probe fan-out. Stable recurring mechanics live in versioned scripts; one-off mechanical fan-out can use Hermes execute_code.</p>
+<h2>Remote Desktop, explained once</h2>
+<div class="notice"><b>GNOME is naming a local compositor permission.</b><p>Cua uses <code>org.freedesktop.portal.RemoteDesktop</code> to obtain an EIS/libei pointer + keyboard session. GWCU installs no RDP/VNC server, raw-input daemon, or project input udev rule. On a fresh install, the terminal explains the handshake and counts down 3 → 2 → 1 before the GNOME prompt. The bootstrap moves the pointer once—no click, no key—and Cua can persist GNOME’s revocable restore token so the normal case does not ask again.</p></div>
+<p class="small">Verify any time with <code>/computer-use consent</code>. Whole-screen ScreenCast permission is a separate capability and appears only when whole-screen observation is requested.</p>
 </section>
 
 <section>
-<h2>Project-local desktop truths</h2>
-<p class="truth">Remember invariants. <strong>Never log the task.</strong></p>
-<div class="flow">&lt;!-- gwcu:desktop-truths:v1:start --&gt;
-## GWCU desktop truths
-&lt;!-- gwcu:app:v1 {"app_id":"…","desktop_id":"…","key":"…"} --&gt;
-&lt;!-- gwcu:desktop-truths:v1:end --&gt;</div>
-<p class="small">A confident route can piggyback this bounded, regex-addressable block onto project-root AGENTS.md. No timestamps, screenshots, health snapshots, user text or window geometry. Warm hits skip launcher scans and produce no file churn. Live Cua state always wins on contradiction.</p>
-</section>
-
-<section>
-<h2>Hermes, by kind of work</h2>
-<div class="flow">stable recurring mechanics → repository script
-one-off mechanical fan-out → execute_code
-independent reasoning       → delegate_task
-bounded long process        → background + notify_on_complete
-real user choice            → clarify
-interactive desktop action  → parent Cua loop</div>
-<p class="small">Portal consent and user-facing desktop decisions stay in the parent session. Delegation is for independent reasoning; clarification uses Hermes's real choice UI; bounded shell work can complete without polling turns.</p>
-</section>
-
-<section>
-<h2>Native Ubuntu substrate</h2>
-<p class="truth">Use the pieces Ubuntu already has. <strong>Qualify them once.</strong></p>
-<p class="small">The installer repairs the explicit portal/PipeWire/AT-SPI foundation, pins Cua 0.19.3, installs Cua's packaged GNOME helper, starts the private observer socket, and treats <code>cua-driver doctor --json</code> as a hard readiness gate before stable Cua health. It installs no parallel raw-input stack.</p>
-</section>
-
-<section>
-<h2>Portal consent</h2>
-<div class="consent">
-<div class="card"><div class="num">01</div><b>Remote Desktop / control</b><p>The first Cua foreground input may ask for GNOME remote-control consent. Approval creates the portal-issued EIS/libei input session. No X11 session is required.</p></div>
-<div class="card"><div class="num">02</div><b>ScreenCast / observation</b><p>The first explicit whole-screen observation may separately ask which screen to share. GWCU keeps that portal-scoped PipeWire stream warm only while useful.</p></div>
+<h2>Hermes /computer-use</h2>
+<div class="commands">
+<div class="command"><code>/computer-use status</code><span>Cua health, portal state, restore-token state, and managed-memory preference.</span></div>
+<div class="command"><code>/computer-use managed</code><span>Enable bounded project AGENTS.md identity truths; add <code>off</code> or <code>status</code> when needed.</span></div>
+<div class="command"><code>/computer-use consent</code><span>Explain and verify the GNOME RemoteDesktop → EIS/libei control contract.</span></div>
+<div class="command"><code>/computer-use doctor</code><span>Run the deterministic installed-system diagnosis.</span></div>
 </div>
+<p class="small">The installer registers this through Hermes’s native plugin command API and enables the plugin. Command discovery gets the description and argument hint without patching Hermes core.</p>
+</section>
+
+<section>
+<h2>Managed project truths</h2>
+<p class="truth">A tiny cache of durable identity. <strong>No diary.</strong></p>
+<p class="small">Only low-churn app identity fields are eligible: display name, desktop ID, app ID, StartupWMClass, and app kind. No screenshots, timestamps, user text, task history, coordinates, geometry, focus, or health snapshots. The block is bounded, deterministic, regex-addressable, comment-safe, and subordinate to live Cua state.</p>
+</section>
+
+<section>
+<h2>Install contract</h2>
+<p class="truth">Prepare once. <strong>Prove READY.</strong></p>
+<p class="small">The installer repairs only missing Ubuntu foundation, pins Cua 0.19.3, installs Cua’s GNOME helper, asks once about managed AGENTS.md blocks, establishes GNOME’s local control permission, registers Hermes commands when present, enables the warm observer, runs Cua doctor, consumes Cua health_report, and records reversible ownership.</p>
 </section>
 
 <section>
 <h2>Uninstall</h2>
 <div class="cta"><code>curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/uninstall.sh | bash</code><span>reversible ownership</span></div>
-<p class="small">Installation-owned skills, observer units, PATH/routing, accessibility changes, exact legacy artifacts and GWCU-added group state are reversible. Project AGENTS truths remain project content. Pre-existing Cua is preserved; Ubuntu desktop packages remain host-owned.</p>
+<p class="small">Project skills, the Hermes command plugin, observer units, managed PATH/routing, accessibility changes, exact legacy artifacts, and GWCU-added group state are reversible. Ubuntu desktop packages and GNOME permission state remain host-owned. Managed blocks already written into user repositories remain repository content.</p>
 </section>
 
 <section>
 <h2>The point</h2>
-<p class="truth">The model decides intent.<br>Programs collapse mechanics.<br><strong>Cua executes.</strong></p>
+<p class="truth">Remember invariants.<br>Program the routine.<br><strong>Reason about the new.</strong></p>
 </section>
 
 <div class="footer">gnome-wayland-computer-use · deterministic computer use for Ubuntu 26.04 GNOME</div>
