@@ -1,6 +1,7 @@
 # Performance Notes
 
-Performance is measured in **agent round-trips**, not only milliseconds.
+Performance is measured in **agent round-trips and repeated work**, not only
+milliseconds.
 
 ## First-use call budget
 
@@ -11,26 +12,54 @@ Performance is measured in **agent round-trips**, not only milliseconds.
 | host/runtime contradiction | **1** — `profile.sh recover` |
 | explicit whole-screen request | **1** — `observe.sh` |
 
-## Stable-memory effect
+## `.gwcu` effect
 
-Managed project truths do not claim to cut an entire task by 100%. They can
-eliminate **100% of the repeat identity-routing setup call** when a stable exact
-identity is already present in the current project's managed `AGENTS.md` block.
+Managed truth does not claim to cut an entire task by 100%. A warm exact app hit
+eliminates **100% of the repeated launcher/PWA identity-resolution stage inside
+the route call**.
 
 Cold:
 
 ```text
-route call → project miss → launcher resolution → write stable truth → Cua
+route call
+→ resolve scope
+→ .gwcu miss
+→ launcher/PWA resolution
+→ Git scope: ensure /.gwcu is ignored
+→ write stable identity
+→ Cua
 ```
 
 Warm:
 
 ```text
-route call → project hit → Cua
+route call
+→ nearest .gwcu
+→ exact identity hit
+→ no resolver
+→ no rewrite
+→ Cua
 ```
 
-The route call itself remains one outer call; the saved work is the repeated
-identity-resolution stage inside it.
+The route call itself remains one outer call. What disappears is repeated local
+mechanical discovery and the model deliberation that would otherwise surround
+it.
+
+With persistence disabled:
+
+```text
+route call → identity resolver → Cua
+route call → identity resolver → Cua
+route call → identity resolver → Cua
+```
+
+With persistence enabled:
+
+```text
+route call → identity resolver → write .gwcu → Cua
+route call → .gwcu hit → Cua
+route call → .gwcu hit → Cua
+```
 
 ## Fast path
 
@@ -45,10 +74,17 @@ known target
 There are no GWCU diagnostics, update checks, launcher scans, or whole-screen
 captures on that path.
 
+## Non-Git workspaces
+
+Nearest-existing `.gwcu` scope discovery means a general workspace can pay the
+cold discovery cost once for all descendants. A structure such as
+`~/.gwcw/.gwcu` avoids creating unrelated truth files in every scratch
+subdirectory.
+
 ## One-time work is amortized in installation
 
 The installer handles interactions that should not consume later task turns:
-managed-memory preference, GNOME RemoteDesktop authorization, Hermes slash
+managed-truth preference, GNOME RemoteDesktop authorization, Hermes slash
 command registration, native dependency repair, observer setup, and readiness
 proof. Exact qualified Cua and an existing RemoteDesktop restore token skip
 their corresponding repeated setup.
@@ -63,12 +99,14 @@ The direct fallback is Screenshot-portal-only.
 
 Live GNOME 50 smoke should record:
 
-- installer one-time consent path and repeat-install path;
+- fresh installer consent path and repeat-install path;
 - cold first RemoteDesktop consent;
 - cold first ScreenCast consent;
 - warm broker p50/p95 capture latency;
 - known-target Cua state latency;
-- cold and warm managed identity routing;
+- `.gwcu` cold route and warm route latency;
+- identity-resolver invocation count across cold/warm runs;
+- non-Git ancestor-scope lookup latency;
 - semantic background action latency;
 - exact foreground escalation latency;
 - pixel-only target action latency;
