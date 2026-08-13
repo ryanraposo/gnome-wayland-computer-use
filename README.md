@@ -15,6 +15,8 @@ Cua owns control. GWCU prepares the machine once, turns recurring desktop
 mechanics into local programs, and turns durable observations into local
 repo/workspace information in `.gwcu`.
 
+The qualified session is GNOME Wayland. **No X11 or XWayland session is required.**
+
 **Ubuntu 26.04 · GNOME 50 · Cua Driver 0.19.3 · RemoteDesktop/EIS/libei · AT-SPI · ScreenCast/PipeWire**
 </div>
 
