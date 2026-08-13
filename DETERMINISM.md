@@ -56,12 +56,14 @@ Scope resolution:
 
 ```text
 explicit GWCU_SCOPE_ROOT
-→ nearest existing ancestor .gwcu
-→ Git root
+→ Git worktree root, when inside Git
+→ nearest existing ancestor .gwcu, outside Git
 → current workdir
 ```
 
-This supports both repositories and non-Git workspaces.
+A Git repository always owns its own root truth file, even beneath a broader
+non-Git workspace. Outside Git, an existing ancestor `.gwcu` may define a
+long-lived general workspace.
 
 For Git scopes, managed persistence must establish `/.gwcu` in the root
 `.gitignore` before the first truth write. If safe ignore setup fails, the write
