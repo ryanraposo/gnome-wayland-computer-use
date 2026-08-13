@@ -8,7 +8,7 @@ import subprocess
 
 
 NAME = "gnome-wayland-computer-use"
-ARGS_HINT = "[status|managed [on|off|status]|consent|doctor|help]"
+ARGS_HINT = "[status|managed [on|off|status]|truths|consent|doctor|help]"
 
 
 def _backend() -> Path:
@@ -53,6 +53,6 @@ def register(ctx):
     ctx.register_command(
         "computer-use",
         _run,
-        description="Ubuntu desktop control status, managed routing memory, consent, and diagnostics.",
+        description="Ubuntu desktop control, .gwcu truths, consent, and diagnostics.",
         args_hint=ARGS_HINT,
     )
