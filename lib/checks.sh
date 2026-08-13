@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 # lib/checks.sh — shared validation library for gnome-wayland-computer-use
-# Source with: . "$(dirname "$0")/lib/checks.sh"
 
-# ── Styling ──
 CK_R='\033[0;31m'; CK_G='\033[0;32m'; CK_Y='\033[1;33m'; CK_N='\033[0m'
 check_ok()   { printf "  ${CK_G}✓${CK_N} %s\n" "$*"; }
 check_fail() { printf "  ${CK_R}✗${CK_N} %s\n" "$*"; }
@@ -19,7 +17,6 @@ check_print_summary() {
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 }
 
-# ── Version comparison ──
 check_version_ge() {
     [ $# -eq 2 ] || return 2
     [ -n "$1" ] || return 2
@@ -27,286 +24,165 @@ check_version_ge() {
     printf '%s\n%s\n' "$2" "$1" | sort -V | head -1 | grep -qF "$2"
 }
 
-# ── Data functions (silent) ──
 check_get_session() {
     local s="${XDG_SESSION_TYPE:-}"
-    if [ -z "$s" ]; then
-        s=$(loginctl show-session "${XDG_SESSION_ID:-self}" -p Type --value 2>/dev/null || true)
-    fi
+    [ -n "$s" ] || s=$(loginctl show-session "${XDG_SESSION_ID:-self}" -p Type --value 2>/dev/null || true)
     printf '%s\n' "${s:-unknown}"
 }
 
 check_get_desktop() {
     local d="${XDG_CURRENT_DESKTOP:-}"
-    if [ -z "$d" ]; then
-        d=$(loginctl show-session "${XDG_SESSION_ID:-self}" -p Desktop --value 2>/dev/null || true)
-    fi
+    [ -n "$d" ] || d=$(loginctl show-session "${XDG_SESSION_ID:-self}" -p Desktop --value 2>/dev/null || true)
     printf '%s\n' "${d:-unknown}"
 }
 
-# ── Predicate functions (silent, return 0/1) ──
-check_is_wayland()      { [ "$(check_get_session)" = "wayland" ]; }
-check_is_gnome()        { [[ "$(check_get_desktop)" == *"GNOME"* ]]; }
+check_is_wayland() { [ "$(check_get_session)" = wayland ]; }
+check_is_gnome() { [[ "$(check_get_desktop)" == *GNOME* ]]; }
 check_is_gnome_shell_running() { pgrep -x gnome-shell &>/dev/null; }
-check_is_xwayland_running()    { pgrep -x Xwayland &>/dev/null; }
+check_is_xwayland_running() { pgrep -x Xwayland &>/dev/null; }
 
 check_is_toolkit_accessibility_enabled() {
-    local val
-    val=$(gsettings get org.gnome.desktop.interface toolkit-accessibility 2>/dev/null) || return 1
-    [ "$val" = "true" ]
+    [ "$(gsettings get org.gnome.desktop.interface toolkit-accessibility 2>/dev/null || true)" = true ]
 }
-
 check_is_atspi_bus_alive() {
-    gdbus introspect --session --dest org.a11y.Bus --object-path /org/a11y/bus 2>/dev/null | grep -q "interface org.a11y.Bus"
+    gdbus introspect --session --dest org.a11y.Bus --object-path /org/a11y/bus 2>/dev/null | grep -q 'interface org.a11y.Bus'
 }
-
 check_get_atspi_socket() {
     printf '%s\n' "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/at-spi/bus"
 }
-
-check_is_atspi_socket_exists() {
-    [ -S "$(check_get_atspi_socket)" ]
-}
-
+check_is_atspi_socket_exists() { [ -S "$(check_get_atspi_socket)" ]; }
 check_start_atspi_service() {
     systemctl --user start at-spi-bus-launcher.service 2>/dev/null || {
         /usr/libexec/at-spi-bus-launcher --launch-immediately 2>/dev/null &
         disown
     }
-    for _ in 1 2 3; do
-        check_is_atspi_socket_exists && return 0
-        sleep 1
-    done
+    for _ in 1 2 3; do check_is_atspi_socket_exists && return 0; sleep 1; done
     return 1
 }
 
 check_has_uinput_device() { [ -c /dev/uinput ]; }
-
-check_is_input_group_member() {
-    id -nG 2>/dev/null | tr ' ' '\n' | grep -qx input
+check_is_input_group_member() { id -nG 2>/dev/null | tr ' ' '\n' | grep -qx input; }
+check_is_ydotoold_installed() { command -v ydotoold &>/dev/null; }
+check_is_ydotoold_enabled() {
+    systemctl --user is-enabled ydotool.service &>/dev/null || systemctl --user is-enabled ydotoold.service &>/dev/null
 }
-
-check_is_ydotoold_installed()   { command -v ydotoold &>/dev/null; }
-check_is_ydotoold_enabled()     {
-    systemctl --user is-enabled ydotool.service &>/dev/null ||
-        systemctl --user is-enabled ydotoold.service &>/dev/null
+check_is_ydotoold_running() {
+    systemctl --user is-active ydotool.service &>/dev/null || systemctl --user is-active ydotoold.service &>/dev/null
 }
-check_is_ydotoold_running()     {
-    systemctl --user is-active ydotool.service &>/dev/null ||
-        systemctl --user is-active ydotoold.service &>/dev/null
-}
-check_is_ydotoold_process_up()  { pgrep -x ydotoold &>/dev/null; }
+check_is_ydotoold_process_up() { pgrep -x ydotoold &>/dev/null; }
 check_is_cua_driver_installed() { command -v cua-driver &>/dev/null; }
-check_is_cua_driver_running()   {
-    systemctl --user is-active gnome-wayland-computer-use.service &>/dev/null &&
-        timeout 3 cua-driver status &>/dev/null
-}
-
-check_is_env_in_bashrc() {
-    local var="$1"
-    grep -Fq "$var" "$HOME/.bashrc" 2>/dev/null
-}
-
-check_is_service_enabled() {
-    local name="$1"
-    systemctl --user is-enabled "$name" &>/dev/null
-}
-
-check_is_service_running() {
-    local name="$1"
-    systemctl --user is-active "$name" &>/dev/null
-}
-
-check_has_systemd_service() {
-    local name="$1"
-    systemctl --user --type service list-units --all 2>/dev/null | grep -q "$name"
+check_is_cua_driver_running() {
+    systemctl --user is-active gnome-wayland-computer-use.service &>/dev/null && timeout 3 cua-driver status &>/dev/null
 }
 
 check_skill_installed() {
-    local name="gnome-wayland-computer-use"
-    [ -f "${HOME}/.agents/skills/${name}/SKILL.md" ]
+    [ -f "$HOME/.agents/skills/gnome-wayland-computer-use/SKILL.md" ]
 }
-
 check_is_hermes_integration_enabled() {
-    local name="gnome-wayland-computer-use"
-    [ -f "${HOME}/.agents/skills/${name}/.hermes-integration" ]
+    [ -f "$HOME/.agents/skills/gnome-wayland-computer-use/.hermes-integration" ]
 }
-
 check_hermes_skill_installed() {
     local dir="${HERMES_HOME:-$HOME/.hermes}/skills/computer-use"
-    [ -f "$dir/SKILL.md" ] &&
-        [ -f "$dir/.gnome-wayland-computer-use-managed" ]
+    [ -f "$dir/SKILL.md" ] && [ -f "$dir/.gnome-wayland-computer-use-managed" ]
 }
 
-check_is_screenshot_portal_ready() {
-    gdbus introspect --session \
-        --dest org.freedesktop.portal.Desktop \
-        --object-path /org/freedesktop/portal/desktop \
-        2>/dev/null | grep -q "interface org.freedesktop.portal.Screenshot"
+check_portal_interface() {
+    local interface="$1"
+    gdbus introspect --session --dest org.freedesktop.portal.Desktop \
+        --object-path /org/freedesktop/portal/desktop 2>/dev/null |
+        grep -q "interface org.freedesktop.portal.${interface}"
 }
-
+check_is_screencast_portal_ready() { check_portal_interface ScreenCast; }
+check_is_screenshot_portal_ready() { check_portal_interface Screenshot; }
+check_is_pipewire_capture_ready() {
+    local python="${GNOME_WAYLAND_SYSTEM_PYTHON:-/usr/bin/python3}"
+    [ -x "$python" ] || python="$(command -v python3 2>/dev/null || true)"
+    [ -n "$python" ] || return 1
+    "$python" -c "import gi; gi.require_version('Gst','1.0'); from gi.repository import Gst" 2>/dev/null || return 1
+    command -v gst-inspect-1.0 &>/dev/null || return 1
+    gst-inspect-1.0 pipewiresrc &>/dev/null && gst-inspect-1.0 pngenc &>/dev/null
+}
+check_has_screencast_restore_token() {
+    [ -s "${XDG_STATE_HOME:-$HOME/.local/state}/gnome-wayland-computer-use/screencast-restore-token" ]
+}
 check_legacy_capture_extension_absent() {
-    local uuid="desktop-capture@gnome-wayland-computer-use"
-    [ ! -d "${HOME}/.local/share/gnome-shell/extensions/${uuid}" ]
+    [ ! -d "$HOME/.local/share/gnome-shell/extensions/desktop-capture@gnome-wayland-computer-use" ]
 }
 
-# ── Check functions (print result, return 0/1) ──
 check_session() {
-    local s
-    s=$(check_get_session)
-    if [ "$s" = "wayland" ]; then
-        check_ok "Session: Wayland"; check_pass; return 0
-    else
-        check_fail "Session: $s (expected wayland)"; check_xfail; return 1
-    fi
+    local s; s=$(check_get_session)
+    if [ "$s" = wayland ]; then check_ok "Session: Wayland"; check_pass; return 0; fi
+    check_fail "Session: $s (expected wayland)"; check_xfail; return 1
 }
-
 check_desktop() {
-    local d
-    d=$(check_get_desktop)
-    if [[ "$d" == *"GNOME"* ]]; then
-        check_ok "Desktop: $d"; check_pass; return 0
-    else
-        check_fail "Desktop: $d (expected GNOME)"; check_xfail; return 1
-    fi
+    local d; d=$(check_get_desktop)
+    if [[ "$d" == *GNOME* ]]; then check_ok "Desktop: $d"; check_pass; return 0; fi
+    check_fail "Desktop: $d (expected GNOME)"; check_xfail; return 1
 }
-
 check_gnome_shell() {
-    if check_is_gnome_shell_running; then
-        check_ok "GNOME Shell running"; check_pass; return 0
-    else
-        check_fail "GNOME Shell not running"; check_xfail; return 1
-    fi
+    if check_is_gnome_shell_running; then check_ok "GNOME Shell running"; check_pass; return 0; fi
+    check_fail "GNOME Shell not running"; check_xfail; return 1
 }
-
 check_xwayland() {
-    if check_is_xwayland_running; then
-        check_ok "XWayland running"; check_pass; return 0
-    else
-        check_info "XWayland not running (expected on pure Wayland)"; check_xfail; return 1
-    fi
+    if check_is_xwayland_running; then check_ok "XWayland running"; check_pass; return 0; fi
+    check_info "XWayland not running (fine on pure Wayland)"; check_pass; return 0
 }
-
 check_toolkit_accessibility() {
-    if check_is_toolkit_accessibility_enabled; then
-        check_ok "toolkit-accessibility enabled"; check_pass; return 0
-    else
-        check_fail "toolkit-accessibility disabled (run: gsettings set ... toolkit-accessibility true)"; check_xfail; return 1
-    fi
+    if check_is_toolkit_accessibility_enabled; then check_ok "toolkit-accessibility enabled"; check_pass; return 0; fi
+    check_fail "toolkit-accessibility disabled"; check_xfail; return 1
 }
-
 check_atspi_bus() {
-    if check_is_atspi_bus_alive; then
-        check_ok "AT-SPI2 D-Bus alive (org.a11y.Bus)"; check_pass; return 0
-    else
-        check_fail "AT-SPI2 D-Bus not reachable"; check_xfail; return 1
-    fi
+    if check_is_atspi_bus_alive; then check_ok "AT-SPI2 D-Bus alive"; check_pass; return 0; fi
+    check_fail "AT-SPI2 D-Bus not reachable"; check_xfail; return 1
 }
-
 check_atspi_socket() {
-    if check_is_atspi_socket_exists; then
-        check_ok "AT-SPI2 socket at $(check_get_atspi_socket)"; check_pass; return 0
-    else
-        check_fail "AT-SPI2 socket missing"; check_xfail; return 1
-    fi
+    if check_is_atspi_socket_exists; then check_ok "AT-SPI2 socket ready"; check_pass; return 0; fi
+    check_fail "AT-SPI2 socket missing"; check_xfail; return 1
 }
-
 check_skill() {
-    if check_skill_installed; then
-        check_ok "Agent skill installed"; check_pass; return 0
-    else
-        check_fail "Agent skill not installed"; check_xfail; return 1
-    fi
+    if check_skill_installed; then check_ok "Agent skill installed"; check_pass; return 0; fi
+    check_fail "Agent skill not installed"; check_xfail; return 1
 }
-
 check_hermes_skill() {
-    if ! check_is_hermes_integration_enabled; then
-        check_info "Hermes integration not selected (shared Agent Skill is active)"
-        check_pass
-        return 0
-    fi
-    if check_hermes_skill_installed; then
-        check_ok "Hermes skill installed"; check_pass; return 0
-    else
-        check_fail "Hermes integration selected but its skill is missing"; check_xfail; return 1
-    fi
+    if ! check_is_hermes_integration_enabled; then check_info "Hermes integration not selected"; check_pass; return 0; fi
+    if check_hermes_skill_installed; then check_ok "Hermes skill installed"; check_pass; return 0; fi
+    check_fail "Hermes integration selected but skill missing"; check_xfail; return 1
 }
-
+check_screencast_portal() {
+    if check_is_screencast_portal_ready; then check_ok "XDG ScreenCast portal ready"; check_pass; return 0; fi
+    check_fail "XDG ScreenCast portal not reachable"; check_xfail; return 1
+}
 check_screenshot_portal() {
-    if check_is_screenshot_portal_ready; then
-        check_ok "XDG Screenshot portal ready"
-        check_pass
-        return 0
-    else
-        check_fail "XDG Screenshot portal not reachable"
-        check_xfail
-        return 1
-    fi
+    if check_is_screenshot_portal_ready; then check_ok "XDG Screenshot portal ready"; check_pass; return 0; fi
+    check_fail "XDG Screenshot portal not reachable"; check_xfail; return 1
 }
-
+check_pipewire_capture() {
+    if check_is_pipewire_capture_ready; then check_ok "PipeWire/GStreamer capture ready"; check_pass; return 0; fi
+    check_fail "PipeWire/GStreamer capture stack incomplete"; check_xfail; return 1
+}
+check_restore_token() {
+    if check_has_screencast_restore_token; then check_ok "ScreenCast restore token cached"; check_pass; return 0; fi
+    check_info "No ScreenCast restore token yet (first capture may ask for monitor permission)"; check_pass; return 0
+}
 check_legacy_capture_extension() {
-    if check_legacy_capture_extension_absent; then
-        check_ok "Legacy capture extension absent"
-        check_pass
-        return 0
-    else
-        check_fail "Legacy capture extension still installed; rerun the installer to retire it"
-        check_xfail
-        return 1
-    fi
+    if check_legacy_capture_extension_absent; then check_ok "Legacy capture extension absent"; check_pass; return 0; fi
+    check_fail "Legacy capture extension still installed; rerun installer to retire it"; check_xfail; return 1
 }
-
 check_uinput() {
-    if check_has_uinput_device; then
-        check_ok "/dev/uinput present"; check_pass; return 0
-    else
-        check_fail "/dev/uinput not found"; check_xfail; return 1
-    fi
+    if check_has_uinput_device; then check_ok "/dev/uinput present"; check_pass; return 0; fi
+    check_fail "/dev/uinput not found"; check_xfail; return 1
 }
-
 check_input_group() {
-    if check_is_input_group_member; then
-        check_ok "User in 'input' group"; check_pass; return 0
-    else
-        check_fail "User not in 'input' group (run: sudo usermod -aG input $USER)"; check_xfail; return 1
-    fi
+    if check_is_input_group_member; then check_ok "User in input group"; check_pass; return 0; fi
+    check_fail "User not in input group"; check_xfail; return 1
 }
-
 check_ydotoold() {
-    if ! check_is_ydotoold_installed; then
-        check_info "ydotoold not installed (PX Rung fallback degraded)"; check_xfail; return 1
-    fi
-    local ok=0
-    if check_is_ydotoold_enabled; then check_ok "ydotoold.service enabled"; ((ok++)) || true
-    else check_fail "ydotoold.service not enabled"; fi
-    if check_is_ydotoold_running; then
-        check_ok "ydotoold.service running"; ((ok++)) || true
-    elif check_is_ydotoold_process_up; then
-        check_info "ydotoold process running (outside systemd)"; ((ok++)) || true
-    else
-        check_fail "ydotoold.service not running"
-    fi
-    if [ "$ok" -eq 2 ]; then check_pass; else check_xfail; fi
-    return $((2 - ok))
+    if ! check_is_ydotoold_installed; then check_info "ydotoold not installed (last-resort input degraded)"; check_xfail; return 1; fi
+    if check_is_ydotoold_running || check_is_ydotoold_process_up; then check_ok "ydotoold running"; check_pass; return 0; fi
+    check_fail "ydotoold not running"; check_xfail; return 1
 }
-
 check_cua_driver() {
-    if ! check_is_hermes_integration_enabled; then
-        check_info "Hermes cua-driver backend not selected"
-        check_pass
-        return 0
-    fi
-    if ! check_is_cua_driver_installed; then
-        check_fail "cua-driver not installed (run: hermes computer-use install)"
-        check_xfail
-        return 1
-    fi
-    if check_is_cua_driver_running; then
-        check_ok "Hermes computer_use backend running"
-        check_pass
-        return 0
-    fi
-    check_fail "Hermes computer_use backend not ready"
-    check_xfail
-    return 1
+    if ! check_is_hermes_integration_enabled; then check_info "Hermes cua-driver backend not selected"; check_pass; return 0; fi
+    if check_is_cua_driver_running; then check_ok "Hermes computer_use backend running"; check_pass; return 0; fi
+    check_fail "Hermes computer_use backend not ready"; check_xfail; return 1
 }
