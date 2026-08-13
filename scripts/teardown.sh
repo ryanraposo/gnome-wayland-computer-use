@@ -211,11 +211,11 @@ fi
 
 rm -f "$STATE/profile.json" "$STATE/ownership.json" "$STATE/cua-doctor.json" "$STATE/cua-doctor.stderr" \
       "$STATE/cua-health.json" "$STATE/cua-winrects-managed" "$STATE/video-group-added" \
-      "$STATE/managed-agents" "$STATE/portal-control.json"
+      "$STATE/managed-truths" "$STATE/managed-agents" "$STATE/portal-control.json"
 rmdir "$STATE" 2>/dev/null || true
 
 printf '\n'; ok "Teardown complete ($removed project component(s) removed)"
 info "Ubuntu PipeWire/portal packages and GNOME portal permission state were preserved."
-info "Managed AGENTS.md blocks already written into user repositories were preserved as repository content."
+info "Repo/workspace .gwcu files and their .gitignore protection were preserved as local workspace content."
 if ! $REMOVE_CUA; then info "Cua Driver and Cua WinRects were preserved."; fi
 printf '\n'
