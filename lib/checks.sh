@@ -138,16 +138,19 @@ check_hermes_skill_installed() {
         [ -f "$dir/.gnome-wayland-computer-use-managed" ]
 }
 
-check_is_desktop_capture_extension_ready() {
+check_is_screenshot_portal_ready() {
     gdbus introspect --session \
-        --dest io.github.ryanraposo.GnomeWaylandDesktopCapture \
-        --object-path /io/github/ryanraposo/GnomeWaylandDesktopCapture \
-        2>/dev/null |
-        grep -q "interface io.github.ryanraposo.GnomeWaylandDesktopCapture"
+        --dest org.freedesktop.portal.Desktop \
+        --object-path /org/freedesktop/portal/desktop \
+        2>/dev/null | grep -q "interface org.freedesktop.portal.Screenshot"
+}
+
+check_legacy_capture_extension_absent() {
+    local uuid="desktop-capture@gnome-wayland-computer-use"
+    [ ! -d "${HOME}/.local/share/gnome-shell/extensions/${uuid}" ]
 }
 
 # ── Check functions (print result, return 0/1) ──
-
 check_session() {
     local s
     s=$(check_get_session)
@@ -229,13 +232,25 @@ check_hermes_skill() {
     fi
 }
 
-check_desktop_capture_extension() {
-    if check_is_desktop_capture_extension_ready; then
-        check_ok "Focus-free desktop-layer capture ready"
+check_screenshot_portal() {
+    if check_is_screenshot_portal_ready; then
+        check_ok "XDG Screenshot portal ready"
         check_pass
         return 0
     else
-        check_fail "Desktop capture extension not loaded (sign out of the GNOME session and sign back in once)"
+        check_fail "XDG Screenshot portal not reachable"
+        check_xfail
+        return 1
+    fi
+}
+
+check_legacy_capture_extension() {
+    if check_legacy_capture_extension_absent; then
+        check_ok "Legacy capture extension absent"
+        check_pass
+        return 0
+    else
+        check_fail "Legacy capture extension still installed; rerun the installer to retire it"
         check_xfail
         return 1
     fi
