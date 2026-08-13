@@ -2,9 +2,9 @@
 
 ## Ownership
 
-| Capability | Authority | Ubuntu/GNOME substrate | Project role |
+| Capability | Authority | Ubuntu/GNOME substrate | GWCU role |
 |---|---|---|---|
-| Target discovery/state | Cua Driver | GNOME/AT-SPI/Mutter | instruct the agent to use Cua directly |
+| Target discovery/state | Cua Driver | GNOME/AT-SPI/Mutter | instruct agent to use Cua directly |
 | Semantic actions | Cua Driver | AT-SPI | provision accessibility; do not reimplement actions |
 | Target pixels | Cua Driver | Cua platform capture | none |
 | Window geometry / exact activation | Cua Driver | `winrects@cua` + Mutter | install Cua's packaged helper |
@@ -13,10 +13,40 @@
 | Cua readiness | Cua Driver | stable `health_report` | transport, do not reconstruct |
 | Whole visible screen | GWCU | ScreenCast + PipeWire | private warm broker + Screenshot fallback |
 | App identity | GWCU | desktop entries | deterministic resolver |
-| Stable project routing truth | GWCU | project `AGENTS.md` | bounded optional acceleration cache |
+| Durable local truth | GWCU | repo/workspace `.gwcu` | compact acceleration surface; live Cua wins |
 | Installed-system readiness | GWCU + Cua | session + observation + Cua health | one compressed verdict |
-| Hermes slash commands | Hermes plugin API | user plugin | `/computer-use` status/managed/consent/doctor |
+| Hermes slash commands | Hermes plugin API | user plugin | `/computer-use` status/managed/truths/consent/doctor |
 | User choices | Hermes `clarify` / installer tty | user | explicit decisions only |
+
+## `.gwcu` truth boundary
+
+Persistent machine/workspace state never belongs in `AGENTS.md`.
+
+`.gwcu` is a repo/workspace-scoped file with schema `gwcu.truths.v1`:
+
+```text
+observed       generated low-churn environment facts
+capabilities   generated compact capability conclusions
+calibration    generated learned measurements/mappings
+preferences    user-authored behavior choices; preserved
+apps           generated stable launcher/PWA identity
+```
+
+Scope:
+
+```text
+GWCU_SCOPE_ROOT override
+→ nearest ancestor containing .gwcu
+→ Git root
+→ current working directory
+```
+
+Managed Git scopes establish `/.gwcu` in the root `.gitignore` before the file is
+created. Non-Git scopes need no ignore mutation.
+
+Generated truth can be rebuilt. Preferences and unknown top-level extension
+keys survive generated-truth regeneration. Live evidence outranks all stored
+generated truth.
 
 ## Explicitly out of architecture
 
@@ -28,7 +58,8 @@ GWCU does not install or own:
 - a project-managed `cua-driver serve` daemon;
 - an RDP/VNC server;
 - a private WinRects client;
-- toolkit-specific focus guessing.
+- toolkit-specific focus guessing;
+- machine/display truth embedded in prompt prose.
 
 ## RemoteDesktop boundary
 
@@ -38,13 +69,7 @@ EIS/libei session, and may persist GNOME's revocable restore token.
 
 GWCU's bootstrap uses one Cua desktop `move_cursor` action to establish that
 session: no click and no key. `/computer-use consent` and `portal-control.py
---status` surface the contract and check for retired GWCU raw-input artifacts.
-
-## Managed project truth boundary
-
-The managed `AGENTS.md` block stores low-churn identity only, max 24 entries.
-Live Cua state has higher authority. Uninstall never searches arbitrary user
-repositories to remove blocks already written there.
+--status` surface the contract.
 
 ## Installer completion states
 
