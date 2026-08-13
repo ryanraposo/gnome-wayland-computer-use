@@ -60,15 +60,16 @@ check_and_report toolkit_accessibility "" check_toolkit_accessibility
 check_and_report atspi_bus "" check_atspi_bus
 check_and_report atspi_socket "" check_atspi_socket
 
-# ── 3. Skill ───────────────────────────────────────────────────────────
-$JSON || { echo ""; check_hr; echo "── 3. Skill"; }
+# ── 3. Skill & capture ─────────────────────────────────────────────────
+$JSON || { echo ""; check_hr; echo "── 3. Skill & capture"; }
 HERMES_DETAIL=not_selected
 if check_is_hermes_integration_enabled; then
     HERMES_DETAIL=selected
 fi
 check_and_report skill "" check_skill
 check_and_report hermes_skill "$HERMES_DETAIL" check_hermes_skill
-check_and_report desktop_capture_extension "" check_desktop_capture_extension
+check_and_report screenshot_portal "" check_screenshot_portal
+check_and_report legacy_capture_extension "" check_legacy_capture_extension
 check_and_report cua_driver "$HERMES_DETAIL" check_cua_driver
 
 # ── 4. Input Permissions ───────────────────────────────────────────────
