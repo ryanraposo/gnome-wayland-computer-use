@@ -1,90 +1,125 @@
-# Computer-use latency notes
+# Performance Notes
 
-This work separates the latency budget instead of treating every pause as a
-screenshot problem.
+The performance target is end-to-end computer-use latency, not the speed of an
+individual primitive in isolation.
 
-## Budgets
+## Rule
 
-1. **Startup/routing** — skill first-use work and update checks.
-2. **Target discovery** — app/window lookup and browser-vs-installed-web-app identity.
-3. **Observation** — native `computer_use` AX, vision, and SOM latency.
-4. **Action loop** — tool/model round-trips spent on click, type, shortcuts,
-   values, scrolling, and waits.
-5. **Verification** — duplicate observations after already verified actions.
-6. **Host capture** — `scripts/capture.sh` desktop/screen helper latency.
-7. **Recovery** — service restart and readiness polling after a backend failure.
+> **Pay for evidence only when it changes the next decision.**
 
-## Fast-path policy
+An AX observation can be cheaper and stronger than a screenshot. A visible
+screen is stronger than repeated AX discovery for a GLFW/Vulkan surface. A
+structured action verdict can be stronger than an immediate recapture.
 
-- First-use update checks are cache-only; the computer-use hot path never waits
-  on DNS or HTTP.
-- Resolve an app/window once and reuse it until evidence invalidates the target.
-- Installed standalone web apps keep their own identity. The launcher resolver
-  understands direct and wrapped browser commands, including Flatpak-style
-  launchers, `--app-id`, `--app`, desktop IDs, and `StartupWMClass`.
-- AX is the default when text/roles/state are sufficient. Vision is for pixels;
-  SOM is for pixels plus element grounding.
-- Keep deterministic semantic input together: complete typing, complete
-  shortcuts, direct value setting, and coupled click → type / type → submit
-  spans when the next input does not depend on newly rendered state.
-- Treat structured `confirmed` + `verified` read-back as verification when it
-  proves the requested postcondition.
-- Obtain fresh evidence at real decision boundaries: navigation, dialogs,
-  material list changes, stale targets, canvas/visual ambiguity, focus
-  escalation, or when the next action depends on new UI state.
-- Use `wait` only for genuine asynchronous transitions without a completion
-  signal; start short and extend from evidence.
+## Capture latency model
 
-## Host capture
+### Hot path: ScreenCast + PipeWire
 
-`capture.sh --timing` emits `capture_elapsed_ms=N` on stderr while preserving
-normal stdout/media behavior.
+`capture.sh` creates an XDG ScreenCast session, restores the previously approved
+monitor when a restore token exists, opens the portal-scoped PipeWire remote,
+and pulls one PNG frame.
 
-Compatibility screenshot paths poll for readiness instead of imposing the old
-fixed 1.5 second screenshot sleep. Desktop compatibility capture also polls
-compositor restoration instead of fixed animation sleeps.
+On portal v4+, `persist_mode=2` allows the portal to return a restore token. The
+token is single-use and is replaced after each successful restoration.
 
-The regression guard requires mocked immediate screen and desktop compatibility
-captures to remain below one second. This ceiling is intentionally loose enough
-for shared CI while preventing reintroduction of multi-second fixed waits.
+The first capture can be much slower because monitor-sharing consent is a real
+human permission boundary. Measure warm capture separately from first-use
+consent.
 
-## Recovery
+### Recovery: Screenshot portal
 
-Managed `cua-driver` and `ydotoold` services use a 250 ms restart delay instead
-of two seconds. Installer readiness probes use 100 ms polling rather than one
-second polling.
+The one-shot Screenshot portal is deliberately not the hot path. It remains a
+simple, trustworthy recovery surface, but on some GNOME 50 / Ubuntu 26 hosts it
+can take several seconds. Treat that as fallback latency, not the expected
+steady-state budget.
 
-## Final integration guard
+### Legacy and hardware recovery
 
-The published landing page, runtime skills, installer, helper scripts, UX
-contract, and tests are expected to describe the same latency model. CI guards
-that contract, including browser vs PWA identity and wrapped/Flatpak launchers.
+`gnome-screenshot` is skipped on GNOME 49+ because its old Shell path is not a
+reliable modern interface. Shift+Print through `ydotool` is the final capture
+fallback and uses polling for screenshot-file creation instead of fixed sleeps.
 
-On the final integration CI run, mocked hot paths measured:
+## Measure
 
-- cache-only first-use update check: **9 ms**;
-- immediate screen fallback: **34 ms**;
-- desktop compatibility fallback: **284 ms**.
+```bash
+CAPTURE="$HOME/.agents/skills/gnome-wayland-computer-use/scripts/capture.sh"
 
-These are regression-fixture timings, not claims about a real GNOME session.
-They prove that the repository itself no longer injects the former multi-second
-fixed waits into those paths.
+# First-use / permission-boundary measurement
+"$CAPTURE" --timing --screen /tmp/first.png
 
-## Real-machine measurement
+# Warm restored-session measurement
+"$CAPTURE" --timing --screen /tmp/warm.png
 
-Measure native Hermes/cua-driver behavior separately from the host helper:
+# Repeat a few warm samples
+for i in 1 2 3 4 5; do
+  "$CAPTURE" --timing --screen "/tmp/warm-$i.png"
+done
+```
 
-- repeated `ax` captures;
-- repeated `vision` captures;
-- repeated `som` captures;
-- representative semantic actions and verified action spans;
-- `capture.sh --timing --screen`;
-- `capture.sh --timing --desktop`.
+`capture_elapsed_ms=N` is emitted on stderr.
 
-Record median/p50, p95, and worst. If native image capture remains slow while AX
-and host capture are fast, investigate cua-driver/portal/image encoding rather
-than adding sleeps or another screenshot stack.
+When diagnosing a slow capture, also run:
 
-The goal is a computer-use loop that spends latency on meaningful decisions,
-not on redundant discovery, network checks, screenshots, tiny input calls,
-ceremonial verification, or recovery timers.
+```bash
+~/.agents/skills/gnome-wayland-computer-use/scripts/diagnose.sh
+```
+
+Look specifically for:
+
+- ScreenCast portal readiness;
+- PipeWire/GStreamer readiness;
+- whether a restore token is cached;
+- accidental fallback to the Screenshot portal;
+- legacy project capture extension absence.
+
+## Interaction latency
+
+The largest wins usually come from removing unnecessary observation/model
+round-trips:
+
+- resolve app identity once;
+- AX before pixels for accessible text/state;
+- one complete typing call;
+- one complete shortcut;
+- semantic value-setting instead of menu choreography;
+- useful scroll distances;
+- no screenshot between deterministic click → type;
+- no screenshot between verified type → known submit;
+- no ritual recapture when structured read-back already proves the state.
+
+## Pixel-only surfaces
+
+Do not measure failed semantic discovery as if it were productive latency.
+For a GLFW/Vulkan/canvas surface that has no AT-SPI contract, repeated
+`list_windows`/AX/SOM attempts are pure overhead.
+
+Switch to the visible screen once the semantic path has proved unavailable.
+The next relevant latency budget is screen capture + visual grounding +
+coordinate delivery.
+
+## Budgets are separated
+
+Keep these measurements distinct:
+
+1. **first permission** — human chooser time;
+2. **warm capture** — restored ScreenCast + PipeWire frame;
+3. **fallback capture** — Screenshot portal or hardware shortcut;
+4. **semantic action** — runtime action + structured verification;
+5. **pixel action** — capture + visual grounding + coordinate delivery;
+6. **recovery** — foreground selection, fresh capture, or hardware fallback.
+
+Combining them into one average hides the reason a workflow is slow.
+
+## Regression expectations
+
+Tests should guard architecture and ordering rather than brittle wall-clock
+numbers in CI:
+
+- ScreenCast is attempted before Screenshot;
+- a denied ScreenCast permission does not open another capture UI;
+- technical ScreenCast failure can fall back;
+- `--desktop` does not invoke a window-hiding transaction;
+- no WinRects or project Shell-extension dependency is present;
+- failed capture preserves an existing output;
+- timing mode preserves the normal stdout/media contract;
+- runtime guidance moves inaccessible visible surfaces to pixels quickly.
