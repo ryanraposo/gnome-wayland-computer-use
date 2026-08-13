@@ -1,29 +1,127 @@
 #!/usr/bin/env bash
-# teardown.sh — remove project-owned integration while preserving Cua and Ubuntu foundation.
+# teardown.sh — remove GWCU-managed integration and optionally its provisioned Cua install.
 set -euo pipefail
-FORCE=false
-[ "${1:-}" = --force ] && FORCE=true
-confirm(){ $FORCE && return 0; printf '%s [y/N] ' "$1"; read -r r; [[ "$r" =~ ^[yY] ]]; }
-info(){ printf '[INFO] %s\n' "$*"; }
-ok(){ printf '[OK] %s\n' "$*"; }
+
 NAME=gnome-wayland-computer-use
 STATE="${XDG_STATE_HOME:-$HOME/.local/state}/$NAME"
 HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
+DEFAULT_CUA_VERSION="0.19.3"
+FORCE=false
+REMOVE_CUA=false
+PURGE_CUA=false
+
+usage() {
+    cat <<'HELP'
+Usage: teardown.sh [--force] [--remove-cua] [--purge-cua]
+
+  --force       perform reversible GWCU cleanup without interactive prompts
+  --remove-cua  also remove Cua Driver when GWCU provisioned it
+  --purge-cua   remove Cua Driver even if it predated GWCU; also purge Cua data
+HELP
+}
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --force) FORCE=true ;;
+        --remove-cua) REMOVE_CUA=true ;;
+        --purge-cua) REMOVE_CUA=true; PURGE_CUA=true ;;
+        --help|-h) usage; exit 0 ;;
+        *) printf 'error: unknown option: %s\n' "$1" >&2; exit 2 ;;
+    esac
+    shift
+done
+
+confirm() {
+    $FORCE && return 0
+    printf '%s [y/N] ' "$1"
+    read -r reply
+    [[ "$reply" =~ ^[yY] ]]
+}
+info(){ printf '[INFO] %s\n' "$*"; }
+ok(){ printf '[OK] %s\n' "$*"; }
+warn(){ printf '[WARN] %s\n' "$*" >&2; }
+die(){ printf '[ERROR] %s\n' "$*" >&2; exit 1; }
+
+as_root() {
+    if [ "$EUID" -eq 0 ]; then "$@"
+    elif command -v pkexec >/dev/null 2>&1; then pkexec "$@"
+    elif command -v sudo >/dev/null 2>&1; then sudo "$@"
+    else die "pkexec or sudo is required for this cleanup"
+    fi
+}
+
+remove_managed_path_block() {
+    local rc="$1" start='# >>> gnome-wayland-computer-use PATH >>>' end='# <<< gnome-wayland-computer-use PATH <<<' tmp
+    [ -f "$rc" ] || return 0
+    grep -Fxq "$start" "$rc" || return 0
+    tmp=$(mktemp)
+    awk -v s="$start" -v e="$end" '$0==s{managed=1;next}$0==e{managed=0;next}!managed{print}' "$rc" >"$tmp"
+    chmod --reference="$rc" "$tmp" 2>/dev/null || chmod 600 "$tmp"
+    mv "$tmp" "$rc"
+    info "Removed managed PATH block from ${rc/$HOME/\~}"
+}
+
+read_ownership() {
+    CUA_PROVISIONED=false
+    CUA_VERSION="$DEFAULT_CUA_VERSION"
+    if [ -f "$STATE/ownership.json" ] && command -v python3 >/dev/null 2>&1; then
+        mapfile -t values < <(python3 - "$STATE/ownership.json" <<'PY'
+import json,sys
+try:
+    d=json.load(open(sys.argv[1]))
+    c=d.get('upstream',{}).get('cua_driver',{})
+    print('true' if c.get('provisioned') else 'false')
+    print(c.get('version') or '0.19.3')
+except Exception:
+    print('false')
+    print('0.19.3')
+PY
+)
+        CUA_PROVISIONED="${values[0]:-false}"
+        CUA_VERSION="${values[1]:-$DEFAULT_CUA_VERSION}"
+    fi
+}
+
+uninstall_cua() {
+    local tmp url args=()
+    if ! $PURGE_CUA && [ "$CUA_PROVISIONED" != true ]; then
+        info "Preserving Cua Driver because it existed before GWCU. Use --purge-cua to remove it deliberately."
+        return 0
+    fi
+    command -v curl >/dev/null 2>&1 || die "curl is required to fetch the pinned Cua uninstaller"
+    case "$CUA_VERSION" in
+        ''|*[!0-9.]* ) CUA_VERSION="$DEFAULT_CUA_VERSION" ;;
+    esac
+    url="https://raw.githubusercontent.com/trycua/cua/cua-driver-rs-v${CUA_VERSION}/libs/cua-driver/scripts/uninstall.sh"
+    tmp=$(mktemp)
+    curl -fsSL --retry 3 --retry-delay 1 -o "$tmp" "$url" || {
+        rm -f "$tmp"
+        die "Could not fetch the Cua ${CUA_VERSION} uninstaller; GWCU state was left intact so this can be retried."
+    }
+    $PURGE_CUA && args+=(--purge)
+    /bin/bash "$tmp" "${args[@]}" || {
+        rm -f "$tmp"
+        die "Cua Driver uninstall failed; GWCU state was left intact so this can be retried."
+    }
+    rm -f "$tmp"
+    if $PURGE_CUA; then ok "Cua Driver removed and purged"; else ok "GWCU-provisioned Cua Driver removed"; fi
+}
+
+printf '\nGNOME WAYLAND COMPUTER USE // UNINSTALL\n\n'
+read_ownership
 removed=0
 
-printf '\nGNOME WAYLAND COMPUTER USE // TEARDOWN\n\n'
-
+# Project-owned persistent helper: disable it first so no stale/broken user unit remains.
 for unit in gnome-wayland-computer-use-observer.socket gnome-wayland-computer-use-observer.service; do
     file="$HOME/.config/systemd/user/$unit"
-    if [ -f "$file" ]; then
-        systemctl --user disable --now "$unit" 2>/dev/null || true
-        rm -f "$file"; ((removed++)) || true
-    fi
+    systemctl --user disable --now "$unit" 2>/dev/null || true
+    systemctl --user reset-failed "$unit" 2>/dev/null || true
+    if [ -f "$file" ]; then rm -f "$file"; ((removed++)) || true; fi
 done
 systemctl --user daemon-reload 2>/dev/null || true
 rm -rf "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/$NAME" 2>/dev/null || true
 
-# Clean exact project-owned legacy artifacts without touching Cua itself.
+# Clean exact project-owned legacy artifacts. Cua's portal path needs no custom udev rule.
 legacy="$HOME/.config/systemd/user/gnome-wayland-computer-use.service"
 if [ -f "$legacy" ]; then systemctl --user disable --now gnome-wayland-computer-use.service 2>/dev/null || true; rm -f "$legacy"; ((removed++)) || true; fi
 legacy="$HOME/.config/systemd/user/ydotoold.service"
@@ -31,9 +129,22 @@ if [ -f "$legacy" ] && grep -q 'Description=ydotool uinput daemon' "$legacy"; th
 LEGACY_RULE='/etc/udev/rules.d/80-gnome-wayland-computer-use.rules'
 LEGACY_RULE_VALUE='KERNEL=="uinput", GROUP="input", MODE="0660", TAG+="uaccess", OPTIONS+="static_node=uinput"'
 if [ -f "$LEGACY_RULE" ] && grep -Fxq "$LEGACY_RULE_VALUE" "$LEGACY_RULE" && confirm "Remove the obsolete GWCU uinput rule?"; then
-    if command -v pkexec >/dev/null 2>&1; then pkexec rm -f "$LEGACY_RULE"; pkexec udevadm control --reload-rules 2>/dev/null || true
-    else sudo rm -f "$LEGACY_RULE"; sudo udevadm control --reload-rules 2>/dev/null || true; fi
+    as_root rm -f "$LEGACY_RULE"
+    as_root udevadm control --reload-rules 2>/dev/null || true
     ((removed++)) || true
+fi
+
+# Restore shell startup files only where this installer added an exact marked block.
+for rc in "$HOME/.profile" "$HOME/.bashrc" "$HOME/.zshrc"; do remove_managed_path_block "$rc"; done
+
+# Undo the exceptional DRM workaround only when GWCU itself recorded that it added it.
+if [ -f "$STATE/video-group-added" ]; then
+    if getent group video >/dev/null 2>&1 && id -nG "$USER" 2>/dev/null | tr ' ' '\n' | grep -Fxq video; then
+        if confirm "Remove $USER from the video group that GWCU added?"; then
+            as_root gpasswd -d "$USER" video >/dev/null || warn "Could not remove $USER from video group"
+        fi
+    fi
+    rm -f "$STATE/video-group-added"
 fi
 
 for dir in "$HOME/.agents/skills/$NAME" "$HERMES_HOME/skills/computer-use" "$HERMES_HOME/skills/$NAME"; do
@@ -45,21 +156,28 @@ for dir in "$HOME/.agents/skills/$NAME" "$HERMES_HOME/skills/computer-use" "$HER
     rm -rf "$dir"; ((removed++)) || true
 done
 
-SOUL="$HERMES_HOME/SOUL.md"; START='<!-- gnome-wayland-computer-use:start -->'; END='<!-- gnome-wayland-computer-use:end -->'
+SOUL="$HERMES_HOME/SOUL.md"
+START='<!-- gnome-wayland-computer-use:start -->'
+END='<!-- gnome-wayland-computer-use:end -->'
 if [ -f "$SOUL" ] && grep -Fxq "$START" "$SOUL"; then
     clean=$(mktemp)
     awk -v s="$START" -v e="$END" '$0==s{m=1;next}$0==e{m=0;next}!m{print}' "$SOUL" >"$clean"
     chmod 600 "$clean"; mv "$clean" "$SOUL"; ((removed++)) || true
 fi
 
-BACKUPS="$HERMES_HOME/backups/$NAME"; MANIFEST="$BACKUPS/manifest.tsv"
+BACKUPS="$HERMES_HOME/backups/$NAME"
+MANIFEST="$BACKUPS/manifest.tsv"
 if [ -f "$MANIFEST" ]; then
     remaining=$(mktemp)
     while IFS=$'\t' read -r original backup; do
         [ -n "$original" ] && [ -e "$backup" ] || continue
-        if [ -e "$original" ]; then printf '%s\t%s\n' "$original" "$backup" >>"$remaining"
-        elif confirm "Restore archived skill to ${original/$HOME/\~}?"; then mkdir -p "$(dirname "$original")"; mv "$backup" "$original"; ((removed++)) || true
-        else printf '%s\t%s\n' "$original" "$backup" >>"$remaining"; fi
+        if [ -e "$original" ]; then
+            printf '%s\t%s\n' "$original" "$backup" >>"$remaining"
+        elif confirm "Restore archived skill to ${original/$HOME/\~}?"; then
+            mkdir -p "$(dirname "$original")"; mv "$backup" "$original"; ((removed++)) || true
+        else
+            printf '%s\t%s\n' "$original" "$backup" >>"$remaining"
+        fi
     done <"$MANIFEST"
     if [ -s "$remaining" ]; then mv "$remaining" "$MANIFEST"; else rm -f "$remaining" "$MANIFEST"; fi
 fi
@@ -68,8 +186,8 @@ if [ -f "$STATE/ownership.json" ] && command -v python3 >/dev/null 2>&1; then
     previous=$(python3 - "$STATE/ownership.json" <<'PY'
 import json,sys
 try:
- d=json.load(open(sys.argv[1])); a=d.get('toolkit_accessibility',{})
- print(a.get('previous','unknown') if a.get('changed') else 'unchanged')
+    d=json.load(open(sys.argv[1])); a=d.get('toolkit_accessibility',{})
+    print(a.get('previous','unknown') if a.get('changed') else 'unchanged')
 except Exception: print('unknown')
 PY
 )
@@ -78,14 +196,19 @@ PY
     fi
 fi
 
+# Cua removal must happen while ownership evidence still exists.
+if $REMOVE_CUA; then uninstall_cua; fi
+
 if [ -e "$STATE/screencast-restore-token" ] && ! $FORCE; then
     if confirm "Remove cached ScreenCast consent token?"; then rm -f "$STATE/screencast-restore-token"; fi
 else
     rm -f "$STATE/screencast-restore-token" 2>/dev/null || true
 fi
-rm -f "$STATE/profile.json" "$STATE/ownership.json" "$STATE/cua-doctor.json" "$STATE/cua-winrects-managed"
+rm -f "$STATE/profile.json" "$STATE/ownership.json" "$STATE/cua-doctor.json" "$STATE/cua-doctor.stderr" \
+      "$STATE/cua-health.json" "$STATE/cua-winrects-managed" "$STATE/video-group-added"
 rmdir "$STATE" 2>/dev/null || true
 
 printf '\n'; ok "Teardown complete ($removed project component(s) removed)"
-info "Preserved Cua Driver, Cua WinRects, Ubuntu PipeWire/portal packages, and unrelated GNOME state."
+info "Ubuntu PipeWire/portal packages and portal permission state were preserved."
+if ! $REMOVE_CUA; then info "Cua Driver and Cua WinRects were preserved."; fi
 printf '\n'

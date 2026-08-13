@@ -15,9 +15,9 @@ metadata:
 
 # Computer Use on Ubuntu GNOME Wayland
 
-Use **Cua Driver as the control authority**. This skill exists to make Cua fast,
-well-provisioned, and predictable on Ubuntu GNOME Wayland, plus provide an
-independent whole-screen observation surface.
+Use **Cua Driver as the control authority**. This skill makes the qualified Cua
+runtime fast and predictable on Ubuntu GNOME Wayland and provides an independent
+whole-screen observation surface.
 
 > **Cua decides mechanics. The agent decides intent.**
 
@@ -26,6 +26,19 @@ activation, input delivery, cursor behavior, post-action effects, escalation,
 and structured refusals. Do not recreate those mechanisms with shell scripts,
 AT-SPI calls, WinRects D-Bus calls, `ydotool`, `/dev/uinput`, or guessed focus.
 
+## GNOME Portal Contract
+
+**GNOME Wayland is the intended session. No X11 or XWayland session is required.**
+Never instruct the user to change sessions as a computer-use prerequisite.
+
+On the first Cua foreground input that needs it, GNOME may show a **Remote Desktop / remote control** portal consent prompt. That is the supported input
+path: Cua uses the portal-issued EIS/libei session. Let the user approve or deny
+it; a denial/cancellation is terminal for that attempt and must not be bypassed.
+
+An explicit GWCU whole-screen observation uses a separate **ScreenCast** portal
+session and may have its own one-time screen-selection consent. Do not confuse
+ScreenCast consent with Cua's RemoteDesktop input consent.
+
 ## Workflow Contract
 
 Take control and do the requested work.
@@ -33,7 +46,7 @@ Take control and do the requested work.
 For a **known target**, begin with one useful Cua target/window state. Reuse the
 semantics and pixels in that state. Use a grounded semantic element when one
 exists; otherwise use coordinates from the same target screenshot. Consume
-Cua's returned effect, verification, and delivery result rather than predicting
+Cua's returned effect, verification, and delivery result instead of predicting
 application behavior.
 
 For an **unknown target**, resolve identity once. Enumerate apps/windows only if
@@ -43,7 +56,6 @@ only when target-scoped Cua evidence cannot bind what the user means.
 For a **terminal/admin task**, use the terminal directly.
 
 Ask only when target, outcome, or authorization is materially ambiguous.
-
 Do not run update checks, broad diagnostics, capability inventories, or
 whole-screen capture before a normal task.
 
@@ -163,6 +175,9 @@ this project owns. `cua-driver doctor --json` remains supplemental diagnostic
 detail. Top-level `ok` means the installed system is actually ready now.
 
 ## Cua GNOME Integration
+
+GWCU qualifies Cua Driver **0.19.3**. The installer passes that exact version to
+Cua's official installer; agents should not update Cua as task-time housekeeping.
 
 `winrects@cua` belongs to Cua. Never call `org.cua.WinRects` directly, vendor the
 helper, duplicate its protocol, or maintain a parallel input stack.

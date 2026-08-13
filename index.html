@@ -3,46 +3,71 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Native Cua-powered computer use for Ubuntu 26.04 GNOME Wayland.">
 <title>gnome-wayland-computer-use</title>
 <style>
-:root{color-scheme:dark;background:#0a0a0a;color:#f2f2f2;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}*{box-sizing:border-box}body{margin:0}.wrap{max-width:980px;margin:auto;padding:72px 24px 96px}h1{font-size:clamp(2.3rem,7vw,5.4rem);letter-spacing:-.07em;line-height:.9;margin:18px 0 24px}h2{margin-top:64px;font-size:1.15rem;text-transform:uppercase;letter-spacing:.12em}.muted{color:#aaa}.hero{max-width:820px;font-size:1.22rem;line-height:1.6}.mark{white-space:pre;color:#8ab4ff}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;margin-top:24px}.card{border:1px solid #292929;border-radius:16px;padding:22px;background:#111}.card strong{display:block;margin-bottom:10px}.arrow{color:#8ab4ff}.install{overflow:auto;border:1px solid #292929;border-radius:14px;padding:18px;background:#050505}.pill{display:inline-block;border:1px solid #333;border-radius:999px;padding:7px 10px;margin:4px 4px 0 0;color:#bbb;font-size:.86rem}a{color:#8ab4ff}.good{color:#9ae6b4}</style>
+:root{color-scheme:dark;--bg:#080808;--panel:#101010;--line:#292929;--ink:#f6f6f2;--muted:#a8a8a2;--blue:#8ab4ff;--green:#9ce8b5;--violet:#c6b2ff;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:radial-gradient(900px 560px at 82% -8%,#18223a 0,transparent 58%),var(--bg);color:var(--ink)}a{color:var(--blue)}.wrap{max-width:1100px;margin:auto;padding:70px 24px 100px}.mark{white-space:pre;color:var(--blue);line-height:1.05}.eyebrow{margin-top:34px;color:var(--muted);letter-spacing:.14em;text-transform:uppercase;font-size:.78rem}.hero h1{font-size:clamp(3rem,8vw,6.6rem);letter-spacing:-.075em;line-height:.86;margin:15px 0 28px;max-width:980px}.lede{max-width:850px;font-size:clamp(1.05rem,2vw,1.35rem);line-height:1.65}.lede strong{color:white}.pills{display:flex;flex-wrap:wrap;gap:7px;margin:28px 0 50px}.pill{border:1px solid #343434;border-radius:999px;padding:8px 11px;color:#c8c8c2;font-size:.83rem;background:#0d0d0d}.cta{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;border:1px solid var(--line);border-radius:18px;padding:18px 20px;background:#050505;overflow:auto}.cta code{white-space:nowrap;color:#e9edf8}.cta span{color:var(--green);font-size:.82rem}section{margin-top:74px}h2{font-size:1rem;text-transform:uppercase;letter-spacing:.16em;margin:0 0 22px;color:#d8d8d2}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.card{border:1px solid var(--line);border-radius:18px;padding:24px;background:linear-gradient(180deg,#121212,#0d0d0d);min-height:190px}.card b{display:block;font-size:.95rem;margin-bottom:13px}.card p{margin:0;color:var(--muted);line-height:1.65}.blue{color:var(--blue)}.green{color:var(--green)}.violet{color:var(--violet)}.flow{border:1px solid var(--line);border-radius:18px;padding:25px;background:#0c0c0c;overflow:auto;white-space:pre;color:#d9d9d4;line-height:1.65}.consent{display:grid;grid-template-columns:1fr 1fr;gap:14px}.consent .card{min-height:0}.num{font-size:2.2rem;letter-spacing:-.06em;color:#555;margin-bottom:12px}.truth{font-size:clamp(1.45rem,3vw,2.4rem);line-height:1.25;letter-spacing:-.035em;max-width:870px}.truth strong{color:var(--green)}.small{color:var(--muted);line-height:1.7;max-width:880px}.footer{margin-top:90px;border-top:1px solid var(--line);padding-top:28px;color:#777;font-size:.9rem}@media(max-width:760px){.grid,.consent{grid-template-columns:1fr}.cta{grid-template-columns:1fr}.cta span{display:none}.wrap{padding-top:42px}.hero h1{font-size:clamp(2.8rem,16vw,5rem)}}
+</style>
 </head>
 <body><main class="wrap">
+<header class="hero">
 <div class="mark">▄ ▄▄ ▄▄▄▄
    ▄▀ 0x0 ▀▄
     █  ───  █
     █  ███  █
      ▀▀   ▀▀</div>
-<h1>GNOME Wayland<br>computer use.</h1>
-<p class="hero"><strong>Cua owns control.</strong> This project makes Cua feel native on Ubuntu GNOME Wayland: the right host foundation, Cua's own Mutter helper, deterministic agent routing, and a fast independent whole-screen observer.</p>
-<div><span class="pill">Ubuntu 26.04</span><span class="pill">GNOME 50</span><span class="pill">Wayland</span><span class="pill">Cua Driver</span><span class="pill">ScreenCast + PipeWire</span></div>
+<div class="eyebrow">gnome-wayland-computer-use</div>
+<h1>Computer use.<br>Still Wayland.</h1>
+<p class="lede"><strong>Cua owns control.</strong> GWCU makes it native and deterministic on Ubuntu 26.04 GNOME: qualified portal input, explicit host repair, fast whole-screen observation, and an agent path with no ceremonial wandering.</p>
+<div class="pills"><span class="pill">Ubuntu 26.04</span><span class="pill">GNOME 50</span><span class="pill">Wayland</span><span class="pill">Cua 0.19.3 pinned</span><span class="pill">RemoteDesktop + EIS/libei</span><span class="pill">ScreenCast + PipeWire</span></div>
+<div class="cta"><code>curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh | bash</code><span>one installer → READY</span></div>
+</header>
 
-<h2>Architecture</h2>
+<section>
+<h2>One clean ownership model</h2>
 <div class="grid">
-<div class="card"><strong>CUA DRIVER <span class="arrow">→ control</span></strong>Semantics, target pixels, WinRects geometry, exact activation, portal/libei input, cursor state, verification, and structured refusals.</div>
-<div class="card"><strong>GWCU <span class="arrow">→ observation</span></strong>Lazy XDG ScreenCast + PipeWire whole-screen evidence for explicit screen requests and discovery.</div>
-<div class="card"><strong>THE AGENT <span class="arrow">→ intent</span></strong>Chooses what should happen. It does not reconstruct toolkit mechanics, focus policy, or raw-input fallbacks.</div>
+<div class="card"><b class="blue">CUA DRIVER → CONTROL</b><p>Semantic + pixel actions, target state, GNOME geometry, exact activation, portal input, cursor, effects, verification, escalation, refusals.</p></div>
+<div class="card"><b class="green">GWCU → INTEGRATION + OBSERVATION</b><p>Ubuntu qualification, dependency repair, deterministic agent routing, and a private warm ScreenCast/PipeWire whole-screen observer.</p></div>
+<div class="card"><b class="violet">AGENT → INTENT</b><p>Chooses the outcome. It consumes Cua's mechanics instead of rebuilding focus policy, accessibility dispatch, or a second raw-input stack.</p></div>
 </div>
+</section>
 
-<h2>Install</h2>
-<pre class="install">curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh | bash</pre>
-<p class="muted">One installer. It repairs missing Ubuntu foundation, installs current Cua through the official installer, provisions Cua's packaged WinRects helper, installs the skill, enables the private observer, and verifies the finished state.</p>
-<p class="good"><strong>No project uinput stack. No ydotool daemon. No custom Cua daemon. No parallel WinRects client.</strong></p>
-
-<h2>Normal task</h2>
-<pre class="install">known target
-  → one Cua target state
-  → AX when grounded / PX from the same state
-  → consume Cua effect + verification
+<section>
+<h2>The hot path</h2>
+<div class="flow">known target
+  → one Cua target/window state
+  → AX when grounded / PX from that same state
+  → consume effect + verification + escalation
   → exact foreground only when Cua requires it
-  → respect refusal</pre>
+  → respect structured refusal</div>
+<p class="small">No task-time update checks. No broad diagnostics. No whole-screen prelude when target evidence is enough. No blind replay of the same failed delivery shape.</p>
+</section>
 
-<h2>Whole screen</h2>
-<pre class="install">~/.agents/skills/gnome-wayland-computer-use/scripts/observe.sh --media --screen</pre>
-<p class="muted">The observer is socket-activated and keeps a portal-scoped PipeWire stream warm only during a task burst. Login itself never opens capture consent.</p>
+<section>
+<h2>Portal consent, honestly</h2>
+<div class="consent">
+<div class="card"><div class="num">01</div><b>Remote Desktop / control</b><p>The first Cua foreground input may ask for GNOME remote-control consent. Approve it and Cua uses the portal-issued EIS/libei route. No X11 session required.</p></div>
+<div class="card"><div class="num">02</div><b>ScreenCast / observation</b><p>The first explicit whole-screen observation may separately ask which screen to share. GWCU keeps that portal-scoped PipeWire stream warm only while useful.</p></div>
+</div>
+</section>
 
-<h2>Ready means ready</h2>
-<p class="hero">The installer finishes with <strong>READY</strong>, or tells you the one honest remaining platform transition: a GNOME sign-out/in to load a new Cua WinRects helper. Machine diagnostics use the same rule: top-level <code>ok</code> means the current session is actually ready.</p>
+<section>
+<h2>Installer</h2>
+<p class="truth">Distro-aware. Elevated when necessary. Pinned upstream. <strong>Doctor-gated before success.</strong></p>
+<p class="small">The installer reads <code>/etc/os-release</code>, repairs the explicit Ubuntu 26 portal/PipeWire/AT-SPI stack, verifies PipeWire ≥ 0.3.40 and GNOME's RemoteDesktop/ScreenCast/Screenshot interfaces, installs Cua 0.19.3 through Cua's official installer, installs Cua's own WinRects helper, enables the private observer socket, and fails loudly on a non-zero <code>cua-driver doctor</code>.</p>
+<p class="small">No custom udev rule is required. A <code>video</code> group change is considered only when Cua doctor actually reports a DRM/render-node permission problem.</p>
+</section>
 
-<p class="muted" style="margin-top:72px">The agent decides intent. Cua decides mechanics.</p>
+<section>
+<h2>Uninstall</h2>
+<div class="cta"><code>curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/uninstall.sh | bash</code><span>reversible ownership</span></div>
+<p class="small">Removes project skills, observer units, managed PATH edits, routing, accessibility changes, and any GWCU-added video membership. Cua is removed only if GWCU provisioned it; a pre-existing Cua install is preserved. Ubuntu desktop packages stay host-owned.</p>
+</section>
+
+<section>
+<h2>The point</h2>
+<p class="truth">The agent decides intent.<br>Cua decides mechanics.<br><strong>GNOME stays Wayland.</strong></p>
+</section>
+
+<div class="footer">gnome-wayland-computer-use · Cua-native determinism for Ubuntu GNOME Wayland</div>
 </main></body></html>

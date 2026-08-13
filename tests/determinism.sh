@@ -2,11 +2,13 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 fail(){ printf 'not ok - %s\n' "$1" >&2; exit 1; }; pass(){ printf 'ok - %s\n' "$1"; }
-skill="$ROOT/SKILL.md"; installer="$ROOT/install.sh"; diagnose="$ROOT/scripts/diagnose.sh"; capture="$ROOT/scripts/capture.sh"
+skill="$ROOT/SKILL.md"; installer="$ROOT/install.sh"; uninstaller="$ROOT/uninstall.sh"; teardown="$ROOT/scripts/teardown.sh"; diagnose="$ROOT/scripts/diagnose.sh"; capture="$ROOT/scripts/capture.sh"
 
 grep -q 'Cua Driver as the control authority' "$skill" || fail "skill does not name one control authority"
 grep -q 'Never retry the same failed Cua delivery shape blindly' "$skill" || fail "skill permits ritual retry"
 grep -q 'refusal by injecting raw keyboard' "$skill" || fail "skill permits raw-input refusal bypass"
+grep -q 'No X11 or XWayland session is required' "$skill" || fail "skill lost portal-native GNOME contract"
+grep -q 'Remote Desktop / remote control' "$skill" || fail "skill does not prepare the agent for portal consent"
 ! grep -q -- '--cached-only' "$skill" || fail "skill still performs task-time update housekeeping"
 grep -q 'Known app means no `list_apps` / `list_windows` ceremony' "$skill" || fail "known target path still invites enumeration"
 pass "agent hot path delegates mechanics to Cua"
@@ -15,9 +17,23 @@ pass "agent hot path delegates mechanics to Cua"
 [ ! -f "$ROOT/lib/checks.sh" ] || fail "obsolete shared check library still exists"
 ! grep -q 'sed .*install-core' "$installer" || fail "installer still patches a second installer"
 grep -q 'health_report' "$installer" || fail "installer does not consume upstream Cua health"
+grep -q 'GWCU_CUA_DRIVER_RS_VERSION:-0.19.3' "$installer" || fail "Cua version is not qualified"
+grep -q 'portal_has RemoteDesktop' "$installer" || fail "GNOME control portal is not a readiness requirement"
 ! grep -Eq 'add_pkg ydotool|modprobe uinput|usermod .*input|CUA_DRIVER_RS_ENABLE_WAYLAND' "$installer" || fail "installer still provisions shadow input"
 ! grep -Eq 'ExecStart=.*serve\.sh|enable .*gnome-wayland-computer-use\.service' "$installer" || fail "installer still owns a Cua daemon"
 pass "installation has one source and one control authority"
+
+# The only group mutation is a doctor-evidenced fallback, and teardown owns its inverse.
+grep -q 'doctor_mentions_drm' "$installer" || fail "video group path is not doctor-gated"
+grep -q 'adduser "$USER" video' "$installer" || fail "DRM recovery path missing"
+grep -q 'gpasswd -d "$USER" video' "$teardown" || fail "DRM recovery is not reversible"
+pass "privilege escalation stays evidence-bound"
+
+# Full uninstall surface exists without dismantling the distro foundation.
+grep -q -- '--remove-cua' "$uninstaller" || fail "root uninstall cannot reverse provisioned Cua"
+grep -q 'distro_foundation_owned.*False' "$installer" || fail "Ubuntu packages are not marked host-owned"
+grep -q 'Ubuntu PipeWire/portal packages' "$teardown" || fail "teardown ownership message missing"
+pass "teardown distinguishes project and host ownership"
 
 ! grep -Eq 'ydotool|/dev/uinput|org\.cua\.WinRects' "$capture" || fail "observation fallback crosses authority boundary"
 grep -q 'org.freedesktop.portal.Screenshot' "$capture" || fail "portal-only direct fallback missing"
