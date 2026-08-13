@@ -1,52 +1,51 @@
 # GNOME Wayland Computer-Use UX Contract
 
-This reference governs workflow decisions that are deeper than the ordinary
-closed loop. `SKILL.md` remains the invoked runtime authority.
+This reference governs workflow decisions deeper than the ordinary closed loop.
+`SKILL.md` remains the invoked runtime authority and Cua Driver remains the
+control authority.
 
 ## Phase transitions
 
 | Phase | Entry evidence | Legal next state |
 |---|---|---|
-| Route | User objective and callable tools known | Observe, act from cached identity, ask |
-| Observe | Sufficient app-scoped evidence or direct system state | Act, ask, or complete |
-| Act | One deterministic semantic action span selected | Act, verify, recover |
-| Verify | Structured read-back or fresh evidence establishes the needed state | Act, recover, or complete |
-| Recover | Failed rung classified | Observe or act through a different strategy |
-| Complete | Requested postcondition proved | Receipt |
+| Route | User objective and callable tools known | Observe, act from known identity, ask |
+| Observe | Sufficient Cua target state or explicit whole-screen evidence | Act, ask, or complete |
+| Act | One deterministic Cua action span selected | Act, verify, recover |
+| Verify | Cua read-back/effect or fresh evidence establishes needed state | Act, recover, or complete |
+| Recover | Cua result classified | choose a genuinely different supported Cua route, observe, ask, or stop |
+| Complete | Requested postcondition proved | receipt |
 
 A phase changes only when its entry evidence exists. Tool availability in a
 catalog, configuration file, or description is not callable proof.
 
 A fresh screenshot is not a phase-transition requirement by itself. Reuse
-cached app/window identity and structured driver state until navigation, a
-modal/dialog, list mutation, target disappearance, visual ambiguity, or a tool
-verdict makes that evidence stale.
+resolved target identity and Cua state until navigation, a dialog, structural
+mutation, target disappearance, visual ambiguity, or a Cua verdict makes that
+evidence stale.
 
 ## Latency budget and decision boundaries
 
 Computer use should spend time on decisions, not ritual round-trips.
 
-- Resolve an app/window once and reuse that identity until evidence invalidates it.
-- Use AX when structure/text is sufficient, vision when pixels alone are
-  sufficient, and SOM only when both are necessary.
-- A driver result that reports the requested effect as confirmed and verified
-  can close verification without another capture.
-- Do not insert an observation inside a deterministic semantic action span when
-  the next input does not depend on newly rendered state.
-- Type complete text in one semantic typing action; send a shortcut as one
-  hotkey; use direct value selection instead of opening and re-reading menus
-  when the runtime supports it.
-- Avoid `wait` as a pacing habit. Use it only for a real asynchronous
-  transition with no completion signal, and start with the shortest interval
-  appropriate to that transition.
-- Treat navigation, newly opened dialogs, materially changed lists, focus
-  escalation, inaccessible/canvas targeting, and irreversible external effects
-  as decision boundaries that require fresh evidence or authorization.
+- Resolve a target once and reuse it until evidence invalidates it.
+- Use AX when Cua semantics are grounded and PX from the same Cua target state
+  when pixels are the truthful surface.
+- A Cua result that proves the requested effect can close verification without
+  another capture.
+- Do not insert observation inside a deterministic action span when the next
+  input does not depend on newly rendered state.
+- Type complete text in one action, send a shortcut as one key action, and use
+  direct value setting when Cua exposes it.
+- Avoid `wait` as pacing. Use it only for a real asynchronous transition with no
+  completion signal.
+- Treat navigation, new dialogs, materially changed lists, foreground escalation,
+  inaccessible/canvas targeting, and irreversible external effects as decision
+  boundaries that require fresh evidence or authorization.
 
 ## Assumptions and questions
 
-Infer background delivery, app-scoped observation, reversible local changes,
-reusable target identity, and the least privileged capable mechanism.
+Infer reversible local intent, reusable target identity, and the least disruptive
+Cua route consistent with the request.
 
 Ask when choosing the wrong target or outcome would materially change the
 result, or when authorization is required for an external or irreversible
@@ -59,23 +58,22 @@ they change risk, authorization, visibility, or the resulting artifact.
 
 ## Failure budget
 
-Never repeat an identical failed action blindly. After the first failure,
-inspect the returned verdict and obtain only the evidence needed to choose a
-new rung. After the second failure at the same strategy, diagnose and change
-rungs. A later successful check does not erase an earlier unclassified failure.
+Never repeat an identical failed action blindly. After a failure, consume Cua's
+returned verdict and choose only a genuinely different supported Cua route. A
+Cua refusal is never permission to inject raw input or call WinRects directly.
 
 ## Mutation classes
 
 - **Local and reversible:** execute from the user's request, then verify at the
   next meaningful decision boundary.
-- **Visible interruption:** explain when foregrounding becomes necessary.
+- **Visible interruption:** use Cua's verified foreground route only when needed.
 - **Privileged:** preview the exact narrow command and its host effect.
 - **External or irreversible:** require explicit authorization at the action
   boundary.
 - **Secret-bearing:** return control to the user; never request or type it.
 
 Every reversible visible mutation needs a known recovery route. Perform the
-recovery when verification fails or the user asks to restore the prior state.
+recovery when verification fails or the user asks to restore prior state.
 
 ## Progress surface
 
