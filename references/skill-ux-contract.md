@@ -23,6 +23,36 @@ resolved target identity and Cua state until navigation, a dialog, structural
 mutation, target disappearance, visual ambiguity, or a Cua verdict makes that
 evidence stale.
 
+## One-call action-span boundary
+
+If consecutive Cua actions are fully determined from the same current evidence,
+they are one **action span** and **MUST cross the model/tool boundary exactly
+once**.
+
+The model must choose the span before entering the tool boundary. The installed
+`computer-use.sh span` composition surface keeps one Cua MCP session open and
+executes those already-decided Cua operations in order. Multiple underlying Cua
+`tools/call` messages may occur inside that process; there is still only one
+model-visible invocation and therefore no model deliberation between them.
+
+The span may return to the model only when fresh information can change what
+happens next. Legal boundaries are:
+
+- a returned/rendered state that can change the next action or its arguments;
+- navigation, dialogs, target disappearance, stale identity, or structural
+  mutation invalidating remaining grounding;
+- a real asynchronous transition that has not produced a sufficient completion
+  signal;
+- Cua failure, refusal, ambiguity, or transport failure;
+- a new authorization requirement or genuine user choice.
+
+A successful action by itself is **not** a boundary. Neither are habitual
+verification, fixed sleeps, screenshots for reassurance, or an opportunity for
+the model to narrate progress.
+
+The span executor must fail closed: after the first Cua failure/refusal/transport
+boundary, no later queued action may execute.
+
 ## Latency budget and decision boundaries
 
 Computer use should spend time on decisions, not ritual round-trips.
@@ -32,10 +62,12 @@ Computer use should spend time on decisions, not ritual round-trips.
   when pixels are the truthful surface.
 - A Cua result that proves the requested effect can close verification without
   another capture.
-- Do not insert observation inside a deterministic action span when the next
-  input does not depend on newly rendered state.
+- Do not insert observation or model re-entry inside a deterministic action span
+  when the next input does not depend on newly rendered state.
 - Type complete text in one action, send a shortcut as one key action, and use
   direct value setting when Cua exposes it.
+- Combine already-decided click/type/key/scroll/etc. operations into one outer
+  action-span invocation instead of paying one model/tool round-trip per action.
 - Avoid `wait` as pacing. Use it only for a real asynchronous transition with no
   completion signal.
 - Treat navigation, new dialogs, materially changed lists, foreground escalation,
