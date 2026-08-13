@@ -9,192 +9,214 @@
 
 # gnome-wayland-computer-use
 
-**Native computer use for Ubuntu GNOME Wayland. No X11 escape hatch.**
+**A deterministic computer-use runtime for Ubuntu 26.04 GNOME.**
 
-Cua owns control. GWCU makes the Ubuntu/GNOME substrate, portal lifecycle,
-whole-screen observation, installation, and agent behavior deterministic.
+Cua owns control. GWCU qualifies the machine, keeps observation fast, and turns
+recurring desktop uncertainty into compact local answers before it can become
+agent deliberation.
 
-**Ubuntu 26.04 · GNOME 50 · Wayland · Cua Driver 0.19.3 · RemoteDesktop/libei · PipeWire**
+**Ubuntu 26.04 · GNOME 50 · Cua Driver 0.19.3 · RemoteDesktop/EIS/libei · AT-SPI · ScreenCast/PipeWire**
 
-[Install](#install) · [What gets installed](#what-gets-installed) · [Portal consent](#portal-consent) · [Agent path](#agent-path) · [Diagnose](#diagnose) · [Uninstall](#uninstall)
+[Install](#install) · [Architecture](#architecture) · [Call budget](#call-budget) · [Scripts compose scripts](#scripts-compose-scripts) · [Observation](#whole-screen-observation) · [Diagnose](#diagnose) · [Uninstall](#uninstall)
 </div>
 
 ---
 
-## The shape
+## Why this exists
+
+Ubuntu 26 has the right native primitives for serious desktop agents. The
+problem is making them behave like **one capability** instead of a Linux puzzle
+the model solves again on every task.
+
+GWCU moves that work out of the agent loop:
+
+- **Cua Driver** owns semantic + pixel control, target state, geometry, exact
+  activation, input delivery, verification, escalation, and refusal.
+- **GWCU** owns Ubuntu qualification, portal/PipeWire readiness, deterministic
+  routing context, whole-screen observation, installation, health composition,
+  and teardown.
+- **The agent** chooses intent and spends calls on the task.
+
+> **The model decides intent. Scripts collapse uncertainty. Cua executes.**
+
+## Architecture
 
 ```text
-                              AGENT
-                                │
-                              intent
-                                │
-                  ┌─────────────┴─────────────┐
-                  │                           │
-                  ▼                           ▼
-             CUA DRIVER                  GWCU OBSERVER
-          target state + action          whole visible screen
-                  │                           │
-        ┌─────────┴──────────┐            ScreenCast
-        ▼                    ▼                │
-     AT-SPI          RemoteDesktop/libei   PipeWire
-        │                    │                │
-        └──────────┬─────────┘                │
-                   ▼                          ▼
-                         GNOME / MUTTER
+                                  AGENT
+                                    │
+                                  intent
+                                    │
+                      ┌─────────────┴─────────────┐
+                      │                           │
+                      ▼                           ▼
+                 CUA DRIVER                  GWCU OBSERVER
+              target state + action          whole-screen evidence
+                      │                           │
+          ┌───────────┴────────────┐          ScreenCast
+          ▼                        ▼              │
+       AT-SPI              RemoteDesktop/EIS   PipeWire
+                                  / libei          │
+          │                        │               │
+          └────────────┬───────────┘               │
+                       ▼                           ▼
+                              GNOME / MUTTER
 ```
 
-**Cua Driver is the sole control authority.** It owns semantic and pixel actions,
-window state, GNOME geometry, exact activation, input delivery, cursor behavior,
-effects, verification, escalation, and structured refusals.
+There is one control authority. GWCU does not install a second raw-input stack:
+no project uinput policy, no ydotool daemon, no custom Cua daemon, and no parallel
+WinRects client.
 
-**GWCU owns integration and observation.** It qualifies Ubuntu 26.04, repairs the
-portal/accessibility/media substrate, installs the agent operating layer, and
-provides a fast independent whole-screen ScreenCast observer.
+Pixel-only Vulkan, GLFW, canvas, game, video, and custom-rendered surfaces are
+first-class. An empty AT-SPI tree means **use target pixels**, not “search the
+whole desktop.”
 
-There is no project-owned `/dev/uinput` policy, ydotool daemon, custom Cua daemon,
-parallel WinRects client, or requirement to log into X11/XWayland.
+## Call budget
+
+The north-star metric is **agent/tool boundaries**, not shell cleverness.
+
+| Situation | GWCU setup calls before useful work |
+|---|---:|
+| known app/window | **0** |
+| uncertain installed/PWA identity | **1** — `profile.sh route` |
+| host/runtime contradiction | **1** — `profile.sh recover` |
+| explicit whole-screen request | **1** — `observe.sh` |
+
+For a known target, the hot path is simply:
+
+```text
+one Cua target/window state
+→ AX when grounded / PX from that same state when visual
+→ useful action span
+→ verification only when the next decision depends on it
+```
+
+A normal task has:
+
+```text
+0 update checks
+0 broad diagnostics
+0 known-target enumeration
+0 whole-screen prelude when target evidence is enough
+0 blind retries of the same failed delivery shape
+0 raw-input bypasses
+```
+
+## Scripts compose scripts
+
+A local subprocess is cheap. A model/tool round-trip is expensive.
+
+GWCU therefore exposes **composed agent-facing commands** instead of making the
+agent fan out through low-level probes.
+
+### Unknown target: one routing call
+
+```bash
+ROOT="$HOME/.agents/skills/gnome-wayland-computer-use"
+"$ROOT/scripts/profile.sh" route --machine "ChatGPT"
+```
+
+`gwcu.route.v1` combines cached session context with deterministic launcher/PWA
+identity and returns one next step:
+
+```text
+target_resolved  → Cua target state with identity evidence
+live_target      → launcher metadata absent; ask Cua for live target state
+target_ambiguous → disambiguate only the returned candidates
+```
+
+Routing does **not** run diagnostics merely because identity is uncertain.
+
+### Host contradiction: one recovery call
+
+```bash
+"$ROOT/scripts/profile.sh" recover --machine
+```
+
+Inside that one invocation:
+
+```text
+cached profile read
+→ refresh only if stale/missing
+  → diagnose.sh
+    → Cua health + GNOME/observer facts
+→ one structured next action
+```
+
+The model never needs to spend three turns on `read → refresh → diagnose`.
+
+Lower-level helpers remain available for testing and maintenance; the skill tells
+agents to prefer the composed route/recovery surfaces.
 
 ## Install
 
-Run as the logged-in desktop user. The installer elevates only for Ubuntu package
-repair or the rare group-membership recovery it can justify from Cua's doctor output.
+Run as the logged-in desktop user:
 
 ```bash
 curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh | bash
 ```
 
-For Hermes, make the integration mandatory:
+Hermes integration:
 
 ```bash
 curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh | bash -s -- --hermes
 ```
 
-Options:
+The installer is qualified for **Ubuntu 26.04 + GNOME 50 Wayland** and elevates
+through `pkexec` or `sudo` only when host repair requires it.
+
+It verifies/repairs the explicit Ubuntu substrate:
 
 ```text
---hermes      require Hermes and install its computer-use integration
---agent-only  skip Hermes-specific files
---compat      stage files without mutating an unsupported/non-live host
---unattended  automate decisions; privilege and portal UI can still appear
+PipeWire + WirePlumber
+XDG Desktop Portal + GNOME portal backend
+RemoteDesktop + ScreenCast + Screenshot interfaces
+EIS/libei + libxkbcommon
+AT-SPI
+Python D-Bus/GI + GStreamer/PipeWire bindings
 ```
 
-### A deliberately pinned Cua
-
-GWCU qualifies **Cua Driver 0.19.3** for this release and passes
-`CUA_DRIVER_RS_VERSION=0.19.3` to Cua's official installer. It never asks for
-"latest" during installation. That keeps a known GNOME/portal contract from
-changing underneath users.
-
-The standard 0.19.3 Linux release is built with Cua's `portal-input` feature—the
-modern successor to the earlier `portal-libei` gate—so GNOME input uses the
-RemoteDesktop portal + EIS/libei path without a GWCU fork or private binary.
-
-A deliberate qualification override exists for maintainers:
+Then it installs the deliberately pinned **Cua Driver 0.19.3** through Cua's
+official installer, installs Cua's packaged `winrects@cua` helper, enables the
+private observer socket, and runs:
 
 ```bash
-GWCU_CUA_DRIVER_RS_VERSION=0.19.3 ./install.sh
+cua-driver doctor --json
 ```
 
-Changing that value means **you are changing the qualified upstream runtime**;
-it is not an update mechanism.
+as a hard readiness gate. `READY` means usable now; a failing doctor means the
+installer fails with the recovery information it actually has.
 
-## What gets installed
-
-On Ubuntu 26.04 the installer reads `/etc/os-release`, verifies the live GNOME
-Wayland session, then repairs the explicit native foundation with apt when needed:
-
-```text
-ca-certificates curl
-libglib2.0-bin
-pipewire pipewire-bin wireplumber
-xdg-desktop-portal xdg-desktop-portal-gnome
-python3 python3-dbus python3-gi python3-gst-1.0
-gstreamer1.0-tools gstreamer1.0-pipewire
-gstreamer1.0-plugins-base gstreamer1.0-plugins-good
-gir1.2-gstreamer-1.0 gir1.2-gst-plugins-base-1.0 gir1.2-gdkpixbuf-2.0
-at-spi2-core
-libei1 libxkbcommon0
-```
-
-It also verifies PipeWire is at least **0.3.40**, checks the GNOME `ScreenCast`,
-`Screenshot`, and `RemoteDesktop` portal interfaces, and enables the project-owned
-socket-activated observer with `systemctl --user enable --now`.
-
-Then it installs the pinned Cua release through Cua's official installer, installs
-Cua's packaged `winrects@cua` helper, installs the portable/Hermes skill payloads,
-cleans exact obsolete GWCU units/udev artifacts from old releases, and runs
-**`cua-driver doctor --json` as a hard installation gate**. A non-zero doctor exit
-prints the health hints and aborts instead of leaving a cheerful half-install.
-
-### DRM / `video` group
-
-The portal path normally needs **no custom udev rule and no `video` group change**.
-GWCU only offers/adds the logged-in user to `video` when Cua doctor itself fails
-with a DRM/render-node permission symptom. In unattended mode that recovery is
-automatic. Because supplementary group membership is established at login, the
-installer then tells you to sign out/in and rerun instead of pretending the
-current session changed underneath it.
+The normal portal path creates no new GWCU udev rule. `video` group membership is
+considered only when Cua doctor specifically reports a DRM/render-node permission
+problem, and teardown owns the inverse when GWCU made that change.
 
 ## Portal consent
 
-GNOME Wayland is the intended session. **Do not switch to X11.**
+The system uses GNOME's native permission surfaces.
 
-Two portal capabilities are intentionally distinct:
+- **Control:** the first Cua foreground pointer/keyboard operation may show
+  **Remote Desktop / remote control** consent. Cua uses the portal-issued
+  EIS/libei input session.
+- **Observation:** the first explicit whole-screen request may separately show
+  **ScreenCast / screen selection** consent.
 
-1. **Control:** the first Cua foreground pointer/keyboard operation may show
-   GNOME's **Remote Desktop / remote control** consent. Approve it to allow the
-   portal-issued EIS/libei input session.
-2. **Observation:** the first explicit GWCU whole-screen observation may show a
-   **ScreenCast / screen selection** consent. This observer is independent from Cua.
-
-In the normal portal lifecycle these grants/tokens are reusable; GNOME may ask
-again after a grant is revoked, portal state changes, or an upstream runtime
-requires fresh consent. Cancelling a prompt is a real user decision and is never
-worked around with raw input.
-
-## Agent path
-
-The normal task is aggressively small:
-
-```text
-known target
-→ one Cua target/window state
-→ AX when grounded / PX from the same state when visual
-→ consume Cua effect + verification + escalation
-→ verified foreground only when Cua requires it
-→ respect structured refusal
-```
-
-A healthy normal task has:
-
-```text
-0 update checks
-0 broad diagnostics
-0 app/window enumeration when identity is known
-0 whole-screen captures when target evidence is enough
-0 blind retries of the same failed delivery shape
-0 raw-input bypasses around Cua
-```
-
-AT-SPI-empty Vulkan, GLFW, canvas, game, video, and custom-rendered windows are
-**pixel-only**, not absent. Cua remains responsible for targeting and safe delivery.
+No X11 session is required. A denied/cancelled portal request ends that attempt;
+the agent does not answer consent with a raw-input workaround.
 
 ## Whole-screen observation
 
 ```bash
 OBSERVE="$HOME/.agents/skills/gnome-wayland-computer-use/scripts/observe.sh"
-
-"$OBSERVE" --screen /tmp/screen.png
 "$OBSERVE" --machine --screen /tmp/screen.png
 "$OBSERVE" --media --screen
 ```
 
-The observer is private and socket-activated. Login itself does not request
-capture permission. During a task burst it keeps one portal-scoped PipeWire
-stream warm so fresh frames do not require rebuilding the entire capture chain.
+The private socket-activated observer keeps one portal-scoped ScreenCast session,
+PipeWire remote, and GStreamer stream warm for a bounded task burst. Repeated
+frames do not rebuild the entire capture chain.
 
-`scripts/capture.sh` is the direct XDG Screenshot fallback when the broker cannot
-serve a frame. It observes only; it never injects input or calls Cua.
+`scripts/capture.sh` is a direct XDG Screenshot-portal fallback. Observation
+cannot inject input or call Cua.
 
 ## Diagnose
 
@@ -210,62 +232,44 @@ Machine-readable:
 ~/.agents/skills/gnome-wayland-computer-use/scripts/diagnose.sh --machine
 ```
 
-The installer also retains Cua's exact doctor output under:
-
-```text
-~/.local/state/gnome-wayland-computer-use/cua-doctor.json
-~/.local/state/gnome-wayland-computer-use/cua-doctor.stderr
-```
-
-Top-level GWCU `ok=true` means **ready now**, not "probably configured." Cua's
-stable `health_report` remains upstream truth; GWCU does not reconstruct it.
+Top-level `ok=true` means the installed system is actually ready. Cua's stable
+`health_report` remains upstream control-health truth; GWCU composes it only with
+the GNOME/observation facts it owns.
 
 ## Uninstall
-
-Full uninstall:
 
 ```bash
 curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/uninstall.sh | bash
 ```
 
-This reverses project-managed skill files, observer units, SOUL routing, managed
-PATH edits, toolkit-accessibility changes, exact legacy artifacts, and a
-GWCU-added `video` membership. It removes Cua **only when GWCU originally
-provisioned it**. A Cua installation that already existed is preserved.
+Uninstall reverses project-managed skills, observer units, managed Hermes routing,
+PATH blocks, accessibility changes, exact legacy artifacts, project state, and a
+GWCU-added `video` membership.
 
-Explicit choices:
-
-```bash
-bash ./uninstall.sh --keep-cua   # always preserve Cua
-bash ./uninstall.sh --purge-cua  # deliberately remove Cua even if it predated GWCU
-```
-
-Ubuntu apt packages and portal permission state are host-owned and deliberately
-preserved; uninstalling a desktop integration should not casually dismantle the
-desktop's media/accessibility substrate.
+Cua is removed only when GWCU provisioned it. `--keep-cua` always preserves it;
+`--purge-cua` explicitly removes it. Ubuntu's portal/PipeWire/accessibility
+packages remain host-owned.
 
 ## Release validation
 
-Repository CI covers shell syntax, installer invariants, the pinned Cua contract,
-portal dependencies, teardown reversibility, deterministic routing, observer
-privacy/lifecycle, identity resolution, and Cua health transport.
+CI guards the installer contract, portal dependencies, Cua pin, ownership model,
+observer lifecycle, skill UX, one-call routing/recovery, deterministic refusal
+handling, teardown reversibility, and regression suite.
 
-Before merge, the release still requires one real **Ubuntu 26.04 / GNOME 50 /
-Wayland** smoke from a clean install:
+Before merge, the remaining release gate is a clean graphical **Ubuntu 26.04 /
+GNOME 50 / Wayland** smoke covering:
 
-- installer from scratch, including elevation;
-- `cua-driver doctor` success on the installed pinned binary;
-- first RemoteDesktop consent and a real Cua click/type;
-- first ScreenCast consent and repeated warm capture;
-- Cua WinRects ACTIVE after any required GNOME reload;
-- Hermes `/reload-skills`, `computer_use`, semantic control, pixel-only control,
-  and verified foreground activation;
-- uninstall and reinstall without stale user units or PATH fragments.
-
-That live graphical smoke is a release gate, not something CI claims to impersonate.
+- fresh installer + elevation/package repair;
+- successful pinned `cua-driver doctor`;
+- first RemoteDesktop consent + real click/type;
+- first ScreenCast consent + repeated warm captures;
+- active `winrects@cua` after any required Shell reload;
+- Hermes `/reload-skills` + complete `computer_use` session;
+- semantic, pixel-only, and exact-foreground actions;
+- uninstall + reinstall with no stale project state.
 
 ---
 
 <div align="center">
-<strong>The agent decides intent. Cua decides mechanics. GNOME stays Wayland.</strong>
+<strong>Spend agent calls on the task.</strong>
 </div>

@@ -2,7 +2,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 fail(){ printf 'not ok - %s\n' "$1" >&2; exit 1; }; pass(){ printf 'ok - %s\n' "$1"; }
-observer="$ROOT/scripts/observer.py"; observe="$ROOT/scripts/observe.sh"; capture="$ROOT/scripts/capture.sh"; skill="$ROOT/SKILL.md"
+observer="$ROOT/scripts/observer.py"; observe="$ROOT/scripts/observe.sh"; capture="$ROOT/scripts/capture.sh"; skill="$ROOT/SKILL.md"; profile="$ROOT/scripts/profile.sh"
 
 grep -q 'DEFAULT_IDLE' "$observer" || fail "observer lost bounded warm lifetime"
 grep -q 'pipewire-serial' "$observer" || fail "observer lost ScreenCast v6 targeting"
@@ -56,6 +56,41 @@ HOME="$TMP/home" PATH="$TMP/bin:/usr/bin:/bin" GWCU_OBSERVER_BIN="$TMP/denied.py
 [ ! -e "$TMP/home/direct-called" ] || fail "portal cancellation opened another capture path"
 pass "consent cancellation is terminal"
 
-grep -q 'Known app means no `list_apps` / `list_windows` ceremony' "$skill" || fail "skill lost known-target latency rule"
-grep -q 'Cua state once' "$skill" || fail "skill lost one-state action span"
-pass "agent latency contract stays target-scoped"
+# One ambiguous-target call may compose local identity + cached profile, but it
+# must not wake the expensive diagnostic path just because launcher identity is uncertain.
+cat >"$TMP/identity" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' '{"schema":"gwcu.identity.v1","ok":true,"code":"resolved","result":{"display_name":"ChatGPT","desktop_id":"chatgpt.desktop","app_id":"chatgpt_app"},"evidence":["exact_display_name"],"next":{"action":"use_identity"}}'
+SH
+cat >"$TMP/diagnose" <<'SH'
+#!/usr/bin/env bash
+touch "$XDG_STATE_HOME/diagnose-called"
+printf '%s\n' '{"schema":"gwcu.diagnose.v2","ok":true,"code":"ready","next":null}'
+SH
+chmod +x "$TMP/identity" "$TMP/diagnose"
+mkdir -p "$TMP/route-home" "$TMP/route-state"
+HOME="$TMP/route-home" XDG_STATE_HOME="$TMP/route-state" GWCU_IDENTITY_BIN="$TMP/identity" GWCU_DIAGNOSE_BIN="$TMP/diagnose" \
+    "$profile" route --machine ChatGPT >"$TMP/route.json"
+python3 - "$TMP/route.json" <<'PY' || fail "one-call target route envelope invalid"
+import json,sys
+d=json.load(open(sys.argv[1])); assert d['schema']=='gwcu.route.v1'; assert d['ok']; assert d['code']=='target_resolved'; assert d['next']['action']=='cua_target_state'; assert d['host']['cached'] is False
+PY
+[ ! -e "$TMP/route-state/diagnose-called" ] || fail "target routing paid for diagnostics"
+pass "one target-routing call stays cheap and diagnostic-free"
+
+# Recovery is the deliberate expensive path. The outer agent still pays one call:
+# profile.sh composes read -> refresh -> diagnose locally when cached state is absent.
+HOME="$TMP/route-home" XDG_STATE_HOME="$TMP/route-state" GWCU_IDENTITY_BIN="$TMP/identity" GWCU_DIAGNOSE_BIN="$TMP/diagnose" \
+    "$profile" recover --machine >"$TMP/recover.json"
+python3 - "$TMP/recover.json" <<'PY' || fail "one-call recovery envelope invalid"
+import json,sys
+d=json.load(open(sys.argv[1])); assert d['schema']=='gwcu.route.v1'; assert d['ok']; assert d['code']=='host_ready'; assert d['source']=='refreshed'
+PY
+[ -e "$TMP/route-state/diagnose-called" ] || fail "recovery did not compose diagnostic refresh"
+pass "one recovery call composes read, refresh and diagnose locally"
+
+grep -q 'known app/window | \*\*0\*\*' "$skill" || fail "skill lost zero-call known-target budget"
+grep -q 'profile.sh.*route' "$skill" || fail "skill does not use composed target routing"
+grep -q 'profile.sh.*recover' "$skill" || fail "skill does not use composed recovery"
+grep -q 'Do not make the model perform `read → refresh → diagnose`' "$skill" || fail "skill permits model-driven diagnostic fanout"
+pass "agent call-budget contract is explicit"

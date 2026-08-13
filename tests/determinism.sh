@@ -2,16 +2,27 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 fail(){ printf 'not ok - %s\n' "$1" >&2; exit 1; }; pass(){ printf 'ok - %s\n' "$1"; }
-skill="$ROOT/SKILL.md"; installer="$ROOT/install.sh"; uninstaller="$ROOT/uninstall.sh"; teardown="$ROOT/scripts/teardown.sh"; diagnose="$ROOT/scripts/diagnose.sh"; capture="$ROOT/scripts/capture.sh"
+skill="$ROOT/SKILL.md"; installer="$ROOT/install.sh"; uninstaller="$ROOT/uninstall.sh"; teardown="$ROOT/scripts/teardown.sh"; diagnose="$ROOT/scripts/diagnose.sh"; capture="$ROOT/scripts/capture.sh"; profile="$ROOT/scripts/profile.sh"
 
 grep -q 'Cua Driver as the control authority' "$skill" || fail "skill does not name one control authority"
-grep -q 'Never retry the same failed Cua delivery shape blindly' "$skill" || fail "skill permits ritual retry"
-grep -q 'refusal by injecting raw keyboard' "$skill" || fail "skill permits raw-input refusal bypass"
+grep -q 'Never retry the same failed delivery shape blindly' "$skill" || fail "skill permits ritual retry"
+grep -q 'Never answer a Cua refusal with raw pointer/keyboard injection' "$skill" || fail "skill permits raw-input refusal bypass"
 grep -q 'No X11 or XWayland session is required' "$skill" || fail "skill lost portal-native GNOME contract"
-grep -q 'Remote Desktop / remote control' "$skill" || fail "skill does not prepare the agent for portal consent"
+grep -q 'Remote Desktop / remote' "$skill" || fail "skill does not prepare the agent for portal consent"
 ! grep -q -- '--cached-only' "$skill" || fail "skill still performs task-time update housekeeping"
 grep -q 'Known app means no `list_apps` / `list_windows` ceremony' "$skill" || fail "known target path still invites enumeration"
-pass "agent hot path delegates mechanics to Cua"
+grep -q 'known app/window | \*\*0\*\*' "$skill" || fail "known-target path lost zero-GWCU-call budget"
+pass "agent hot path delegates mechanics to Cua with zero setup calls for known targets"
+
+# Model turns are the scarce resource: deterministic helpers compose locally.
+grep -q 'route)' "$profile" || fail "profile route composer missing"
+grep -q 'recover)' "$profile" || fail "profile recovery composer missing"
+grep -q '"$IDENTITY" --resolve --machine' "$profile" || fail "route does not compose deterministic identity locally"
+grep -q 'current=$(refresh_profile' "$profile" || fail "recovery does not compose stale-profile refresh locally"
+grep -q 'gwcu.route.v1' "$profile" || fail "composed route schema missing"
+grep -q 'profile.sh.*route' "$skill" || fail "skill does not expose one-call target route"
+grep -q 'profile.sh.*recover' "$skill" || fail "skill does not expose one-call recovery"
+pass "scripts compose scripts instead of spending model turns"
 
 [ ! -f "$ROOT/install-core.sh" ] || fail "runtime-patched installer architecture still exists"
 [ ! -f "$ROOT/lib/checks.sh" ] || fail "obsolete shared check library still exists"
