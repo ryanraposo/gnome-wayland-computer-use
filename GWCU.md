@@ -14,25 +14,31 @@ Scope resolution is deterministic:
 ```text
 GWCU_SCOPE_ROOT override
         ↓ absent
+Git worktree root, when inside Git
+        ↓ not in Git
 nearest ancestor containing .gwcu
-        ↓ absent
-Git worktree root
         ↓ absent
 current GWCU working directory
 ```
 
-The nearest-existing rule makes non-Git workspaces first-class. For example:
+A Git repository is always isolated to its own root. If a repo lives inside a
+broader non-Git workspace that already has `.gwcu`, the repo still gets its own
+`.gwcu`; parent workspace truth never bleeds into the repository.
+
+Outside Git, the nearest-existing rule makes durable general workspaces
+first-class. For example:
 
 ```text
 ~/.gwcw/
 ├── .gwcu
 ├── scratch/
 ├── experiments/
-└── misc/
+└── repos/
+    └── my-project/       # Git repo: uses my-project/.gwcu, not ~/.gwcw/.gwcu
 ```
 
-An agent working anywhere under `~/.gwcw/` reuses `~/.gwcw/.gwcu` unless a
-nearer scope exists.
+An agent working under `~/.gwcw/scratch/` reuses `~/.gwcw/.gwcu`. An agent
+working in the nested Git repo uses that repository's root `.gwcu`.
 
 When managed truth is enabled in a Git worktree, GWCU must ensure the root
 `.gitignore` contains:
