@@ -97,6 +97,67 @@ known target
 → verify only at the next real decision boundary
 ```
 
+## One-call action spans
+
+**Hard invariant:** if two or more consecutive Cua actions are fully determined
+by the same current evidence, they **MUST cross the model/tool boundary exactly
+once**.
+
+Do not emit `click → model → type → model → key` as separate tool calls when the
+click result cannot change the text or key that follows. Build the complete
+deterministic span first, then execute it through the installed composition
+surface:
+
+```bash
+"$ROOT/scripts/computer-use.sh" span --actions-json '{
+  "schema":"gwcu.action-span.request.v1",
+  "actions":[
+    {"name":"click","arguments":{"x":640,"y":420}},
+    {"name":"type_text","arguments":{"text":"hello"}},
+    {"name":"key_press","arguments":{"key":"ENTER"}}
+  ]
+}'
+```
+
+That is **one model-visible/tool invocation**. Inside it, GWCU keeps one Cua MCP
+session open and issues the already-decided Cua operations in order. Cua remains
+the sole control authority. This is composition, not an alternate input stack
+and not a claim that Cua exposes an atomic multi-action RPC.
+
+A span ends only at a genuine decision boundary. Split before the next action
+only when at least one of these is true:
+
+- fresh returned/rendered state can change the next action or its arguments;
+- navigation, a dialog, target disappearance, or stale identity invalidates the
+  evidence used to construct the remaining span;
+- a real asynchronous transition has no sufficient completion signal yet;
+- Cua reports failure, refusal, ambiguity, or another result requiring a new
+  strategy;
+- new user authorization or a real user choice is required.
+
+Otherwise, **keep going inside the same call**. No ritual screenshot, fixed
+sleep, model re-entry, or verification call belongs between already-decided
+consecutive actions.
+
+The installed span runner itself stops immediately on the first Cua
+failure/refusal/transport boundary and never executes later queued actions after
+that boundary.
+
+```text
+[KNOW] field, text, and submit action are already grounded
+   ↓
+[DECIDE] click → type → Enter
+   ↓
+[TOOL #1: ONE ACTION SPAN]
+   ├─ Cua click
+   ├─ Cua type_text
+   └─ Cua key_press
+   ↓
+[BACK] one span result
+   ↓
+[DECIDE] only now, if fresh state can change what happens next
+```
+
 ### Unknown or browser-backed target
 
 Do **one local routing call**:
@@ -234,18 +295,21 @@ When the Hermes plugin is installed, its native command registry exposes:
 
 `managed on` enables persistence and initializes the current scope. `truths`
 shows the active `.gwcu` scope/path/counts. `consent` explains and verifies the
-RemoteDesktop → EIS/libei contract.
+RemoteDesktop → EIS/libei contract. The internal `computer-use.sh span` surface
+is for agent execution, not a user-facing slash-command workflow.
 
 ## Latency-first interaction
 
 - Known app means no `list_apps` / `list_windows` ceremony.
 - No update checks, broad diagnostics, capability inventories, or whole-screen
   capture before a normal task.
+- **Already-decided consecutive actions must use one action-span call.**
 - Reuse one Cua state across AX → PX when it supplies both.
 - Use one complete typing action, not character loops.
 - Send a shortcut in one key action.
 - Prefer semantic `set_value` when it directly establishes the value.
-- Let a confirmed click flow into deterministic typing when appropriate.
+- Let a confirmed click flow into deterministic typing inside the same span when
+  the click result cannot change what gets typed.
 - Use Cua read-back when it already proves the postcondition.
 - Wait only for a real asynchronous transition.
 - Consume `.gwcu` before repeating deterministic identity discovery.
@@ -255,7 +319,7 @@ RemoteDesktop → EIS/libei contract.
 The ideal runtime shape is intentionally boring:
 
 ```text
-Cua state once → useful action span → next decision boundary
+Cua state once → ONE action-span call → next decision boundary
 ```
 
 ## Foreground preservation
@@ -282,6 +346,9 @@ The agent-facing helpers are deliberately small:
 ```bash
 # target uncertainty → one route
 "$ROOT/scripts/profile.sh" route --machine "ChatGPT"
+
+# multiple already-decided actions → ONE outer call
+"$ROOT/scripts/computer-use.sh" span --actions-json '<gwcu.action-span.request.v1>'
 
 # host contradiction → one recovery verdict
 "$ROOT/scripts/profile.sh" recover --machine
