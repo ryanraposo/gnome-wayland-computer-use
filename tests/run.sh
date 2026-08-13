@@ -191,7 +191,7 @@ assert "failed capture preserves existing output" test "$(cat "$capture_out")" =
 # Media/timing contracts.
 media_out=$(HOME="$capture_home" XDG_RUNTIME_DIR="$TEST_TMP" GNOME_WAYLAND_SYSTEM_PYTHON="$TEST_TMP/capture-fast-bin/python3" \
     PATH="$TEST_TMP/capture-fast-bin:/usr/bin:/bin" "$ROOT/scripts/capture.sh" --media --screen 2>/dev/null)
-assert "media mode emits attachment marker" sh -c '[[ "$1" == MEDIA:* ]]' sh "$media_out"
+assert "media mode emits attachment marker" test "${media_out#MEDIA:}" != "$media_out"
 assert "media attachment exists" test -s "${media_out#MEDIA:}"
 timing_err="$TEST_TMP/timing.err"
 method=$(HOME="$capture_home" GNOME_WAYLAND_SYSTEM_PYTHON="$TEST_TMP/capture-fast-bin/python3" \
