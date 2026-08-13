@@ -72,7 +72,7 @@ SAVED
 [KNOW] name, identity uncertain
   ↓
 [TOOL #1] profile.sh route
-  ├─ nearest .gwcu
+  ├─ repo/workspace .gwcu
   ├─ exact identity hit
   ├─ no launcher scan
   ├─ no diagnostics
@@ -124,10 +124,10 @@ NEXT ENCOUNTER
 <section>
 <h2>Repo and non-Git scope</h2>
 <div class="flow">GWCU_SCOPE_ROOT override
-  → nearest ancestor already containing .gwcu
-  → Git worktree root
+  → Git worktree root, when inside Git
+  → nearest ancestor containing .gwcu, outside Git
   → current working directory</div>
-<p class="small">That nearest-existing rule makes a general non-Git workspace first-class. Put one <code>.gwcu</code> at a workspace root and descendants reuse it. In Git, GWCU ensures <code>/.gwcu</code> is in the root <code>.gitignore</code> before truth is created; unsafe ignore setup makes persistence fail closed.</p>
+<p class="small">Git repositories are always isolated to their own root, even beneath a general workspace. Outside Git, a workspace such as <code>~/.gwcw</code> can keep one <code>.gwcu</code> for its descendants. In Git, GWCU ensures <code>/.gwcu</code> is in the root <code>.gitignore</code> before truth is created; unsafe ignore setup makes persistence fail closed.</p>
 </section>
 
 <section>
