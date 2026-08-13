@@ -26,7 +26,7 @@ PY
 chmod +x "$TMP/fake-cua"
 
 REQ='{"schema":"gwcu.action-span.request.v1","actions":[{"name":"click","arguments":{"x":10,"y":20}},{"name":"type_text","arguments":{"text":"hello"}},{"name":"key_press","arguments":{"key":"ENTER"}}]}'
-FAKE_CUA_LOG="$TMP/calls" "$SPAN" --driver "$TMP/fake-cua" --actions-json "$REQ" >"$TMP/result.json"
+FAKE_CUA_LOG="$TMP/calls" python3 "$SPAN" --driver "$TMP/fake-cua" --actions-json "$REQ" >"$TMP/result.json"
 python3 - "$TMP/result.json" <<'PY' || fail "completed span envelope invalid"
 import json,sys
 d=json.load(open(sys.argv[1])); assert d['schema']=='gwcu.action-span.v1'; assert d['ok']; assert d['code']=='completed'; assert d['requested']==3; assert d['completed']==3; assert d['boundary'] is None
@@ -38,7 +38,7 @@ pass "one outer invocation executes the complete predetermined action span in or
 
 : >"$TMP/calls"
 rc=0
-FAKE_CUA_LOG="$TMP/calls" FAIL_ON=type_text "$SPAN" --driver "$TMP/fake-cua" --actions-json "$REQ" >"$TMP/boundary.json" || rc=$?
+FAKE_CUA_LOG="$TMP/calls" FAIL_ON=type_text python3 "$SPAN" --driver "$TMP/fake-cua" --actions-json "$REQ" >"$TMP/boundary.json" || rc=$?
 [ "$rc" -eq 30 ] || fail "Cua failure did not return boundary exit class"
 python3 - "$TMP/boundary.json" <<'PY' || fail "boundary envelope invalid"
 import json,sys
@@ -47,9 +47,6 @@ assert d['boundary']['index']==1 and d['boundary']['name']=='type_text'; assert 
 PY
 printf 'click\ntype_text\n' | cmp -s - "$TMP/calls" || fail "span executed beyond a Cua decision boundary"
 pass "span stops immediately when Cua creates a real decision boundary"
-
-python3 - "$SPAN" <<'PY' || fail "action-span Python syntax invalid"
-PY
 
 grep -q 'one model/tool boundary' "$SPAN" || fail "runner does not state its boundary contract"
 ! grep -Eq 'ydotool|uinput|org\.cua\.WinRects' "$SPAN" || fail "runner bypasses Cua control authority"
