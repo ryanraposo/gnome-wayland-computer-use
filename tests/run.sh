@@ -62,19 +62,33 @@ d=json.load(open(sys.argv[1])); assert d['ok'] and d['schema']=='gwcu.observer.s
 PY
 pass "observer self-test is consent-free"
 
-idh="$TMP/id-home"; data="$idh/data"; mkdir -p "$data/applications" "$idh/runtime" "$TMP/empty"
-cat >"$data/app.desktop" <<'D'
+idh="$TMP/id-home"; idd="$idh/data"; mkdir -p "$idd/applications" "$idh/runtime" "$TMP/empty-data"
+cat >"$idd/applications/chatgpt.desktop" <<'D'
 [Desktop Entry]
 Type=Application
 Name=ChatGPT
 Exec=/usr/bin/google-chrome-stable --app-id=chatgpt_app
 StartupWMClass=crx_chatgpt_app
 D
-HOME="$idh" XDG_DATA_HOME="$data" XDG_DATA_DIRS="$TMP/empty" XDG_RUNTIME_DIR="$idh/runtime" \
-    "$ROOT/scripts/app-identity.sh" --resolve --machine ChatGPT >"$TMP/id.json"
-python3 - "$TMP/id.json" <<'PY' || fail "identity resolver failed"
+cat >"$idd/applications/chatgpt-beta.desktop" <<'D'
+[Desktop Entry]
+Type=Application
+Name=ChatGPT Beta
+Exec=/usr/bin/google-chrome-stable --app-id=chatgpt_beta
+StartupWMClass=crx_chatgpt_beta
+D
+rc=0
+HOME="$idh" XDG_DATA_HOME="$idd" XDG_DATA_DIRS="$TMP/empty-data" XDG_RUNTIME_DIR="$idh/runtime" \
+    "$ROOT/scripts/app-identity.sh" --refresh --resolve --machine ChatGPT >"$TMP/id.json" || rc=$?
+if [ "$rc" -ne 0 ]; then
+    printf 'identity fixture rc=%s output=' "$rc" >&2
+    cat "$TMP/id.json" >&2 || true
+    printf '\n' >&2
+    fail "identity resolver failed"
+fi
+python3 - "$TMP/id.json" <<'PY' || fail "identity resolver envelope invalid"
 import json,sys
-d=json.load(open(sys.argv[1])); assert d['ok'] and d['code']=='resolved'
+d=json.load(open(sys.argv[1])); assert d['ok'] and d['code']=='resolved' and d['result']['app_id']=='chatgpt_app'
 PY
 pass "identity resolution stays deterministic"
 
