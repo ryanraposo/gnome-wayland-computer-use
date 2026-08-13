@@ -1,136 +1,187 @@
 # Capability Map
 
-`gnome-wayland-computer-use` treats GNOME Wayland as several complementary
-surfaces instead of pretending one API can represent the whole desktop.
+`gnome-wayland-computer-use` models GNOME Wayland as four complementary planes:
+**Observation, Semantics, GNOME precision, Recovery.**
 
-## Capability ladder
+> Accessibility when semantics exist. Pixels when they do not. Compositor precision when GNOME requires it.
 
-| Capability | Primary | Degrades to |
+## Delivery-strength map
+
+| Target | Evidence | Best delivery |
 |---|---|---|
-| Semantic inspection | AT-SPI / runtime AX | visible pixels |
-| Semantic click/value/text | runtime driver | coordinate delivery → foreground |
-| Visible-screen capture | XDG ScreenCast + PipeWire | Screenshot portal → legacy GNOME → Shift+Print |
-| Pixel-only GLFW/Vulkan/canvas | screen pixels + coordinates | normal foreground/window selection |
-| Installed web-app identity | live app/window identity | desktop launcher cache → browser identity |
-| Synthetic keyboard/pointer recovery | runtime driver | `/dev/uinput` + `ydotool` |
-| Privileged Ubuntu mutation | graphical `pkexec` | explicit manual action |
+| Accessible control | AT-SPI | semantic background |
+| Accessible control with bad GTK4 screen geometry | AT-SPI + Cua/WinRects geometry | semantic/background |
+| Known GNOME window requiring focus-bound input | Cua + WinRects activation/focus verification | verified foreground |
+| Visible custom renderer | ScreenCast pixels + Cua geometry when resolvable | pixels / verified foreground |
+| Occluded custom renderer with no semantic route | insufficient safe target route | foreground discovery → structured refusal |
+| Whole desktop | ScreenCast pixels | foreground pixels only |
 
-## Screen capture
+Never fake delivery. Escalate when safe. Refuse when the compositor makes the
+requested delivery shape impossible to verify.
 
-The capture helper intentionally owns one truthful visual surface: the **visible
-display**.
+## Observation
 
-`--screen` selects it directly. `--desktop` remains a compatibility alias.
-There is no hidden-window desktop compositor, WinRects verification transaction,
-or project-owned Shell extension.
+The project owns one independent visual surface: the **visible display**.
+
+`--screen` selects it. `--desktop` is a compatibility alias.
 
 ### Hot path
 
-XDG ScreenCast selects one monitor and exposes it through PipeWire. On portal
-v4+, the helper requests persistent permission and stores the returned restore
-token. Restore tokens are single-use, so every successful restored session
-replaces the cached token with the new token returned by the portal.
+XDG ScreenCast selects a monitor and exposes it through PipeWire. The helper
+requests persistent permission where supported and rotates the returned restore
+token after successful restoration.
 
-That turns the permission chooser into a first-use/revocation boundary rather
-than a tax on every screenshot.
+Ubuntu 26.04 GNOME already treats PipeWire/WirePlumber as desktop foundation.
+The installer verifies that foundation first and repairs missing official Ubuntu
+portal/PipeWire/GStreamer packages only when necessary.
 
 ### Recovery
 
 1. one-shot XDG Screenshot portal;
-2. `gnome-screenshot` only where the legacy GNOME path is still viable;
+2. `gnome-screenshot` only where legacy GNOME still supports it;
 3. Shift+Print through `ydotool`.
 
-Portal cancellation stops the chain rather than opening another permission UI.
-All writes are atomic.
+Portal denial ends the chain. A user saying “no” to ScreenCast is not permission
+to open another capture UI.
 
-## Wallpaper and desktop icons
+### Independence
 
-A wallpaper asset is configuration, not a special screenshot surface. Resolve
-GNOME's configured background file when the user wants the image itself.
+`capture.sh` does not call WinRects, Cua, or any project Shell service. That
+means observation can remain usable when Cua is unavailable or WinRects is
+waiting for a session reload.
 
-Desktop icons supplied by another extension are ordinary visible pixels. This
-skill does not depend on that extension's scene graph or private geometry.
+## Semantics
 
-## Accessible applications
-
-AT-SPI is the cheapest reliable observation surface when the target exposes
-roles, names, values, focus, and actions. It supports low-round-trip workflows
-such as:
+AT-SPI is the preferred route when a target exposes roles, values, state, focus,
+and actions. It enables background-first, low-round-trip workflows such as:
 
 - inspect field → click → type complete text;
-- set accessible menu/select/slider values semantically;
-- discover dialog roles and fill deterministic fields;
-- inspect text-heavy applications without pixels;
-- verify state through structured driver read-back.
+- semantic set/select/value actions;
+- dialog discovery and deterministic form spans;
+- structured read-back as verification.
 
-Element identities are short-lived across structural UI changes.
+Accessibility inventory is evidence of **semantic reachability**, not visual
+existence.
+
+## GNOME precision
+
+The Hermes/Cua profile officially uses Cua's bundled `winrects@cua` GNOME Shell
+adapter. Cua owns its code and D-Bus protocol; this project owns only provisioning
+policy and installation-ownership metadata.
+
+Cua WinRects can supply the runtime with:
+
+- authoritative Mutter frame/buffer geometry;
+- GTK4 screen-coordinate reconstruction from window-relative AT-SPI geometry;
+- exact GNOME window activation;
+- focus verification before focus-bound portal/libei input;
+- compositor capture for Cua's own capture/window path;
+- a compositor-owned agent cursor.
+
+It is **not**:
+
+- a `capture.sh` rung;
+- a replacement for XDG ScreenCast;
+- a fake desktop layer;
+- a project-maintained fork;
+- proof that arbitrary hidden-window raw pixel input is possible.
+
+### Provisioning boundary
+
+Only the Cua-backed profile invokes Cua's documented helper installer:
+
+```text
+~/.cua-driver/packages/current/wayland-helper/install.sh
+```
+
+`--agent-only` never installs Cua solely to obtain WinRects.
+
+If the Cua package lacks that helper, GNOME precision degrades cleanly. No
+independent extension download is attempted.
 
 ## Pixel-only applications
 
-GLFW, Vulkan, games, canvas-heavy tools, remote-viewer surfaces, and other
-custom-rendered apps may expose no useful accessibility tree. They may also be
-missing from the runtime's semantic `list_apps` / `list_windows` inventory.
+GLFW, Vulkan, games, canvas-heavy tools, remote-viewer surfaces, and other custom
+renderers may expose no useful AT-SPI tree and may be absent from semantic window
+inventory.
 
-That does **not** make them uncontrollable.
+If the surface is visible:
 
-If the surface is visibly present:
+1. capture the screen;
+2. ground visually;
+3. if Cua resolves the GNOME window, combine pixels with authoritative geometry;
+4. use verified foreground activation only when necessary;
+5. recapture after layout-changing actions.
 
-1. capture the visible screen;
-2. locate it visually;
-3. act with coordinates from the fresh image;
-4. recapture after layout-changing actions;
-5. foreground/select it with ordinary desktop gestures if obscured.
+If the surface is occluded and there is no trustworthy target identity, discover
+it in the normal foreground or refuse. Do not guess raw input into an arbitrary
+occluded Wayland surface.
 
-Semantic inventory is advisory. Visible pixels are authoritative for visible
-pixel-only surfaces.
+## Foreground Preservation Contract
 
-## Window geometry
+Preserve foreground by default. Change it only when the requested interaction
+cannot be safely delivered otherwise. Verify the exact target before focus-bound
+input.
 
-This repository does not require WinRects or another GNOME Shell geometry
-helper. A missing rectangle in the runtime driver is a reason to switch evidence
-surfaces, not a reason to modify GNOME Shell.
+Escalation:
 
-## Installed web apps
+1. semantic background;
+2. target-addressed semantic/PX route;
+3. exact activation + verified foreground;
+4. `ydotool` recovery where appropriate;
+5. structured refusal.
 
-The identity resolver distinguishes standalone browser-backed applications from
-generic browser chrome using:
+A `background_unavailable` or `background_occluded` result can be successful
+safety behavior when it prevents input from leaking into the user's current
+foreground.
 
-- live app/window identity;
-- desktop file IDs;
-- `StartupWMClass`;
-- `--app-id=`;
-- `--app=`;
-- browser-engine hints.
+## Recovery
 
-The launcher inventory is cached to keep repeated routing cheap.
+`ydotool` + `/dev/uinput` remains a last-resort host recovery path. It is below
+AT-SPI, Cua GNOME precision, and verified portal/libei foreground input.
 
-## Input
+The intended hierarchy is:
 
-Semantic/background input is preferred. Coordinate delivery is appropriate for
-pixel-only surfaces. Foreground delivery is an escalation, not a default.
+```text
+AT-SPI / Cua semantic
+        ↓
+Cua GNOME adapter
+        ↓
+portal/libei verified foreground
+        ↓
+ydotool/uinput
+```
 
-`ydotool` remains an explicit final fallback through `/dev/uinput`; it is not
-required for portal capture.
+## Session reload
 
-## Multi-display
+A full Cua-backed installation may need one GNOME session reload for either or
+both reasons:
 
-The ScreenCast portal selects a monitor source. The returned stream represents
-that monitor and may include compositor-space metadata. Do not assume physical
-pixel coordinates and compositor logical coordinates are identical under
-fractional scaling.
+- new `input` group membership;
+- WinRects newly installed/updated and not active in the current Shell session.
 
-Coordinate actions must come from the latest relevant image/target geometry.
+The installer combines both into one final instruction. ScreenCast and AT-SPI
+may already be usable before the reload.
 
-## Permission boundaries
+## Ownership
 
-- First ScreenCast use may require GNOME monitor-sharing consent.
-- Revoked/invalid restore permission may cause the chooser to reappear.
-- Cancelling that chooser is a real denial and halts the capture chain.
-- Privileged host changes use narrow graphical PolicyKit prompts.
-- Foreground input is visible and should follow the user's active-task intent.
+The installer records:
+
+```text
+~/.local/state/gnome-wayland-computer-use/
+    screencast-restore-token
+    cua-winrects-managed
+```
+
+The WinRects marker exists only when this project caused the extension to be
+installed. Teardown may then offer removal. Pre-existing WinRects is preserved.
+
+The obsolete `desktop-capture@gnome-wayland-computer-use` extension is always
+managed migration debris and should be removed if found.
 
 ## Completion proof
 
-A computer-use action is complete when the requested postcondition is proven by
-structured read-back or fresh evidence appropriate to the target. A ceremonial
-extra screenshot is unnecessary when stronger proof already exists.
+A task is complete when the requested postcondition is proven by the strongest
+available evidence: structured semantic read-back, Cua target/focus verification,
+or fresh pixels. A ceremonial screenshot is unnecessary when stronger proof
+already exists.

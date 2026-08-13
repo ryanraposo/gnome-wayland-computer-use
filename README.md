@@ -11,55 +11,68 @@
 
 Fast, closed-loop computer use for Ubuntu GNOME Wayland.
 
-**Accessibility when semantics exist. Pixels when they do not. Native portals for the screen.**
+**Accessibility when semantics exist. Pixels when they do not. Compositor precision when GNOME requires it.**
 
 [Install](#install) · [Architecture](#architecture) · [Capture](#native-screen-capture) · [Diagnose](#diagnose)
 </div>
 
 ---
 
-Linux desktop automation tends to fail in two opposite ways: it either pretends
-Wayland is X11, or it grows a pile of compositor-specific helpers until the
-helpers become the product.
+`gnome-wayland-computer-use` is an agent operating layer for GNOME Wayland.
+It preserves the human foreground whenever the platform exposes a safe route,
+then escalates deliberately when the requested interaction cannot be delivered
+otherwise.
 
-This project does neither.
+Version 2.3 has four planes:
 
-It gives capable agents a GNOME/Wayland operating contract built around the
-surfaces the desktop already provides: AT-SPI for accessible applications, XDG
-ScreenCast/Screenshot portals + PipeWire for pixels, and explicit input recovery
-when semantic delivery cannot finish the job.
+| Plane | Surface | Job |
+|---|---|---|
+| **Observation** | XDG ScreenCast + PipeWire | truthful visible pixels |
+| **Semantics** | AT-SPI / runtime AX | background-first structured control |
+| **GNOME precision** | Cua + `winrects@cua` | authoritative Mutter geometry, verified activation, Cua compositor capture and agent cursor |
+| **Recovery** | portal/libei foreground input → `/dev/uinput` + `ydotool` | explicit last-resort delivery |
+
+The project-owned `desktop-capture@gnome-wayland-computer-use` extension is gone.
+Screen observation requires no GNOME Shell extension. The full Hermes/Cua profile
+uses **Cua's own WinRects GNOME adapter** for compositor knowledge; this repository
+never vendors it and `capture.sh` never calls its D-Bus protocol.
 
 ## Architecture
 
-| Need | Primary surface | Recovery |
-|---|---|---|
-| Read/act on accessible UI | AT-SPI through the runtime driver | pixels → foreground |
-| Capture the visible display | XDG ScreenCast + PipeWire | Screenshot portal → legacy GNOME capture → Shift+Print |
-| Identify installed web apps | live identity + cached desktop launchers | generic browser identity |
-| Operate pixel-only GLFW/Vulkan/canvas UI | visible-screen pixels + coordinates | ordinary foreground/window selection |
-| Last-resort synthetic input | runtime driver | `/dev/uinput` + `ydotool` |
-| Privileged host action | narrow graphical `pkexec` | explicit manual recovery |
+```text
+                         AGENT
+                           │
+               gnome-wayland-computer-use
+                    policy / routing
+                           │
+          ┌────────────────┴────────────────┐
+          │                                 │
+          ▼                                 ▼
+     OBSERVATION                         CONTROL
+ XDG ScreenCast                       Cua Driver
+       │                                  │
+   PipeWire                         ┌──────┴──────┐
+       │                            │             │
+ visible pixels                  AT-SPI       WinRects
+                                    │             │
+                              semantic AX     Mutter truth
+                                                │
+                                        geometry / activation
+                                        Cua cursor / capture
+                                        focus verification
+```
 
-**There is no GNOME Shell extension in the architecture.**
+The rule is:
 
-Older releases of this repository shipped
-`desktop-capture@gnome-wayland-computer-use` and accidentally coupled a desktop
-fallback to a separate WinRects helper. Version 2.3 retires the project-owned
-capture extension during install and does not require WinRects. Missing semantic
-window geometry now degrades to pixels instead of another Shell helper.
+> **Preserve foreground by default. Change it only when the requested interaction cannot be safely delivered otherwise. Verify the exact target before focus-bound input.**
 
-## Why this matters
+Escalation:
 
-A GLFW/Vulkan renderer can be plainly visible and still expose no useful AT-SPI
-surface. On such an app, an empty `list_windows` result is not proof that the
-window is absent. The visible screen is the authoritative evidence surface.
-
-Conversely, an accessible text field does not need a screenshot between every
-click and keystroke. The skill keeps deterministic semantic actions together
-and observes again only when the next decision depends on changed state.
-
-That combination is the point: **semantic where possible, visual where
-necessary, neither confused for the other.**
+1. semantic background;
+2. target-addressed semantic or pixel route;
+3. exact activation + verified foreground;
+4. `ydotool` recovery where appropriate;
+5. structured refusal when Wayland makes the requested delivery shape unsafe or impossible.
 
 ## Install
 
@@ -69,23 +82,49 @@ Run as the logged-in desktop user:
 curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh | bash
 ```
 
-The installer prefers Hermes when it is present; otherwise it installs the
-shared Agent Skill stack under `~/.agents/skills/`.
-
 ```text
---hermes      require Hermes integration
---agent-only  install the shared stack without Hermes
+--hermes      require Hermes + Cua GNOME precision profile
+--agent-only  install the shared stack without acquiring Hermes/Cua/WinRects
 --compat      relax the GNOME/Wayland environment preflight
 --unattended  mark automated execution
 ```
 
-The host stack enables toolkit accessibility, installs the shared skill and
-capture helper, configures the explicit `/dev/uinput` fallback, and connects the
-Hermes runtime when selected.
+### Ubuntu 26.04 foundation
 
-A session sign-out/sign-in is needed only when the installer newly adds the user
-to the `input` group. **Capture itself does not require a session reload or a
-Shell extension.**
+A normal Ubuntu 26.04 GNOME desktop already includes PipeWire/WirePlumber as
+platform infrastructure. The installer **verifies first** and only repairs an
+incomplete host with official Ubuntu packages such as `pipewire`,
+`pipewire-pulse`, `wireplumber`, `xdg-desktop-portal`,
+`xdg-desktop-portal-gnome`, `gstreamer1.0-pipewire`, and the required GStreamer
+support. These are host foundation packages, not project-owned services.
+
+### Hermes / Cua profile
+
+When Hermes integration is selected, the installer:
+
+1. installs/locates `cua-driver`;
+2. uses Cua's documented packaged helper only:
+   `~/.cua-driver/packages/current/wayland-helper/install.sh`;
+3. installs/updates `winrects@cua` from that Cua package;
+4. records `cua-winrects-managed` only if this project caused WinRects to be
+   installed;
+5. reports whether GNOME precision is ready or requires one session reload.
+
+If the installed Cua package does not contain the helper, the precision
+capability degrades cleanly. The project does **not** download a guessed copy of
+the extension.
+
+### One session reload, explained
+
+A full install may need one GNOME sign-out/sign-in for either or both reasons:
+
+```text
+SESSION RELOAD REQUIRED
+├── new input-group membership
+└── WinRects newly installed/updated and not loaded
+```
+
+Native ScreenCast capture and AT-SPI can already be ready before that reload.
 
 ## Native screen capture
 
@@ -97,86 +136,75 @@ CAPTURE="$HOME/.agents/skills/gnome-wayland-computer-use/scripts/capture.sh"
 "$CAPTURE" --media --screen
 ```
 
-`--desktop` remains accepted for old callers, but it is now an alias for the
-real visible display. The helper no longer hides windows to manufacture a
-special wallpaper/icons layer.
+`--desktop` remains a compatibility alias for the visible display. Wallpaper is
+configuration data; the project never hides application windows to manufacture
+a special desktop layer.
 
-### Capture order
+Capture order stays independent from Cua:
 
-1. **XDG ScreenCast + PipeWire** — the hot path. The portal selects one monitor,
-   and on portal v4+ the helper requests `persist_mode=2`. A restore token is
-   stored under the user's state directory and rotated after every successful
-   restoration.
-2. **XDG Screenshot portal** — one-shot recovery path.
-3. **`gnome-screenshot`** — compatibility for older GNOME releases only. GNOME
-   49+ is skipped because its legacy Shell path is no longer a reliable surface.
+1. **XDG ScreenCast + PipeWire** — hot path, with persistent permission and
+   rotating restore token where supported;
+2. **XDG Screenshot portal** — one-shot recovery;
+3. **`gnome-screenshot`** — older-GNOME compatibility only;
 4. **Shift+Print through `ydotool`** — final hardware-level recovery.
 
-The first ScreenCast capture may show GNOME's monitor-sharing chooser. That is a
-real permission boundary, not installer ceremony. Once persistence is granted,
-subsequent captures restore the selected source instead of rebuilding the
-permission decision from scratch.
+If the user denies ScreenCast consent, denial is authoritative. The helper does
+not surprise them with another permission UI. Writes are atomic.
 
-If the user cancels the chooser, the helper stops rather than surprising them
-with a second permission UI.
+## Semantics and GNOME precision
 
-Writes are atomic: a failed capture never replaces an existing output file.
-`--timing` emits `capture_elapsed_ms=N` on stderr.
+AT-SPI remains the cheapest and least disruptive route when applications expose
+roles/actions/values.
 
-## Wallpaper versus screen
+Cua's WinRects adapter belongs to **control**, not capture routing. On GNOME it
+can give Cua authoritative window/frame geometry, reconstruct screen coordinates
+for GTK4 AT-SPI cases, activate an exact Shell window, verify focus before
+focus-bound portal/libei input, capture from the compositor for Cua's own
+window/capture path, and draw the compositor-owned agent cursor.
 
-If the user wants **what is currently visible**, capture the screen.
+This repository provisions that adapter for the Cua-backed profile and diagnoses
+its state. It does not duplicate the helper protocol or call it from
+`scripts/capture.sh`.
 
-If the user wants **the wallpaper image itself**, resolve GNOME's configured
-background asset (`org.gnome.desktop.background`) instead of hiding windows and
-calling that a screenshot.
+## Pixel-only surfaces are real citizens
 
-If desktop icons are supplied by another extension, they are simply visible
-screen content. This project does not couple itself to that extension's private
-geometry or scene graph.
+A GLFW/Vulkan/game/canvas/custom-rendered window can be plainly visible while
+exposing little or no AT-SPI structure. Accessibility inventory is evidence of
+semantic reachability, **not visual existence**.
 
-## Accessible apps versus pixel-only apps
+Routing becomes:
 
-For accessible applications, begin with the runtime's AX-only inspection.
-Escalate to pixels only when layout, canvas content, or inaccessible controls
-make pixels relevant.
-
-For GLFW, Vulkan, games, canvas-heavy applications, remote-viewer surfaces, or
-other custom-rendered windows:
-
-1. capture the visible display;
-2. locate the surface visually;
-3. use coordinate actions from that fresh image;
-4. recapture after layout-changing operations;
-5. use ordinary overview/Alt-Tab/foreground selection if the target is obscured.
-
-Do not repeatedly probe AT-SPI for a surface that has no accessibility contract,
-and do not install a Shell helper just to make semantic inventory look complete.
-
-## Installed web apps stay apps
-
-Standalone Chrome/Chromium/Brave/Edge/Firefox apps are resolved from live
-identity first, then desktop IDs, `StartupWMClass`, and launcher flags such as
-`--app-id=` / `--app=`.
-
-```bash
-~/.agents/skills/gnome-wayland-computer-use/scripts/app-identity.sh "ChatGPT"
+```text
+target known?
+    │
+    ├─ semantic target available
+    │      → AX / background first
+    │
+    └─ semantic target unavailable
+           │
+           ├─ Cua can resolve a GNOME window
+           │      → WinRects-backed geometry + pixels
+           │      → verified foreground when necessary
+           │
+           └─ no trustworthy window target
+                  → visible-screen pixels
+                  → normal foreground discovery
+                  → retry target binding
 ```
 
-The launcher inventory is cached briefly, so two PWAs backed by the same browser
-remain distinct targets without paying for repeated discovery.
+A visible custom renderer is therefore **pixel-only**, not absent. WinRects may
+make its window precisely addressable even when its controls remain non-semantic.
+An occluded custom renderer with no trustworthy target route should escalate to
+foreground discovery or refuse rather than guess.
 
-## Computer-use operating model
+## Latency model
 
-> **Route once → cheapest truthful evidence → semantic action span → verify at the next decision boundary.**
+> **Route once → cheapest truthful evidence → deterministic action span → verify at the next decision boundary.**
 
-A confirmed field click can flow directly into complete text entry. A known
-submit shortcut can follow verified typing. A structured driver verdict can be
-verification when it actually proves the requested state.
-
-Fresh evidence belongs at navigation, new dialogs, material list/layout changes,
-stale element identity, pixel-only ambiguity, foreground escalation, or another
-point where the next action depends on new UI state.
+ScreenCast remains independently useful even if Cua/WinRects is unavailable.
+Conversely, Cua's own GNOME control/capture path can remain useful if this
+project's ScreenCast path is degraded. That is real redundancy instead of a
+chain of duplicated helpers.
 
 ## Diagnose
 
@@ -185,21 +213,60 @@ point where the next action depends on new UI state.
 ~/.agents/skills/gnome-wayland-computer-use/scripts/diagnose.sh --json
 ```
 
-The capture section proves:
+Diagnostics are capability-oriented:
 
-- XDG ScreenCast portal — hot path
-- PipeWire/GStreamer capture stack
-- XDG Screenshot portal — recovery
-- restore-token state — cached or first-capture pending
-- legacy project capture extension — **absent is healthy**
+```text
+── Observation
+✓ XDG ScreenCast
+✓ PipeWire core
+✓ WirePlumber
+✓ GStreamer PipeWire bridge
+✓ ScreenCast restore token state
+✓ XDG Screenshot recovery
 
-It separately reports AT-SPI, the runtime integration, `/dev/uinput`, and
-`ydotoold`.
+── Semantic control
+✓ toolkit accessibility
+✓ AT-SPI bus/socket
 
-A custom-rendered app missing from `list_windows` is not diagnosed as a broken
-capture stack. Capture and semantic inventory are intentionally separate.
+── Cua GNOME precision
+✓ cua-driver
+✓ Cua package wayland-helper
+✓ Cua WinRects installed
+✓ winrects@cua ACTIVE
+✓ org.cua.WinRects served by GNOME Shell
 
-## Tests
+── Input recovery
+✓ /dev/uinput
+✓ input group
+✓ ydotoold
+
+── Migration
+✓ obsolete project capture extension removed
+
+Observation:       READY
+Semantic control:  READY
+GNOME precision:   READY
+Input recovery:    READY
+```
+
+Before the one required GNOME reload, precision reports `RELOAD REQUIRED`
+instead of pretending the adapter is live.
+
+## Ownership and teardown
+
+State owned by this project lives under:
+
+```text
+~/.local/state/gnome-wayland-computer-use/
+    screencast-restore-token
+    cua-winrects-managed   # only when this installer caused installation
+```
+
+Teardown offers to remove WinRects only when that ownership marker exists. A
+pre-existing Cua WinRects installation is preserved. The obsolete project
+capture extension is always treated as migration debris and removed if found.
+
+## Tests and release smoke
 
 ```bash
 bash ./tests/skill-ux.sh
@@ -207,49 +274,37 @@ bash ./tests/latency-routing.sh
 ./tests/run.sh
 ```
 
-The regression suite protects portal-first capture, restore-token persistence,
-atomic writes, cancellation behavior, the absence of Shell-helper dependencies,
-pixel-only recovery guidance, installed-web-app identity, and the runtime skill
-contract.
+The regression contract protects the boundary:
 
-## Operational notes
+- `capture.sh` contains no WinRects call or project Shell service;
+- ScreenCast remains the first capture rung;
+- portal denial remains terminal;
+- restore tokens rotate;
+- Cua's own helper installer is used only for the Cua-backed profile;
+- agent-only setup never acquires Cua solely for WinRects;
+- installed/active/reload-required WinRects states are distinct;
+- pre-existing WinRects ownership is preserved;
+- pixel-only surface guidance remains first-class.
 
-- Ubuntu 26.04 / GNOME 50 is the production target.
-- XDG ScreenCast v4+ supplies persistent restore tokens; newer portal versions
-  remain compatible with the node-ID stream path used here.
-- Accessibility quality depends on the target application's AT-SPI support.
-- `ydotool` is a last resort, not the screen-capture architecture.
-- The runtime may have its own imperfect window inventory. The skill treats it
-  as advisory and uses pixels for visible custom surfaces.
-- Hermes skill archives remain under
-  `~/.hermes/backups/gnome-wayland-computer-use/` and can be restored by
-  teardown.
+Required live GNOME 50 smoke before release includes cold/warm ScreenCast,
+restore-token rotation, AT-SPI background action, WinRects ACTIVE after reload,
+verified target activation, pixel-only GLFW/Vulkan grounding, GNOME 50 legacy
+capture avoidance, and teardown preserving unrelated extensions.
 
-## Uninstall
-
-```bash
-~/.agents/skills/gnome-wayland-computer-use/scripts/teardown.sh
-```
-
-Teardown removes managed services/routing/skills and restores archived Hermes
-skills. It also cleans up this project's legacy capture extension if an old
-install left one behind. It does not touch unrelated Shell extensions such as a
-user-installed WinRects helper.
+Mutter Devkit is a strong future automation target for HiDPI/fractional-scaling
+and virtual multi-monitor validation, but it is not a 2.3 runtime dependency.
 
 ## Repository map
 
 | Path | Purpose |
 |---|---|
-| `install.sh` | self-contained local and curl-pipe installer |
+| `install.sh` | host foundation, skill install, Cua profile provisioning |
 | `SKILL.md` | Hermes-native computer-use contract |
 | `runtimes/openai/SKILL.md` | portable/OpenAI-native contract |
-| `scripts/capture.sh` | ScreenCast/PipeWire capture + recovery ladder |
-| `scripts/app-identity.sh` | cached browser/PWA/Electron identity resolver |
-| `scripts/diagnose.sh` | human + JSON host diagnostics |
-| `scripts/serve.sh` | Hermes `cua-driver` backend wrapper |
-| `scripts/teardown.sh` | managed removal and skill restoration |
-| `lib/checks.sh` | shared health predicates |
-| `CAPABILITIES.md` | capability map and degradation rules |
-| `PERF_NOTES.md` | latency model and measurement guidance |
-| `references/skill-ux-contract.md` | workflow/authorization proof contract |
-| `tests/` | regression, routing, and skill UX guards |
+| `scripts/capture.sh` | independent ScreenCast/PipeWire observation ladder |
+| `scripts/diagnose.sh` | capability-oriented human + JSON diagnostics |
+| `scripts/teardown.sh` | ownership-aware removal and restoration |
+| `lib/checks.sh` | shared capability predicates |
+| `CAPABILITIES.md` | delivery-strength capability map |
+| `PERF_NOTES.md` | latency and redundancy model |
+| `tests/` | architecture/routing/skill UX guards |

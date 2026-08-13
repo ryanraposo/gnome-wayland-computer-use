@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="description" content="Fast closed-loop computer use for Ubuntu GNOME Wayland: accessibility when semantics exist, pixels when they do not, native portals for the screen.">
+  <meta name="description" content="GNOME-native computer use for Ubuntu: ScreenCast observation, AT-SPI semantics, Cua WinRects precision, truthful escalation.">
   <title>gnome-wayland-computer-use</title>
   <style>
     :root { color-scheme: light dark; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
     body { max-width: 900px; margin: 0 auto; padding: 56px 24px 96px; line-height: 1.55; }
     h1 { font-size: clamp(2rem, 6vw, 4.4rem); line-height: .95; letter-spacing: -.06em; margin: 16px 0 22px; }
     h2 { margin-top: 48px; letter-spacing: -.03em; }
-    .hero { font-size: 1.15rem; max-width: 720px; }
+    .hero { font-size: 1.15rem; max-width: 760px; }
     .mark { white-space: pre; font-weight: 700; }
     .pill { display: inline-block; border: 1px solid currentColor; border-radius: 999px; padding: 4px 10px; margin: 2px 4px 2px 0; font-size: .82rem; }
     pre { overflow-x: auto; padding: 16px; border: 1px solid color-mix(in srgb, currentColor 28%, transparent); border-radius: 12px; }
@@ -28,48 +28,59 @@
     █  ███  █
      ▀▀   ▀▀</div>
 
-  <h1>GNOME Wayland<br>computer use.</h1>
-  <p class="hero">Accessibility when semantics exist. Pixels when they do not. Native XDG portals for the screen.</p>
+  <h1>GNOME-native capture<br>and precision control.</h1>
+  <p class="hero">Accessibility when semantics exist. Pixels when they do not. Compositor precision when GNOME requires it.</p>
   <p>
     <span class="pill">Ubuntu 26.04</span>
     <span class="pill">GNOME 50</span>
     <span class="pill">Wayland</span>
-    <span class="pill">Hermes + Agent Skills</span>
+    <span class="pill">Hermes + Cua</span>
   </p>
 
   <h2>Install</h2>
   <pre><code>curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh | bash</code></pre>
 
-  <h2>No Shell helper required.</h2>
-  <p>Version 2.3 removes the project-owned desktop-capture extension and the accidental WinRects dependency from capture. Missing semantic geometry degrades to visible pixels instead of another GNOME Shell extension.</p>
-
+  <h2>Four planes. One honest contract.</h2>
   <table>
-    <tr><th>Need</th><th>Primary</th><th>Recovery</th></tr>
-    <tr><td>Accessible UI</td><td>AT-SPI / native driver</td><td>pixels → foreground</td></tr>
-    <tr><td>Visible screen</td><td>XDG ScreenCast + PipeWire</td><td>Screenshot portal → Shift+Print</td></tr>
-    <tr><td>GLFW / Vulkan / canvas</td><td>screen pixels + coordinates</td><td>normal window selection</td></tr>
-    <tr><td>Installed web apps</td><td>live identity + launcher cache</td><td>browser identity</td></tr>
+    <tr><th>Plane</th><th>Surface</th><th>Job</th></tr>
+    <tr><td>Observation</td><td>XDG ScreenCast + PipeWire</td><td>visible pixels</td></tr>
+    <tr><td>Semantics</td><td>AT-SPI / Cua AX</td><td>background-first structured control</td></tr>
+    <tr><td>GNOME precision</td><td>Cua + WinRects</td><td>Mutter geometry, verified activation, agent cursor</td></tr>
+    <tr><td>Recovery</td><td>verified foreground → ydotool</td><td>explicit escalation</td></tr>
   </table>
 
+  <h2>Native capture. GNOME-aware control.</h2>
+  <p>Screen observation uses XDG ScreenCast + PipeWire and remains independent of Shell helpers. The project-owned desktop-capture extension is retired. For the full Hermes/Cua profile, Cua's bundled <code>winrects@cua</code> adapter supplies authoritative Mutter geometry and verified activation through Cua itself.</p>
+  <p><code>capture.sh</code> never calls WinRects and this project never vendors its protocol.</p>
+
+  <h2>Ubuntu already has the foundation.</h2>
+  <p>Ubuntu 26.04 GNOME normally ships PipeWire and WirePlumber. The installer verifies that native foundation first, then repairs missing official portal/PipeWire/GStreamer packages only when a host is incomplete.</p>
+
   <h2>Fast capture after one real permission.</h2>
-  <p>The hot path is ScreenCast + PipeWire. On portal v4+, the helper requests persistent permission and rotates the single-use restore token after every restored session. The one-shot Screenshot portal is recovery, not the steady-state architecture.</p>
+  <p>The hot path is ScreenCast + PipeWire. Persistent restore tokens turn the monitor chooser into a first-use/revocation boundary. Screenshot portal and Shift+Print are recovery, not steady-state architecture.</p>
   <pre><code>CAPTURE="$HOME/.agents/skills/gnome-wayland-computer-use/scripts/capture.sh"
 "$CAPTURE" --timing --screen /tmp/screen.png</code></pre>
-  <p>The first capture may ask you to choose a monitor. Later calls restore the approved source while permission remains valid.</p>
+
+  <h2>Preserve foreground. Escalate truthfully.</h2>
+  <p>Semantic background comes first. Then target-addressed semantic/pixel delivery. If a task genuinely requires focus-bound input, Cua activates and verifies the intended GNOME target before delivery. Unsafe occluded delivery refuses instead of guessing.</p>
 
   <h2>Pixel-only means pixel-only.</h2>
-  <p>A Vulkan or GLFW window can be plainly visible while exposing no useful AT-SPI tree and no semantic window record. The skill does not confuse that with absence. It captures the display, grounds visually, and acts by coordinates.</p>
+  <p>A Vulkan or GLFW window can be visibly real while exposing no useful AT-SPI tree. Pixels establish visual existence; Cua WinRects may still make that window precisely addressable. No repeated AX séance required.</p>
 
   <h2>Installed web apps stay apps.</h2>
-  <p>Standalone browser-backed apps keep their own identity through live window data, desktop IDs, <code>StartupWMClass</code>, <code>--app-id=</code>, and <code>--app=</code>. The resolver caches launcher inventory instead of rediscovering it every turn.</p>
+  <p>Standalone browser-backed apps keep their own identity through live window data, desktop IDs, <code>StartupWMClass</code>, <code>--app-id=</code>, and <code>--app=</code>.</p>
 
   <h2>Route once → cheapest truthful evidence.</h2>
-  <p>AX for readable state. Pixels for custom rendering. Deterministic click → type and type → submit spans stay together. Fresh evidence is paid for at real decision boundaries, not after every input.</p>
+  <p>AX for semantics. ScreenCast for pixels. Cua/Mutter precision where GNOME knowledge adds real capability. Fresh evidence at actual decision boundaries.</p>
 
-  <h2>Diagnose the actual layers.</h2>
+  <h2>Diagnose capability, not a score.</h2>
   <pre><code>~/.agents/skills/gnome-wayland-computer-use/scripts/diagnose.sh</code></pre>
-  <p>A healthy capture stack reports ScreenCast, PipeWire/GStreamer, Screenshot recovery, restore-token state, and <span class="good">legacy capture extension absent</span>.</p>
+  <pre><code>Observation:       READY
+Semantic control:  READY
+GNOME precision:   READY
+Input recovery:    READY</code></pre>
+  <p>Before the one required Shell reload, GNOME precision says <span class="good">RELOAD REQUIRED</span> instead of pretending WinRects is live.</p>
 
-  <footer>gnome-wayland-computer-use · MIT · Ryan Raposo</footer>
+  <footer>gnome-wayland-computer-use · 2.3.0 · MIT · Ryan Raposo</footer>
 </body>
 </html>

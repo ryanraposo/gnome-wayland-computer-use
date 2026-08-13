@@ -18,9 +18,17 @@ metadata:
 ## Overview
 
 Drive real Ubuntu GNOME Wayland applications with Hermes's native
-`computer_use` tool. Use AT-SPI when the application exposes semantics, the
-visible screen when pixels are the only truth, and native XDG portals for
-screen capture. No GNOME Shell helper extension is part of this skill.
+`computer_use` tool.
+
+Use four planes deliberately:
+
+- **Observation:** XDG ScreenCast + PipeWire.
+- **Semantics:** AT-SPI / Cua AX.
+- **GNOME precision:** Cua + its bundled WinRects Mutter adapter.
+- **Recovery:** verified foreground delivery, then `/dev/uinput` + `ydotool` only
+  when appropriate.
+
+> **Accessibility when semantics exist. Pixels when they do not. Compositor precision when GNOME requires it.**
 
 The operating model is:
 
@@ -39,45 +47,57 @@ update check.
 
 Take control when invoked. Do the work rather than merely describing the skill.
 
-1. **Route** — resolve the target as an app, installed web app, browser,
-   pixel-only surface, screen, terminal task, or privileged host action.
-2. **Observe** — use the cheapest evidence that can answer the next decision.
-3. **Act** — perform the largest deterministic semantic action span the live
-   tool supports without crossing a decision or authorization boundary.
-4. **Verify** — accept structured read-back when it proves the requested state;
+1. **Route** — resolve the target as semantic UI, a known GNOME window,
+   pixel-only surface, visible screen, terminal task, or privileged host action.
+2. **Observe** — use the cheapest truthful evidence that answers the next
+   decision.
+3. **Act** — perform the largest deterministic action span that remains inside
+   the requested target and authorization boundary.
+4. **Verify** — accept structured read-back when it proves the postcondition;
    otherwise obtain the cheapest fresh evidence that can.
-5. **Recover or complete** — change strategy after a failed rung, or finish from
-   observable proof.
+5. **Recover or complete** — change delivery strategy after a failed rung. Never
+   fake success or repeat the same failed rung blindly.
 
-Infer reversible, local, background-first defaults. Ask only questions that
-materially change the target, outcome, or authorization boundary. Before an
-external, destructive, privileged, or otherwise irreversible action, preview
-the exact effect and obtain the required authorization.
-
-For longer work, surface the active phase when work begins, strategy changes,
-or user action becomes necessary. Do not narrate every click.
+Infer reversible, local, foreground-preserving defaults. Ask only questions that
+materially change target, outcome, or authorization. Before external,
+destructive, privileged, or otherwise irreversible actions, preview the exact
+effect and obtain required authorization.
 
 Read `references/skill-ux-contract.md` when ambiguity, recovery, privilege, or a
 multi-step mutation makes the governing boundary relevant.
+
+## Foreground Preservation Contract
+
+Preserve the user's foreground by default. Change it only when the requested
+interaction cannot be safely delivered otherwise. Verify the exact target before
+focus-bound input.
+
+Escalate in this order:
+
+1. semantic background;
+2. target-addressed semantic or pixel route;
+3. exact activation + verified foreground;
+4. `ydotool` recovery where appropriate;
+5. structured refusal when Wayland makes safe delivery impossible.
+
+Treat `background_unavailable` / `background_occluded` as useful safety signals,
+not invitations to inject into whatever window happens to be focused.
 
 ## Route the Target Correctly
 
 - **Accessible native app:** use `computer_use`, scoped with `app=` when useful.
 - **Installed web app/PWA:** preserve its own launcher/window identity instead
   of collapsing it into the browser engine.
-- **Ordinary browser tab:** prefer browser tooling when native browser UI is not
-  part of the task.
-- **Pixel-only app:** if a visible GLFW, Vulkan, game, canvas, remote-viewer, or
-  custom-rendered surface is absent from AX/window inventory, treat that as an
-  accessibility limitation — not evidence that the window is absent. Use a
-  visible-screen capture and coordinate actions.
-- **Screen / desktop screenshot:** use the installed capture helper. Both names
-  mean the real visible display; there is no synthetic wallpaper-only layer.
-- **Wallpaper asset:** resolve the configured GNOME background file directly
-  when the user wants the image itself instead of hiding windows to manufacture
-  a desktop screenshot.
+- **Ordinary browser task:** prefer browser tooling when native browser chrome is
+  not part of the task.
+- **Pixel-only app:** a visible GLFW/Vulkan/game/canvas/custom-rendered surface
+  may be absent from AT-SPI. Treat that as an accessibility limitation, not
+  evidence that the window is absent.
+- **Screen / desktop screenshot:** use the installed ScreenCast helper. Both
+  names mean the visible display; there is no synthetic wallpaper-only layer.
+- **Wallpaper asset:** resolve GNOME's configured background file directly.
 - **Package/admin action:** use a narrow `pkexec` command after explaining the
-  intended change. Never type a password or open a general-purpose root shell.
+  intended change. Never type a password or open a general root shell.
 
 ## Installed Web App Identity
 
@@ -90,21 +110,19 @@ Electron-backed window into the browser executable. Prefer, in order:
 4. accessible application/window naming as supporting evidence;
 5. generic browser identity only when it is genuinely browser chrome/tabs.
 
-When ambiguity remains, query installed launchers once:
+When ambiguity remains:
 
 ```bash
 "$HOME/.hermes/skills/computer-use/scripts/app-identity.sh" "<app name>"
 ```
 
-Reuse that identity until the target disappears, changes identity, or a scoped
-operation proves the cached decision wrong.
+Reuse the result until the target disappears, changes identity, or scoped action
+feedback proves the cached decision wrong.
 
 ## Execution State Machine
 
-List apps/windows only when target identity is genuinely ambiguous. A native
-window inventory is advisory on Wayland because inaccessible custom surfaces
-can be visible without participating in AT-SPI or the driver's semantic window
-model.
+List apps/windows only when target identity is genuinely ambiguous. Semantic
+inventory is advisory on Wayland.
 
 For accessible apps, start cheap:
 
@@ -112,42 +130,69 @@ For accessible apps, start cheap:
 computer_use(action="capture", mode="ax", app="<target app>")
 ```
 
-Escalate to `vision` for visual-only inspection and to `som` when an action
-needs pixels plus element grounding:
+Escalate to `vision` for visual-only inspection and `som` only when both pixels
+and element grounding are needed.
+
+For a semantic-missing target:
 
 ```text
-computer_use(action="capture", mode="som", app="<target app>")
-computer_use(action="click", element=7)
+target known?
+    │
+    ├─ semantic target available
+    │      → AX / background first
+    │
+    └─ semantic target unavailable
+           │
+           ├─ Cua can resolve a GNOME window
+           │      → Cua/WinRects geometry + pixels
+           │      → verified foreground when necessary
+           │
+           └─ no trustworthy window target
+                  → visible-screen pixels
+                  → normal foreground discovery
+                  → retry target binding or refuse
 ```
 
-For a pixel-only target that is missing from app/window discovery, capture the
-visible display instead:
+Use the runtime's own Cua capabilities. Do **not** call `org.cua.WinRects`
+directly or recreate Cua's helper protocol.
 
-```bash
-"$HOME/.hermes/skills/computer-use/scripts/capture.sh" --media --screen
-```
+Treat every element index as short-lived across structural mutations,
+navigation, dialogs, or recapture that remaps elements.
 
-Then use coordinates from that fresh image. If the target is obscured, use an
-ordinary user-visible window-selection action such as the overview or Alt-Tab;
-do not install a Shell extension merely to obtain rectangles.
+## Cua GNOME Precision
 
-Treat every element index as a short-lived token. A capture or structural UI
-mutation can invalidate it. Re-capture when navigation, dialogs, list changes,
-or stale-element feedback make the old map unreliable.
+For the Hermes/Cua profile, `winrects@cua` is Cua's GNOME/Mutter platform
+adapter, not a capture dependency owned by this project.
+
+When active, Cua may use it for:
+
+- authoritative window frame/buffer geometry;
+- reconstruction of GTK4 screen coordinates from window-relative AT-SPI data;
+- exact target activation and focus verification before focus-bound input;
+- Cua's own compositor capture/window path;
+- the compositor-owned agent cursor.
+
+Use those capabilities through `computer_use` and its live schema.
+
+WinRects does **not** imply arbitrary raw background pixel input into an
+occluded native-Wayland surface. If the runtime cannot safely address the target,
+escalate foreground discovery or refuse.
+
+If diagnostics report `GNOME precision: RELOAD REQUIRED`, ScreenCast and AT-SPI
+may still work; one GNOME sign-out/in is needed before the compositor helper is
+live.
 
 ## Closed-Loop Control
 
-A successful call is evidence only when its returned state proves the requested
+A successful call is evidence only when returned state proves the requested
 postcondition.
 
-- `effect="confirmed"`, `verified=true`: continue when the read-back proves the
+- `effect="confirmed"`, `verified=true`: continue when read-back proves the
   needed state.
-- `effect="unverifiable"`: obtain the cheapest fresh evidence that can verify
-  the result.
-- `effect="suspected_noop"`, `background_unavailable`, or an explicit
-  escalation recommendation: climb one rung and change strategy.
-- A target missing from AX or semantic window inventory but clearly present in
-  the visible-screen capture is **pixel-only**, not absent.
+- `effect="unverifiable"`: obtain the cheapest fresh evidence that can verify.
+- `effect="suspected_noop"`, `background_unavailable`, or explicit escalation:
+  climb one rung and change strategy.
+- target missing from AX but clearly visible: **pixel-only**, not absent.
 
 Never retry the same failed rung blindly.
 
@@ -155,21 +200,18 @@ Never retry the same failed rung blindly.
 
 Spend tool/model round-trips only where a decision changes.
 
-- Cache resolved app identity for the current target.
+- Cache resolved app/window identity.
 - Use one complete `type(text="...")` call instead of character/chunk loops.
-- Send shortcuts as one `key` action.
-- Prefer semantic `set_value` to opening and re-reading controls.
-- Use useful scroll increments, then observe only when newly revealed content
-  changes the next decision.
-- A confirmed field click may be followed immediately by deterministic typing.
+- Send shortcuts as one key action.
+- Prefer semantic `set_value` over opening and re-reading controls.
+- Use useful scroll increments, then observe when newly revealed content changes
+  the next decision.
+- A confirmed field click may flow directly into deterministic typing.
 - A known submit hotkey may follow verified typing without an intermediate
-  screenshot when the next action does not depend on newly rendered state.
+  screenshot.
 - Use `capture_after=true` only at a real decision boundary.
-- Use `wait` for an actual asynchronous transition, never as habitual pacing.
-
-A semantic action span ends when the next action depends on fresh UI state,
-element identity changed, user authorization is required, or delivery cannot be
-proven.
+- Use `wait` for genuine asynchronous transitions, never habitual pacing.
+- Prefer Cua's verified target activation to repeated focus guessing.
 
 ## Hermes Action Vocabulary
 
@@ -190,26 +232,7 @@ list_windows
 focus_app     app="...", raise_window=false
 ```
 
-All state-changing actions may expose `capture_after=true`. Input actions may
-also expose background/foreground delivery. Use only arguments present in the
-live runtime schema.
-
-## Background-First Escalation
-
-Prefer, in order:
-
-1. accessible semantic action in background mode;
-2. pixel coordinate from the latest relevant image;
-3. foreground delivery when background delivery failed or the task inherently
-   requires bringing the app forward;
-4. raw `ydotool` only after the native driver path cannot complete the action.
-
-Keep `raise_window=false` unless the visible task requires foregrounding. Do
-not use foreground delivery while the user is actively typing elsewhere.
-
-The skill does **not** require WinRects or any other Shell window-geometry
-helper. If the driver's window inventory is incomplete, fall back to visible
-pixels instead of repairing the inventory with an extension.
+Use only arguments present in the live runtime schema.
 
 ## Native Screen Capture
 
@@ -219,55 +242,51 @@ Use:
 "$HOME/.hermes/skills/computer-use/scripts/capture.sh" --media --screen
 ```
 
-`--desktop` is retained as a compatibility alias for the same visible display.
-There is intentionally no window-hiding or Shell-actor manipulation.
+`--desktop` is a compatibility alias for the same visible display. Screen
+observation requires no GNOME Shell extension.
 
 Capture order:
 
-1. **XDG ScreenCast + PipeWire** — selects one monitor and asks the portal for
-   persistent permission. On supported portal versions, `persist_mode=2` and a
-   rotating restore token allow later calls to restore the same source without
-   repeating the chooser.
-2. **XDG Screenshot portal** — one-shot recovery path.
-3. **`gnome-screenshot`** — legacy compatibility only on GNOME releases where
-   its old Shell path still works; GNOME 49+ is skipped.
+1. **XDG ScreenCast + PipeWire** — persistent restore token when supported;
+2. **XDG Screenshot portal** — one-shot recovery;
+3. **`gnome-screenshot`** — legacy compatibility only where viable;
 4. **Shift+Print through `ydotool`** — final hardware-level fallback.
 
-The first ScreenCast capture may require the user to choose/approve a monitor.
-That is a real desktop permission boundary. If the user cancels it, stop the
-capture chain instead of opening a second permission UI.
+Ubuntu 26.04 GNOME normally provides PipeWire/WirePlumber as platform
+infrastructure. The installer may repair missing official portal/PipeWire/
+GStreamer packages on an incomplete host.
 
-Add `--timing` while diagnosing latency; the helper emits
-`capture_elapsed_ms=N` on stderr. Writes are atomic: a failed capture never
-replaces an existing output file.
+The first ScreenCast capture may require monitor consent. If the user cancels,
+stop the capture chain instead of opening another permission UI.
 
-Do not substitute `grim`, `slurp`, ImageMagick `import`, a private Shell D-Bus
-method, or an ad-hoc GNOME Shell extension.
+`capture.sh` is deliberately independent from Cua WinRects. Do not substitute a
+private Shell D-Bus capture method, `grim`, `slurp`, ImageMagick screen grabbing,
+or an ad-hoc Shell extension.
 
 ## Pixel-Only Surfaces
 
-GLFW/Vulkan games, render demos, canvas-heavy tools, remote desktops, and other
-custom surfaces may expose no useful AT-SPI tree and may be omitted from
-`list_apps` / `list_windows` even while plainly visible.
+GLFW/Vulkan renderers, games, remote-viewer surfaces, canvas-heavy tools, and
+other custom surfaces may expose no useful AT-SPI tree.
 
 For these targets:
 
 1. obtain a fresh visible-screen image;
 2. locate the target visually;
-3. use coordinate actions from that image;
-4. recapture after layout-changing operations;
-5. use normal foreground/window-selection gestures if the target is obscured.
+3. if Cua resolves the GNOME window, use its authoritative geometry;
+4. use coordinate actions from fresh evidence;
+5. use verified foreground only when necessary;
+6. recapture after layout-changing operations.
 
-Do not spend repeated calls trying to make AX discover a surface that has no AX
-contract.
+If an occluded target cannot be safely resolved, discover it in the normal
+foreground or refuse. Do not inject blindly.
 
 ## High-Reliability Interaction Patterns
 
 ### Text fields and forms
 
 Capture AX, click the editable element, inspect the click verdict, then type the
-complete intended text. Re-observe only when the field action structurally
-changes the UI or delivery is unverified.
+complete intended text. Re-observe only when the field action changes the UI or
+delivery remains unverified.
 
 ### Menus, selects, and sliders
 
@@ -277,7 +296,7 @@ choose from the new element map.
 ### Dialogs and file choosers
 
 A dialog invalidates the old element map. Re-capture, fill deterministic fields
-in a useful span, then verify the submit/close boundary.
+in a useful span, then verify submit/close.
 
 ### Scrolling
 
@@ -287,7 +306,7 @@ content affects the next action.
 ### Drag and drop
 
 Prefer semantic source/destination elements; use coordinates for inaccessible
-canvas/drop zones and verify the final placement.
+canvas/drop zones and verify final placement.
 
 ## Privileged Package and Host Actions
 
@@ -297,9 +316,8 @@ For a user-authorized Ubuntu package install:
 pkexec apt-get install -y PACKAGE...
 ```
 
-Explain the change, invoke the smallest privileged command, and verify it
-without privilege afterward. Never request or type the user's password, use
-`sudo -S`, or launch a root terminal.
+Explain the change, invoke the smallest privileged command, and verify without
+privilege afterward. Never request or type the user's password or use `sudo -S`.
 
 ## Safety
 
@@ -307,22 +325,23 @@ without privilege afterward. Never request or type the user's password, use
 - Do not type secrets, payment data, passwords, or 2FA codes.
 - Do not approve permissions, purchases, account changes, destructive actions,
   or messages to other people without user scope.
-- Prefer app-scoped semantic evidence when it is sufficient; use full-screen
-  pixels when the target itself is pixel-only.
+- Preserve foreground when a background/target-addressed route exists.
+- Verify exact target before focus-bound input.
 - Stop before an irreversible external action when intent is unclear.
 
 ## Common Pitfalls
 
-- Treating `list_windows` as an oracle for custom-rendered Wayland surfaces.
-- Installing WinRects or another Shell extension to repair missing inventory.
+- Treating accessibility inventory as proof a custom Wayland window does not exist.
+- Treating WinRects as a `capture.sh` rung or direct project D-Bus dependency.
+- Claiming WinRects enables arbitrary hidden-window raw input.
 - Manufacturing a wallpaper-only screenshot by hiding windows.
-- Paying for SOM when AX alone answers the decision.
-- Capturing immediately after structured read-back already proves the result.
+- Paying for SOM when AX answers the decision.
+- Capturing after structured read-back already proves the result.
 - Typing one character/chunk per tool call.
 - Using fixed waits as pacing.
-- Reusing an element index after a structural UI mutation.
+- Reusing an element index after structural mutation.
 - Collapsing installed web apps into their browser engine.
-- Using coordinates from a stale or differently scaled image.
+- Using coordinates from stale or differently scaled evidence.
 
 ## Diagnostics
 
@@ -332,13 +351,21 @@ without privilege afterward. Never request or type the user's password, use
 "$HOME/.hermes/skills/computer-use/scripts/capture.sh" --timing --screen /tmp/screen.png
 ```
 
-Diagnostics should prove the XDG ScreenCast/Screenshot portal surfaces,
-accessibility bus, input recovery stack, and Hermes backend when selected. The
-absence of this repo's legacy capture extension is a healthy condition.
+Read the capability summary:
+
+```text
+Observation:       READY
+Semantic control:  READY
+GNOME precision:   READY | RELOAD REQUIRED | DEGRADED
+Input recovery:    READY | DEGRADED
+```
+
+The obsolete project capture extension should be absent. Cua WinRects should be
+installed/ACTIVE only for the Cua-backed profile.
 
 ## Completion Proof
 
-Before finishing, answer five things when they materially matter:
+Before finishing, answer five things when materially relevant:
 
 - **What** changed or was completed?
 - **Where** did it happen?
@@ -347,4 +374,4 @@ Before finishing, answer five things when they materially matter:
 - **How** was it verified?
 
 Use the strongest proof already available. Do not add a ceremonial screenshot
-when structured read-back already proves the result.
+when structured/Cua verification already proves the result.

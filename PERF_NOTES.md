@@ -1,17 +1,11 @@
 # Performance Notes
 
-The performance target is end-to-end computer-use latency, not the speed of an
-individual primitive in isolation.
+The performance target is end-to-end computer-use latency, not the speed of one
+primitive in isolation.
 
-## Rule
+> **Route once → cheapest truthful evidence → deterministic action span → verify at the next decision boundary.**
 
-> **Pay for evidence only when it changes the next decision.**
-
-An AX observation can be cheaper and stronger than a screenshot. A visible
-screen is stronger than repeated AX discovery for a GLFW/Vulkan surface. A
-structured action verdict can be stronger than an immediate recapture.
-
-## Capture latency model
+## Observation latency
 
 ### Hot path: ScreenCast + PipeWire
 
@@ -19,107 +13,89 @@ structured action verdict can be stronger than an immediate recapture.
 monitor when a restore token exists, opens the portal-scoped PipeWire remote,
 and pulls one PNG frame.
 
-On portal v4+, `persist_mode=2` allows the portal to return a restore token. The
-token is single-use and is replaced after each successful restoration.
+Ubuntu 26.04 GNOME already ships PipeWire/WirePlumber as desktop foundation. The
+installer verifies that baseline and repairs missing official portal/PipeWire/
+GStreamer packages only on incomplete hosts; it does not treat PipeWire as a
+project daemon.
 
 The first capture can be much slower because monitor-sharing consent is a real
 human permission boundary. Measure warm capture separately from first-use
 consent.
 
-### Recovery: Screenshot portal
+### Recovery
 
-The one-shot Screenshot portal is deliberately not the hot path. It remains a
-simple, trustworthy recovery surface, but on some GNOME 50 / Ubuntu 26 hosts it
-can take several seconds. Treat that as fallback latency, not the expected
-steady-state budget.
+The one-shot Screenshot portal is recovery, not the hot path. Legacy
+`gnome-screenshot` is skipped where modern GNOME no longer exposes a reliable
+path. Shift+Print through `ydotool` remains the final capture fallback.
 
-### Legacy and hardware recovery
+## Control latency
 
-`gnome-screenshot` is skipped on GNOME 49+ because its old Shell path is not a
-reliable modern interface. Shift+Print through `ydotool` is the final capture
-fallback and uses polling for screenshot-file creation instead of fixed sleeps.
+AT-SPI is cheapest when semantics exist. For Cua-backed GNOME control, WinRects
+can eliminate repeated uncertain geometry/focus discovery by supplying the
+runtime with authoritative Mutter geometry and verified activation.
 
-## Measure
+That does **not** make WinRects part of screen capture. Keeping ScreenCast and
+Cua control independent preserves two useful failure domains:
 
-```bash
-CAPTURE="$HOME/.agents/skills/gnome-wayland-computer-use/scripts/capture.sh"
-
-# First-use / permission-boundary measurement
-"$CAPTURE" --timing --screen /tmp/first.png
-
-# Warm restored-session measurement
-"$CAPTURE" --timing --screen /tmp/warm.png
-
-# Repeat a few warm samples
-for i in 1 2 3 4 5; do
-  "$CAPTURE" --timing --screen "/tmp/warm-$i.png"
-done
+```text
+Cua / WinRects degraded  → ScreenCast observation can survive
+ScreenCast degraded      → Cua control/capture paths may survive
 ```
 
-`capture_elapsed_ms=N` is emitted on stderr.
+Real redundancy is cheaper than duplicated mechanisms chained together.
 
-When diagnosing a slow capture, also run:
+## Pixel-only surfaces
 
-```bash
-~/.agents/skills/gnome-wayland-computer-use/scripts/diagnose.sh
-```
+Do not measure failed semantic discovery as productive latency. A visible
+GLFW/Vulkan/canvas window with no AT-SPI contract should move to pixels quickly.
 
-Look specifically for:
+If Cua can resolve its GNOME window, pair the fresh image with WinRects-backed
+geometry and use verified foreground only when required. If the target cannot be
+resolved safely, spend latency on foreground discovery—not repeated AX probes or
+blind raw input.
 
-- ScreenCast portal readiness;
-- PipeWire/GStreamer readiness;
-- whether a restore token is cached;
-- accidental fallback to the Screenshot portal;
-- legacy project capture extension absence.
-
-## Interaction latency
+## Decision-boundary savings
 
 The largest wins usually come from removing unnecessary observation/model
 round-trips:
 
-- resolve app identity once;
-- AX before pixels for accessible text/state;
+- resolve app/window identity once;
+- AX before pixels for accessible state;
 - one complete typing call;
 - one complete shortcut;
 - semantic value-setting instead of menu choreography;
 - useful scroll distances;
 - no screenshot between deterministic click → type;
 - no screenshot between verified type → known submit;
-- no ritual recapture when structured read-back already proves the state.
+- no ritual recapture when structured read-back already proves the state;
+- no repeated focus guessing when Cua has verified target activation.
 
-## Pixel-only surfaces
+## Measure separately
 
-Do not measure failed semantic discovery as if it were productive latency.
-For a GLFW/Vulkan/canvas surface that has no AT-SPI contract, repeated
-`list_windows`/AX/SOM attempts are pure overhead.
+1. first ScreenCast permission;
+2. warm ScreenCast restore + PipeWire frame;
+3. fallback capture;
+4. semantic background action;
+5. target-addressed pixel action;
+6. verified foreground activation + delivery;
+7. `ydotool` recovery;
+8. structured refusal / target rediscovery.
 
-Switch to the visible screen once the semantic path has proved unavailable.
-The next relevant latency budget is screen capture + visual grounding +
-coordinate delivery.
-
-## Budgets are separated
-
-Keep these measurements distinct:
-
-1. **first permission** — human chooser time;
-2. **warm capture** — restored ScreenCast + PipeWire frame;
-3. **fallback capture** — Screenshot portal or hardware shortcut;
-4. **semantic action** — runtime action + structured verification;
-5. **pixel action** — capture + visual grounding + coordinate delivery;
-6. **recovery** — foreground selection, fresh capture, or hardware fallback.
-
-Combining them into one average hides the reason a workflow is slow.
+Combining these into one average hides the reason a workflow is slow.
 
 ## Regression expectations
 
-Tests should guard architecture and ordering rather than brittle wall-clock
-numbers in CI:
+Tests should guard ordering and boundaries rather than brittle CI wall-clock
+numbers:
 
-- ScreenCast is attempted before Screenshot;
-- a denied ScreenCast permission does not open another capture UI;
-- technical ScreenCast failure can fall back;
-- `--desktop` does not invoke a window-hiding transaction;
-- no WinRects or project Shell-extension dependency is present;
+- ScreenCast precedes Screenshot;
+- consent denial is terminal;
+- restore tokens rotate;
+- `capture.sh` contains no WinRects call or project Shell service;
+- Cua's helper installer is used only for Cua-backed GNOME setup;
+- agent-only setup does not acquire Cua for WinRects;
+- WinRects installed/active/reload-required states are distinct;
+- pre-existing WinRects ownership is preserved;
 - failed capture preserves an existing output;
-- timing mode preserves the normal stdout/media contract;
-- runtime guidance moves inaccessible visible surfaces to pixels quickly.
+- runtime guidance moves pixel-only visible surfaces to pixels quickly;
+- focus-bound delivery is verified before input.
