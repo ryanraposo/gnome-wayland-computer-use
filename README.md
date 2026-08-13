@@ -190,7 +190,7 @@ Legend:
 [DECIDE] one route call
    │
    └── [TOOL #1] profile.sh route --machine ChatGPT
-         ├─ nearest .gwcu found
+         ├─ repo root or non-Git workspace .gwcu found
          ├─ exact app identity hit
          ├─ no launcher/PWA resolver
          ├─ no rewrite
@@ -237,19 +237,23 @@ Legend:
 ~/.gwcw/
 ├── .gwcu
 ├── scratch/
-└── experiments/
+├── experiments/
+└── repos/
+    └── project/       # Git repo: project/.gwcu wins
 
 work in ~/.gwcw/scratch
    ↓
 [TOOL] route
+   ├─ not inside Git
    ├─ walk ancestors
    ├─ find ~/.gwcw/.gwcu
    ├─ reuse that scope
-   └─ no .gitignore operation: this scope is not Git
+   └─ no .gitignore operation
 ```
 
-The nearest-existing rule lets one general workspace carry durable local truths
-for all of its descendants.
+The nearest-existing rule lets one general **non-Git** workspace carry durable
+local truths for its descendants. A Git repository always owns an isolated root
+`.gwcu`, even when nested under that workspace.
 
 ## `.gwcu`: the local truth file
 
@@ -285,8 +289,8 @@ Scope resolution:
 
 ```text
 GWCU_SCOPE_ROOT override
-→ nearest ancestor already containing .gwcu
-→ Git worktree root
+→ Git worktree root, when inside Git
+→ nearest ancestor already containing .gwcu, outside Git
 → current working directory
 ```
 
