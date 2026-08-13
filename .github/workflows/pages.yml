@@ -19,11 +19,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Shell syntax check
-        run: bash -n install.sh lib/*.sh scripts/*.sh tests/*.sh
+        run: bash -n install.sh install-core.sh lib/*.sh scripts/*.sh tests/*.sh
+      - name: Python syntax check
+        run: python3 -m py_compile scripts/observer.py
       - name: Skill UX contract
         run: bash ./tests/skill-ux.sh
       - name: End-to-end latency and routing guards
         run: bash ./tests/latency-routing.sh
+      - name: Determinism contract
+        run: bash ./tests/determinism.sh
       - name: Regression suite
         run: ./tests/run.sh
   deploy:

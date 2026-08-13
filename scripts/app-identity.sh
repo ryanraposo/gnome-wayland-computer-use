@@ -1,216 +1,92 @@
 #!/usr/bin/env bash
-# app-identity.sh — cheaply distinguish installed web apps from browsers.
+# app-identity.sh — deterministic installed-app identity resolver.
 set -euo pipefail
-
-REFRESH=false
-QUERY=
+REFRESH=false; RESOLVE=false; MACHINE=false; QUERY=
 for arg in "$@"; do
-    case "$arg" in
-        --refresh) REFRESH=true ;;
-        --help|-h)
-            echo "Usage: $0 [--refresh] [query]"
-            echo "Lists browser/PWA/Electron desktop launchers as JSON."
-            exit 0
-            ;;
-        -*) echo "error: unknown option: $arg" >&2; exit 2 ;;
-        *)
-            if [ -n "$QUERY" ]; then
-                QUERY="$QUERY $arg"
-            else
-                QUERY="$arg"
-            fi
-            ;;
-    esac
+ case "$arg" in
+  --refresh) REFRESH=true;; --resolve) RESOLVE=true;; --machine) MACHINE=true;;
+  --help|-h) echo "Usage: $0 [--refresh] [--resolve] [--machine] [query]"; exit 0;;
+  -*) echo "error: unknown option: $arg" >&2; exit 2;;
+  *) if [ -n "$QUERY" ]; then QUERY="$QUERY $arg"; else QUERY="$arg"; fi;;
+ esac
 done
-
-PYTHON="${GNOME_WAYLAND_SYSTEM_PYTHON:-/usr/bin/python3}"
-[ -x "$PYTHON" ] || PYTHON="$(command -v python3 2>/dev/null || true)"
-[ -n "$PYTHON" ] || { echo 'python3 is required' >&2; exit 1; }
-
-CACHE_DIR="${XDG_RUNTIME_DIR:-/tmp}/gnome-wayland-computer-use"
-CACHE_FILE="$CACHE_DIR/app-identities.json"
-CACHE_SECONDS="${GNOME_WAYLAND_APP_IDENTITY_CACHE_SECONDS:-300}"
-mkdir -p "$CACHE_DIR"
-chmod 700 "$CACHE_DIR" 2>/dev/null || true
-
-exec "$PYTHON" - "$CACHE_FILE" "$CACHE_SECONDS" "$REFRESH" "$QUERY" <<'PY'
-import configparser
-import json
-import os
-import pathlib
-import re
-import shlex
-import sys
-import time
-
-cache_file = pathlib.Path(sys.argv[1])
-cache_seconds = max(0, int(sys.argv[2]))
-refresh = sys.argv[3].lower() == 'true'
-query = sys.argv[4].strip().casefold()
-
-
-def cache_fresh(path):
-    try:
-        return time.time() - path.stat().st_mtime < cache_seconds
-    except OSError:
-        return False
-
-
-def detect_engine(argv):
-    tokens = [str(token).casefold() for token in argv]
-    joined = '\n'.join(tokens)
-    if any(x in joined for x in ('google-chrome', 'com.google.chrome')) or any(
-        pathlib.Path(token).name in {'chrome', 'chrome-wrapper'} for token in tokens
-    ):
-        return 'chrome'
-    if 'chromium' in joined or 'org.chromium.chromium' in joined:
-        return 'chromium'
-    if 'brave' in joined or 'com.brave.browser' in joined:
-        return 'brave'
-    if 'microsoft-edge' in joined or 'com.microsoft.edge' in joined:
-        return 'edge'
-    if 'firefox' in joined or 'org.mozilla.firefox' in joined:
-        return 'firefox'
-    if 'electron' in joined:
-        return 'electron'
-    return None
-
-
-def parse_exec(value):
-    # Desktop Exec field codes are irrelevant to launcher identity.
-    cleaned = re.sub(r'(^|\s)%[fFuUdDnNickvm]', r'\1', value or '').strip()
-    try:
-        return shlex.split(cleaned)
-    except ValueError:
-        return cleaned.split()
-
-
-def flag_value(argv, name):
-    prefix = name + '='
-    for index, token in enumerate(argv):
-        if token.startswith(prefix):
-            return token.split('=', 1)[1]
-        if token == name and index + 1 < len(argv):
-            return argv[index + 1]
-    return None
-
-
-def classify(path):
-    parser = configparser.ConfigParser(interpolation=None, strict=False)
-    parser.optionxform = str
-    try:
-        with path.open('r', encoding='utf-8', errors='replace') as handle:
-            parser.read_file(handle)
-    except (OSError, configparser.Error):
-        return None
-    if not parser.has_section('Desktop Entry'):
-        return None
-    entry = parser['Desktop Entry']
-    if entry.get('Type', 'Application') != 'Application':
-        return None
-    if entry.get('Hidden', '').casefold() == 'true':
-        return None
-
-    name = entry.get('Name', path.stem).strip()
-    exec_value = entry.get('Exec', '').strip()
-    argv = parse_exec(exec_value)
-    if not argv:
-        return None
-
-    engine = detect_engine(argv)
-    app_flag = flag_value(argv, '--app-id')
-    app_url = flag_value(argv, '--app')
-    standalone = bool(app_flag or app_url or any(x in {'--ssb', '--kiosk-app'} for x in argv))
-    startup_wm_class = entry.get('StartupWMClass', '').strip() or None
-
-    if standalone:
-        kind = 'installed-web-app'
-    elif engine in {'chrome', 'chromium', 'brave', 'edge', 'firefox'}:
-        kind = 'browser'
-    elif engine == 'electron':
-        kind = 'electron-app'
-    else:
-        return None
-
-    desktop_id = path.name
-    app_id = app_flag or startup_wm_class or path.stem
-    return {
-        'display_name': name,
-        'desktop_id': desktop_id,
-        'app_id': app_id,
-        'startup_wm_class': startup_wm_class,
-        'engine': engine,
-        'kind': kind,
-        'standalone_web_app': standalone,
-        'site': app_url,
-        'exec': exec_value,
-        'source': str(path),
-    }
-
-
-def application_dirs():
-    seen = set()
-    candidates = []
-    data_home = os.environ.get('XDG_DATA_HOME') or str(pathlib.Path.home() / '.local/share')
-    candidates.append(pathlib.Path(data_home) / 'applications')
-    for root in (os.environ.get('XDG_DATA_DIRS') or '/usr/local/share:/usr/share').split(':'):
-        if root:
-            candidates.append(pathlib.Path(root) / 'applications')
-    for path in candidates:
-        key = str(path)
-        if key not in seen:
-            seen.add(key)
-            yield path
-
-
+$RESOLVE && [ -z "$QUERY" ] && { echo "error: --resolve requires a query" >&2; exit 2; }
+PYTHON="${GNOME_WAYLAND_SYSTEM_PYTHON:-/usr/bin/python3}"; [ -x "$PYTHON" ] || PYTHON="$(command -v python3 2>/dev/null || true)"; [ -n "$PYTHON" ] || exit 30
+CACHE_DIR="${XDG_RUNTIME_DIR:-/tmp}/gnome-wayland-computer-use"; CACHE_FILE="$CACHE_DIR/app-identities.json"; CACHE_SECONDS="${GNOME_WAYLAND_APP_IDENTITY_CACHE_SECONDS:-300}"
+mkdir -p "$CACHE_DIR"; chmod 700 "$CACHE_DIR" 2>/dev/null || true
+exec "$PYTHON" - "$CACHE_FILE" "$CACHE_SECONDS" "$REFRESH" "$RESOLVE" "$MACHINE" "$QUERY" <<'PY'
+import configparser,json,os,pathlib,re,shlex,sys,time
+cache=pathlib.Path(sys.argv[1]); ttl=max(0,int(sys.argv[2])); refresh=sys.argv[3]=='true'; resolve=sys.argv[4]=='true'; machine=sys.argv[5]=='true'; raw=sys.argv[6].strip(); q=raw.casefold()
+def parse_exec(v):
+ try:return shlex.split(re.sub(r'(^|\s)%[fFuUdDnNickvm]',r'\1',v or '').strip())
+ except ValueError:return (v or '').split()
+def flag(a,n):
+ for i,t in enumerate(a):
+  if t.startswith(n+'='):return t.split('=',1)[1]
+  if t==n and i+1<len(a):return a[i+1]
+def engine(a):
+ j='\n'.join(str(x).casefold() for x in a)
+ for needle,name in [('google-chrome','chrome'),('chromium','chromium'),('brave','brave'),('microsoft-edge','edge'),('firefox','firefox'),('electron','electron')]:
+  if needle in j:return name
+def classify(p):
+ c=configparser.ConfigParser(interpolation=None,strict=False); c.optionxform=str
+ try:
+  with p.open(encoding='utf-8',errors='replace') as h:c.read_file(h)
+ except Exception:return None
+ if not c.has_section('Desktop Entry'):return None
+ e=c['Desktop Entry']
+ if e.get('Type','Application')!='Application' or e.get('Hidden','').casefold()=='true':return None
+ a=parse_exec(e.get('Exec','')); eng=engine(a)
+ if not a or not eng:return None
+ app=flag(a,'--app-id'); site=flag(a,'--app'); standalone=bool(app or site or any(x in {'--ssb','--kiosk-app'} for x in a)); wm=e.get('StartupWMClass','').strip() or None
+ kind='installed-web-app' if standalone else ('electron-app' if eng=='electron' else 'browser')
+ return {'display_name':e.get('Name',p.stem).strip(),'desktop_id':p.name,'app_id':app or wm or p.stem,'startup_wm_class':wm,'engine':eng,'kind':kind,'standalone_web_app':standalone,'site':site,'exec':e.get('Exec',''),'source':str(p)}
+def dirs():
+ seen=set(); roots=[pathlib.Path(os.environ.get('XDG_DATA_HOME') or pathlib.Path.home()/'.local/share')/'applications']
+ roots += [pathlib.Path(x)/'applications' for x in (os.environ.get('XDG_DATA_DIRS') or '/usr/local/share:/usr/share').split(':') if x]
+ for p in roots:
+  if str(p) not in seen:seen.add(str(p));yield p
 def scan():
-    # First desktop ID wins, matching XDG user-over-system precedence.
-    rows = []
-    seen_ids = set()
-    for directory in application_dirs():
-        if not directory.is_dir():
-            continue
-        try:
-            files = sorted(directory.glob('*.desktop'))
-        except OSError:
-            continue
-        for path in files:
-            if path.name in seen_ids:
-                continue
-            seen_ids.add(path.name)
-            row = classify(path)
-            if row:
-                rows.append(row)
-    rows.sort(key=lambda r: (r['display_name'].casefold(), r['desktop_id']))
-    return rows
-
-
-rows = None
-if not refresh and cache_fresh(cache_file):
-    try:
-        rows = json.loads(cache_file.read_text(encoding='utf-8'))
-    except (OSError, json.JSONDecodeError):
-        rows = None
+ out=[]; seen=set()
+ for d in dirs():
+  if not d.is_dir():continue
+  for p in sorted(d.glob('*.desktop')):
+   if p.name in seen:continue
+   seen.add(p.name); r=classify(p)
+   if r:out.append(r)
+ return sorted(out,key=lambda r:(r['display_name'].casefold(),r['desktop_id']))
+rows=None
+try:
+ if not refresh and time.time()-cache.stat().st_mtime<ttl:rows=json.loads(cache.read_text())
+except Exception:pass
 if rows is None:
-    rows = scan()
-    tmp = cache_file.with_suffix('.tmp')
-    try:
-        tmp.write_text(json.dumps(rows, separators=(',', ':')), encoding='utf-8')
-        os.chmod(tmp, 0o600)
-        os.replace(tmp, cache_file)
-    except OSError:
-        try:
-            tmp.unlink()
-        except OSError:
-            pass
-
-if query:
-    def matches(row):
-        haystack = '\n'.join(str(row.get(k) or '') for k in (
-            'display_name', 'desktop_id', 'app_id', 'startup_wm_class', 'engine', 'kind', 'site', 'exec'
-        )).casefold()
-        return query in haystack
-    rows = [row for row in rows if matches(row)]
-
-print(json.dumps(rows, indent=2, sort_keys=True))
+ rows=scan()
+ try:
+  t=cache.with_suffix('.tmp'); t.write_text(json.dumps(rows,separators=(',',':')));os.chmod(t,0o600);os.replace(t,cache)
+ except OSError:pass
+def hay(r):return '\n'.join(str(r.get(k) or '') for k in ('display_name','desktop_id','app_id','startup_wm_class','engine','kind','site','exec')).casefold()
+if not resolve:
+ if q:rows=[r for r in rows if q in hay(r)]
+ print(json.dumps(rows,separators=(',',':') if machine else None,indent=None if machine else 2,sort_keys=not machine));raise SystemExit(0)
+def score(r):
+ d=(r.get('display_name') or '').casefold();di=(r.get('desktop_id') or '').casefold();stem=di[:-8] if di.endswith('.desktop') else di;a=(r.get('app_id') or '').casefold();w=(r.get('startup_wm_class') or '').casefold();s=(r.get('site') or '').casefold()
+ for hit,pts,why in ((d==q,100,'exact_display_name'),(di==q or stem==q,98,'exact_desktop_id'),(a==q,96,'exact_app_id'),(w==q,94,'exact_startup_wm_class'),(s==q,92,'exact_site')):
+  if hit:return pts,[why]
+ if d.startswith(q):return 80,['display_name_prefix']
+ if any(v.startswith(q) for v in (a,w,stem) if v):return 75,['identity_prefix']
+ if q in hay(r):return 50,['substring_match']
+ return 0,[]
+rank=[]
+for r in rows:
+ pts,ev=score(r)
+ if pts:rank.append((pts,r['display_name'].casefold(),r,ev))
+rank.sort(key=lambda x:(-x[0],x[1],x[2]['desktop_id']))
+def emit(p,rc):print(json.dumps(p,separators=(',',':') if machine else None,indent=None if machine else 2));raise SystemExit(rc)
+if not rank:emit({'schema':'gwcu.identity.v1','ok':False,'code':'missing','query':raw,'retryable':False,'terminal':False,'candidates':[],'next':{'action':'use_live_window_identity'}},10)
+top=rank[0][0];leaders=[x for x in rank if x[0]==top]
+if len(leaders)==1 and top>=75:
+ _,_,r,ev=leaders[0];emit({'schema':'gwcu.identity.v1','ok':True,'code':'resolved','query':raw,'result':r,'evidence':ev,'score':top,'next':{'action':'use_identity'}},0)
+c=[]
+for pts,_,r,ev in rank[:8]:c.append({'display_name':r['display_name'],'desktop_id':r['desktop_id'],'app_id':r.get('app_id'),'kind':r.get('kind'),'score':pts,'evidence':ev})
+emit({'schema':'gwcu.identity.v1','ok':False,'code':'ambiguous','query':raw,'retryable':False,'terminal':False,'candidates':c,'next':{'action':'disambiguate'}},10)
 PY
