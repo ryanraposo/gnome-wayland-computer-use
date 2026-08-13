@@ -15,6 +15,7 @@ hermes_skill="$ROOT/SKILL.md"
 portable_skill="$ROOT/runtimes/openai/SKILL.md"
 contract="$ROOT/references/skill-ux-contract.md"
 installer="$ROOT/install.sh"
+installer_core="$ROOT/install-core.sh"
 teardown="$ROOT/scripts/teardown.sh"
 checks="$ROOT/lib/checks.sh"
 landing="$ROOT/index.html"
@@ -45,15 +46,21 @@ grep -q 'cua-winrects-managed' "$teardown" || fail "teardown ignores WinRects ow
 grep -q 'org.cua.WinRects' "$checks" || fail "diagnostics do not verify the Cua service owner"
 pass "Cua WinRects is provisioned, not reimplemented"
 
-# Ubuntu-native foundation is verified and repairable.
-grep -q 'check_pipewire_foundation' "$installer" || fail "installer does not verify PipeWire foundation"
-grep -q 'add_pkg pipewire' "$installer" || fail "installer cannot repair missing PipeWire"
-grep -q 'add_pkg wireplumber' "$installer" || fail "installer cannot repair missing WirePlumber"
-grep -q 'add_pkg xdg-desktop-portal-gnome' "$installer" || fail "installer cannot repair GNOME portal backend"
-grep -q 'add_pkg gstreamer1.0-pipewire' "$installer" || fail "installer cannot repair GStreamer PipeWire bridge"
+# Ubuntu-native foundation is verified at the facade and repairable through the
+# preserved provisioning core. Audio compatibility is intentionally not a
+# ScreenCast readiness requirement.
+grep -q 'pw-cli info 0' "$installer" || fail "installer facade does not verify native PipeWire readiness"
+grep -q 'check_pipewire_foundation' "$installer_core" || fail "installer core lost full PipeWire foundation verification"
+grep -q 'add_pkg pipewire' "$installer_core" || fail "installer cannot repair missing PipeWire"
+grep -q 'add_pkg wireplumber' "$installer_core" || fail "installer cannot repair missing WirePlumber"
+grep -q 'add_pkg xdg-desktop-portal-gnome' "$installer_core" || fail "installer cannot repair GNOME portal backend"
+grep -q 'add_pkg gstreamer1.0-pipewire' "$installer_core" || fail "installer cannot repair GStreamer PipeWire bridge"
+grep -q 'STRIP_FROM_CORE: add_pkg pipewire-pulse' "$installer" || fail "installer does not strip PulseAudio compatibility from capture repair"
 pass "Ubuntu observation foundation is verify-first and repairable"
 
-# First-use update routing remains network-free.
+# Update checking is explicit maintenance, never a first-task preflight. Its
+# cached-only maintenance mode remains network-free for callers that request it.
+! grep -q -- '--cached-only' "$hermes_skill" || fail "task-time skill still invokes cached update housekeeping"
 update_home="$TEST_TMP/update-home"
 update_bin="$TEST_TMP/update-bin"
 mkdir -p "$update_home" "$update_bin"
@@ -69,9 +76,9 @@ HOME="$update_home" PATH="$update_bin:/usr/bin:/bin" \
     GNOME_WAYLAND_COMPUTER_USE_UPDATE_STATE_HOME="$update_home/state" \
     "$update_check" --quiet --cached-only >/dev/null
 elapsed_ms=$(( $(date +%s%3N) - start_ms ))
-[ ! -e "$update_home/network-was-called" ] || fail "cached-only update check invoked the network"
-[ "$elapsed_ms" -lt 500 ] || fail "cached-only update check took ${elapsed_ms}ms"
-pass "first-use update check is network-free (${elapsed_ms}ms)"
+[ ! -e "$update_home/network-was-called" ] || fail "cached-only maintenance check invoked the network"
+[ "$elapsed_ms" -lt 500 ] || fail "cached-only maintenance check took ${elapsed_ms}ms"
+pass "task path has no update preflight; explicit cached maintenance is network-free (${elapsed_ms}ms)"
 
 # Installed web apps backed by the same browser retain distinct identity.
 identity_home="$TEST_TMP/identity-home"
@@ -114,7 +121,8 @@ assert by_name['ChatGPT']['desktop_id'] != by_name['Gmail']['desktop_id']
 PY
 pass "installed web apps retain distinct browser-backed identities"
 
-# Mock warm ScreenCast capture: first portal call wins immediately.
+# Mock warm direct ScreenCast capture: first portal call wins immediately. The
+# persistent observer has its own determinism/lifecycle tests.
 home="$TEST_TMP/capture-home"
 mock_bin="$TEST_TMP/capture-fast-bin"
 mkdir -p "$home" "$mock_bin"
@@ -130,7 +138,7 @@ elapsed_ms=$(( $(date +%s%3N) - start_ms ))
 [ "$method" = 'capture_method=portal-screencast' ] || fail "ScreenCast mock was not the hot path"
 [ -s "$TEST_TMP/fast.png" ] || fail "ScreenCast mock did not write output"
 [ "$elapsed_ms" -lt 1000 ] || fail "mock hot path exceeded one second (${elapsed_ms}ms)"
-pass "ScreenCast hot path returns immediately when frame is ready (${elapsed_ms}ms)"
+pass "direct ScreenCast remains independently usable (${elapsed_ms}ms mock)"
 
 # Technical ScreenCast failure falls back to Screenshot; cancellation does not.
 mock_bin="$TEST_TMP/capture-fallback-bin"
