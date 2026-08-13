@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# diagnose.sh — one compact verdict: observation + upstream Cua.
+# diagnose.sh — one compact verdict: project observation + upstream Cua health.
 set -euo pipefail
 MACHINE=false
 for arg in "$@"; do
@@ -9,16 +9,19 @@ for arg in "$@"; do
         *) echo "unknown option: $arg" >&2; exit 2 ;;
     esac
 done
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PYTHON="${GNOME_WAYLAND_SYSTEM_PYTHON:-/usr/bin/python3}"
 [ -x "$PYTHON" ] || PYTHON="$(command -v python3 2>/dev/null || true)"
 [ -n "$PYTHON" ] || { echo "python3 is required" >&2; exit 30; }
+HEALTH="$ROOT/scripts/cua-health.py"
 
 set +e
 OUTPUT=$(
-"$PYTHON" - <<'PY'
-import json, os, pathlib, shutil, subprocess
+"$PYTHON" - "$HEALTH" <<'PY'
+import json, os, pathlib, shutil, subprocess, sys
+health_script=sys.argv[1]
 
-def run(argv, timeout=4):
+def run(argv, timeout=8):
     try:
         p=subprocess.run(argv,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,timeout=timeout)
         return p.returncode,p.stdout.strip(),p.stderr.strip()
@@ -27,29 +30,26 @@ def run(argv, timeout=4):
 
 def portal(name):
     if not shutil.which("gdbus"): return False
-    rc,out,_=run(["gdbus","introspect","--session","--dest","org.freedesktop.portal.Desktop","--object-path","/org/freedesktop/portal/desktop"])
+    rc,out,_=run(["gdbus","introspect","--session","--dest","org.freedesktop.portal.Desktop","--object-path","/org/freedesktop/portal/desktop"],4)
     return rc==0 and f"interface org.freedesktop.portal.{name}" in out
 
 def active_unit(name):
     if not shutil.which("systemctl"): return False
-    rc,_,_=run(["systemctl","--user","is-active","--quiet",name])
-    return rc==0
+    return run(["systemctl","--user","is-active","--quiet",name],3)[0]==0
 
 def extension_active(uuid):
     if not shutil.which("gnome-extensions"): return False
-    rc,out,_=run(["gnome-extensions","info",uuid])
+    rc,out,_=run(["gnome-extensions","info",uuid],3)
     return rc==0 and "State:" in out and "ACTIVE" in out
 
 session=os.environ.get("XDG_SESSION_TYPE") or "unknown"
 desktop=os.environ.get("XDG_CURRENT_DESKTOP") or "unknown"
 host_ok=session=="wayland" and "GNOME" in desktop
-
-pw=run(["pw-cli","info","0"])[0]==0 if shutil.which("pw-cli") else False
+pw=run(["pw-cli","info","0"],3)[0]==0 if shutil.which("pw-cli") else False
 wp=active_unit("wireplumber.service")
-gst_pipewire=run(["gst-inspect-1.0","pipewiresrc"])[0]==0 if shutil.which("gst-inspect-1.0") else False
-gst_png=run(["gst-inspect-1.0","pngenc"])[0]==0 if shutil.which("gst-inspect-1.0") else False
-screen=portal("ScreenCast")
-screenshot=portal("Screenshot")
+gst_pipewire=run(["gst-inspect-1.0","pipewiresrc"],3)[0]==0 if shutil.which("gst-inspect-1.0") else False
+gst_png=run(["gst-inspect-1.0","pngenc"],3)[0]==0 if shutil.which("gst-inspect-1.0") else False
+screen=portal("ScreenCast"); screenshot=portal("Screenshot")
 observer=active_unit("gnome-wayland-computer-use-observer.socket")
 observation_ok=all((pw,wp,gst_pipewire,gst_png,screen,observer))
 
@@ -58,20 +58,27 @@ if not cua:
     candidate=pathlib.Path.home()/".local/bin/cua-driver"
     if candidate.is_file() and os.access(candidate,os.X_OK): cua=str(candidate)
 
-doctor_rc=127; doctor=None
+health=None; health_rc=50
+doctor=None; doctor_rc=127
 if cua:
-    doctor_rc,out,err=run([cua,"doctor","--json"],timeout=12)
+    health_rc,out,_=run([sys.executable,health_script,"--driver",cua],20)
+    if out:
+        try: health=json.loads(out)
+        except Exception: health={"schema":"gwcu.cua-health.v1","ok":False,"code":"invalid_output","detail":out[:4096]}
+    doctor_rc,out,_=run([cua,"doctor","--json"],15)
     if out:
         try: doctor=json.loads(out)
         except Exception: doctor={"raw":out[:4096]}
 
 winrects_dir=pathlib.Path(os.environ.get("XDG_DATA_HOME",str(pathlib.Path.home()/".local/share")))/"gnome-shell/extensions/winrects@cua"
-winrects_installed=winrects_dir.is_dir()
-winrects_active=extension_active("winrects@cua")
-if not winrects_active and winrects_installed and host_ok:
+winrects_installed=winrects_dir.is_dir(); winrects_active=extension_active("winrects@cua")
+health_code=(health or {}).get("code","unavailable")
+if winrects_installed and not winrects_active and host_ok:
     cua_status="reload_required"
-elif cua and doctor_rc==0 and winrects_active:
+elif health_rc==0 and winrects_active:
     cua_status="ready"
+elif health_code=="failed":
+    cua_status="failed"
 else:
     cua_status="degraded"
 
@@ -85,24 +92,16 @@ elif not host_ok:
 elif not observation_ok:
     code="observation_degraded"; nxt={"action":"rerun_installer","scope":"observation"}
 else:
-    code="cua_degraded"; nxt={"action":"run_cua_doctor"}
+    code="cua_degraded"; nxt={"action":"inspect_cua_health"}
 
 payload={
-    "schema":"gwcu.diagnose.v2",
-    "ok":ready,
-    "code":code,
+    "schema":"gwcu.diagnose.v2","ok":ready,"code":code,
     "host":{"session":session,"desktop":desktop,"ok":host_ok},
-    "observation":{
-        "status":"ready" if observation_ok else "degraded",
-        "pipewire":pw,"wireplumber":wp,"screencast_portal":screen,
-        "screenshot_portal":screenshot,"gstreamer_pipewire":gst_pipewire,
-        "gstreamer_png":gst_png,"observer_socket":observer,
-    },
-    "cua":{
-        "status":cua_status,"binary":cua,"doctor_exit":doctor_rc,
-        "winrects_installed":winrects_installed,"winrects_active":winrects_active,
-        "doctor":doctor,
-    },
+    "observation":{"status":"ready" if observation_ok else "degraded","pipewire":pw,"wireplumber":wp,
+        "screencast_portal":screen,"screenshot_portal":screenshot,"gstreamer_pipewire":gst_pipewire,
+        "gstreamer_png":gst_png,"observer_socket":observer},
+    "cua":{"status":cua_status,"binary":cua,"health":health,"doctor_exit":doctor_rc,"doctor":doctor,
+        "winrects_installed":winrects_installed,"winrects_active":winrects_active},
     "next":nxt,
 }
 print(json.dumps(payload,separators=(",",":")))

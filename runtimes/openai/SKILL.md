@@ -147,6 +147,7 @@ Cua target evidence cannot yet bind the intended object.
 
 ```bash
 ROOT="$HOME/.agents/skills/gnome-wayland-computer-use"
+"$ROOT/scripts/cua-health.py"
 "$ROOT/scripts/app-identity.sh" --resolve --machine "ChatGPT"
 "$ROOT/scripts/observe.sh" --machine --screen /tmp/screen.png
 "$ROOT/scripts/profile.sh" read --machine
@@ -154,9 +155,12 @@ ROOT="$HOME/.agents/skills/gnome-wayland-computer-use"
 "$ROOT/scripts/diagnose.sh" --machine
 ```
 
-`diagnose.sh` treats Cua's own doctor as authoritative for Cua health. Project
-code diagnoses only the GNOME/session and independent observation layer around
-it. Top-level `ok` means the installed system is actually ready now.
+`cua-health.py` is a thin direct-MCP transport for Cua's stable `health_report`
+contract. It preserves Cua's versioned `structuredContent`; it does not
+reconstruct Cua health. `diagnose.sh` combines that upstream verdict with only
+the GNOME/session, WinRects session state, and independent observation facts
+this project owns. `cua-driver doctor --json` remains supplemental diagnostic
+detail. Top-level `ok` means the installed system is actually ready now.
 
 ## Cua GNOME Integration
 

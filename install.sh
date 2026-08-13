@@ -75,6 +75,14 @@ resolve_cua() {
     return 1
 }
 
+refresh_cua() {
+    command -v curl >/dev/null 2>&1 || die "curl is required to install Cua Driver"
+    /bin/bash -c "$(curl -fsSL https://cua.ai/driver/install.sh)" || die "Cua Driver installer failed"
+    export PATH="$HOME/.local/bin:$PATH"
+    CUA=$(resolve_cua || true)
+    [ -n "$CUA" ] || die "cua-driver is unavailable after the official installer"
+}
+
 COMPAT=false
 UNATTENDED=false
 HERMES_MODE=auto
@@ -162,12 +170,14 @@ systemctl --user start pipewire.socket pipewire.service wireplumber.service 2>/d
 systemctl --user start xdg-desktop-portal.service xdg-desktop-portal-gnome.service 2>/dev/null || true
 pipewire_ready || $COMPAT || die "PipeWire is still unavailable after repair"
 gi_ready || die "Python GI/GStreamer observation bindings are unavailable after repair"
-if ! $COMPAT; then portal_has ScreenCast || die "GNOME ScreenCast portal is unavailable after repair"; fi
-ok "PipeWire, portals, GStreamer, Python GI and AT-SPI foundation prepared"
+if ! $COMPAT; then
+    portal_has ScreenCast || die "GNOME ScreenCast portal is unavailable after repair"
+    portal_has Screenshot || die "GNOME Screenshot portal is unavailable after repair"
+fi
+ok "PipeWire, portals, GStreamer, Python GI and AT-SPI packages prepared"
 
 STATE="${XDG_STATE_HOME:-$HOME/.local/state}/$NAME"
 mkdir -p "$STATE"; chmod 700 "$STATE" 2>/dev/null || true
-# Retire the old claim that GWCU owns Cua's helper. Cua/WinRects are upstream.
 rm -f "$STATE/cua-winrects-managed"
 PREV_ACCESSIBILITY=unknown
 ACCESSIBILITY_CHANGED=false
@@ -184,13 +194,16 @@ info "[3/6] Installing Cua Driver"
 CUA=$(resolve_cua || true)
 CUA_INSTALLED_BY_GWCU=false
 if [ -z "$CUA" ]; then
-    command -v curl >/dev/null 2>&1 || die "curl is required to install Cua Driver"
-    /bin/bash -c "$(curl -fsSL https://cua.ai/driver/install.sh)" || die "Cua Driver installer failed"
-    export PATH="$HOME/.local/bin:$PATH"
-    CUA=$(resolve_cua || true)
-    [ -n "$CUA" ] || die "cua-driver is unavailable after the official installer"
+    refresh_cua
     CUA_INSTALLED_BY_GWCU=true
 fi
+# health_report is Cua's stable downstream health contract. Refresh an older
+# existing driver once instead of teaching this project old Cua internals.
+if ! "$CUA" describe health_report >/dev/null 2>&1; then
+    info "Refreshing Cua Driver to a build with the stable health_report surface"
+    refresh_cua
+fi
+"$CUA" describe health_report >/dev/null 2>&1 || die "Installed Cua Driver does not expose health_report"
 ok "Cua Driver: $CUA"
 
 CUA_HOME="${CUA_DRIVER_HOME:-$HOME/.cua-driver}"
@@ -199,12 +212,8 @@ CUA_HELPER_INSTALLER="$HELPER/install.sh"
 WINRECTS_UUID='winrects@cua'
 WINRECTS_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/gnome-shell/extensions/$WINRECTS_UUID"
 if [ ! -x "$CUA_HELPER_INSTALLER" ]; then
-    command -v curl >/dev/null 2>&1 || die "curl is required to refresh Cua Driver"
     info "Refreshing Cua Driver because the packaged GNOME helper is missing"
-    /bin/bash -c "$(curl -fsSL https://cua.ai/driver/install.sh)" || die "Cua Driver refresh failed"
-    export PATH="$HOME/.local/bin:$PATH"
-    CUA=$(resolve_cua || true)
-    [ -n "$CUA" ] || die "cua-driver is unavailable after refresh"
+    refresh_cua
 fi
 [ -x "$CUA_HELPER_INSTALLER" ] || die "Cua's packaged GNOME helper is missing: $CUA_HELPER_INSTALLER"
 
@@ -265,14 +274,15 @@ install_bundle() {
     mkdir -p "$dst/scripts" "$dst/references" "$dst/systemd/user"
     get_file "$skill_src" "$dst/SKILL.md"
     for rel in VERSION references/skill-ux-contract.md \
-        scripts/app-identity.sh scripts/capture.sh scripts/check-update.sh scripts/diagnose.sh \
-        scripts/observe.sh scripts/observer.py scripts/profile.sh scripts/teardown.sh \
+        scripts/app-identity.sh scripts/capture.sh scripts/check-update.sh scripts/cua-health.py \
+        scripts/diagnose.sh scripts/observe.sh scripts/observer.py scripts/profile.sh scripts/teardown.sh \
         systemd/user/gnome-wayland-computer-use-observer.socket \
         systemd/user/gnome-wayland-computer-use-observer.service; do
         get_file "$rel" "$dst/$rel"
     done
     [ "$(tr -d '[:space:]' < "$dst/VERSION")" = "$VERSION" ] || die "Installer payload version mismatch"
-    chmod +x "$dst/scripts/"*.sh "$dst/scripts/observer.py"
+    grep -qx "version: $VERSION" "$dst/SKILL.md" || die "Installer skill payload version mismatch"
+    chmod +x "$dst/scripts/"*.sh "$dst/scripts/"*.py
     : > "$dst/$MANAGED"
 }
 
@@ -294,7 +304,7 @@ if $HERMES; then
 fi
 ok "Agent skill installed"
 
-# Retire project-owned control/recovery machinery from older releases.
+# Retire exact project-owned control/recovery machinery from older releases.
 LEGACY_SERVICE="$HOME/.config/systemd/user/gnome-wayland-computer-use.service"
 if [ -f "$LEGACY_SERVICE" ]; then
     systemctl --user disable --now gnome-wayland-computer-use.service 2>/dev/null || true
@@ -355,15 +365,28 @@ SOUL
 fi
 
 info "[6/6] Verifying installed state"
-DOCTOR_RC=0
-DOCTOR_OUT="$STATE/cua-doctor.json"
-"$CUA" doctor --json >"$DOCTOR_OUT.tmp" 2>/dev/null || DOCTOR_RC=$?
-if [ -s "$DOCTOR_OUT.tmp" ]; then chmod 600 "$DOCTOR_OUT.tmp"; mv "$DOCTOR_OUT.tmp" "$DOCTOR_OUT"; else rm -f "$DOCTOR_OUT.tmp"; fi
-if [ "$DOCTOR_RC" -ne 0 ] && ! $RELOAD_REQUIRED && ! $COMPAT; then
-    die "Cua doctor reports a problem after installation. Run: $CUA doctor"
-fi
-if $HERMES && ! $COMPAT; then
-    hermes computer-use status >/dev/null 2>&1 || die "Hermes cannot see the installed Cua Driver"
+if ! $COMPAT; then
+    HEALTH_OUT="$STATE/cua-health.json"
+    HEALTH_RC=0
+    "$PRIMARY/scripts/cua-health.py" --driver "$CUA" >"$HEALTH_OUT.tmp" || HEALTH_RC=$?
+    [ -s "$HEALTH_OUT.tmp" ] || die "Cua health_report produced no result"
+    chmod 600 "$HEALTH_OUT.tmp"; mv "$HEALTH_OUT.tmp" "$HEALTH_OUT"
+    case "$HEALTH_RC" in
+        0) ok "Cua health_report: ok" ;;
+        30) die "Cua health_report is degraded. Inspect: $HEALTH_OUT" ;;
+        40) die "Cua health_report failed. Inspect: $HEALTH_OUT" ;;
+        *) die "Could not obtain Cua health_report. Inspect: $HEALTH_OUT" ;;
+    esac
+
+    DOCTOR_OUT="$STATE/cua-doctor.json"
+    DOCTOR_RC=0
+    "$CUA" doctor --json >"$DOCTOR_OUT.tmp" 2>/dev/null || DOCTOR_RC=$?
+    if [ -s "$DOCTOR_OUT.tmp" ]; then chmod 600 "$DOCTOR_OUT.tmp"; mv "$DOCTOR_OUT.tmp" "$DOCTOR_OUT"; else rm -f "$DOCTOR_OUT.tmp"; fi
+    [ "$DOCTOR_RC" -eq 0 ] || die "Cua doctor found an installation error. Run: $CUA doctor"
+
+    if $HERMES; then
+        hermes computer-use status >/dev/null 2>&1 || die "Hermes cannot see the installed Cua Driver"
+    fi
 fi
 
 python3 - "$STATE/ownership.json" "$PREV_ACCESSIBILITY" "$ACCESSIBILITY_CHANGED" "$CUA_INSTALLED_BY_GWCU" <<'PY'
@@ -384,7 +407,7 @@ PY
 printf '\n'
 if $RELOAD_REQUIRED; then
     printf 'READY EXCEPT GNOME PRECISION\n'
-    printf 'Sign out of GNOME and back in once. Observation and accessibility are already installed.\n'
+    printf 'Sign out of GNOME and back in once. Cua health and whole-screen observation are ready.\n'
 elif $COMPAT; then
     printf 'INSTALLED FOR NEXT GNOME WAYLAND SESSION\n'
 else

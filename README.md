@@ -83,12 +83,12 @@ It:
 
 1. verifies GNOME Wayland;
 2. verifies and repairs the Ubuntu-native observation/accessibility substrate;
-3. installs or refreshes **Cua Driver from Cua's official installer**;
+3. installs or refreshes **Cua Driver from Cua's official installer** and requires its stable `health_report` surface;
 4. installs/updates `winrects@cua` only through Cua's packaged helper;
 5. installs the portable/Hermes skill payloads;
 6. enables the private socket-activated whole-screen observer;
 7. removes obsolete project-owned daemon/uinput artifacts from prior releases;
-8. runs Cua's own doctor plus project observation verification;
+8. asks Cua for `health_report`, records `doctor --json` as diagnostic detail, and verifies project observation/Hermes integration;
 9. exits successfully only when the result is ready, or explicitly reports the
    one GNOME reload still required for a newly installed/updated Shell helper.
 
@@ -115,13 +115,9 @@ installed Cua package:
 ~/.cua-driver/packages/current/wayland-helper/install.sh
 ```
 
-Cua documents that GNOME/Mutter uses this helper for authoritative geometry and
-verified activation; foreground input is then delivered through the
-portal/libei path. A newly installed or updated helper requires one GNOME
-sign-out/in before the Shell loads the new extension code.
-
-Cua and WinRects are upstream dependencies, not project-owned artifacts.
-Teardown preserves both.
+A newly installed or updated helper can require one GNOME sign-out/in before the
+Shell loads the new extension code. Cua and WinRects are upstream dependencies,
+not project-owned artifacts; teardown preserves both.
 
 ## Agent behavior
 
@@ -176,15 +172,19 @@ failures. It is observation infrastructure, never a second control backend.
 
 | Command | Contract | Answer |
 |---|---|---|
+| `scripts/cua-health.py` | `gwcu.cua-health.v1` | thin transport for Cua's stable `health_report` structured result |
 | `scripts/observe.sh --machine` | `gwcu.observe.v1` | whole-screen observation result |
 | `scripts/observer.py client ...` | `gwcu.observer.v1` | warm broker IPC |
 | `scripts/app-identity.sh --resolve --machine NAME` | `gwcu.identity.v1` | launcher identity |
-| `scripts/diagnose.sh --machine` | `gwcu.diagnose.v2` | ready-now verdict for observation + Cua |
+| `scripts/diagnose.sh --machine` | `gwcu.diagnose.v2` | ready-now verdict for observation + Cua + GNOME helper state |
 | `scripts/profile.sh read|refresh --machine` | `gwcu.profile.v2` | passive session snapshot |
 
-Top-level `ok` now means **the system is actually ready now**. Cua health is not
-reconstructed by this project: `diagnose.sh` invokes `cua-driver doctor --json`
-and carries its result as upstream truth.
+Top-level `ok` means **the installed system is actually ready now**. Cua health is
+not reconstructed by this project: `cua-health.py` opens a short-lived direct
+stdio MCP session, asks Cua for `health_report`, and preserves its versioned
+`structuredContent`. `cua-driver doctor --json` is carried separately for
+installation/debug detail because warnings are diagnostic rather than a complete
+readiness boolean.
 
 ## Diagnose
 
@@ -222,13 +222,14 @@ and other upstream/user state.
 
 ## Release validation
 
-CI proves syntax, deterministic contracts, observer privacy/lifecycle, identity
-resolution, and installer ownership boundaries. A release still needs one live
-Ubuntu 26.04 GNOME 50 smoke for the things CI cannot impersonate honestly:
+The repository's validation workflow checks syntax, deterministic contracts,
+observer privacy/lifecycle, identity resolution, Cua health transport, and
+installer ownership boundaries. A release still needs one live Ubuntu 26.04
+GNOME 50 smoke for the things CI cannot impersonate honestly:
 
 - first ScreenCast consent + restore token;
 - repeated warm captures;
-- Cua doctor on the real session;
+- Cua `health_report` and doctor detail on the real session;
 - Cua WinRects ACTIVE after any required GNOME reload;
 - GTK semantic background action;
 - pixel-only Vulkan/GLFW targeting;

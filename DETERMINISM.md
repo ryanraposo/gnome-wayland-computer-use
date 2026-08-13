@@ -24,8 +24,10 @@ window binding, but it does not become a second computer-control backend.
 ## Rule 3: machine truth is literal
 
 `gwcu.diagnose.v2` uses top-level `ok=true` only when the current session is
-actually ready. Cua health comes from `cua-driver doctor --json`; the project
-adds only its own session/observation facts.
+actually ready. Cua readiness comes from Cua's stable `health_report` MCP
+`structuredContent`; `cua-health.py` is only a transport shim and preserves that
+report instead of rebuilding Cua's health model. `cua-driver doctor --json` is
+supplemental diagnostic evidence.
 
 The deterministic next-action vocabulary stays small:
 
@@ -33,7 +35,7 @@ The deterministic next-action vocabulary stays small:
 logout_login
 start_gnome_wayland_session
 rerun_installer
-run_cua_doctor
+inspect_cua_health
 refresh_profile
 ```
 
@@ -65,5 +67,5 @@ inject raw input into the currently focused application.
 
 There is one installer source. It verifies first, repairs only missing Ubuntu
 foundation, provisions Cua through upstream-supported paths, enables the
-observer, and validates the finished system. Runtime patching of a second
-installer is forbidden.
+observer, and validates the finished system against Cua's own stable health
+contract. Runtime patching of a second installer is forbidden.
