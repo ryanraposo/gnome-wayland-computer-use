@@ -1,129 +1,136 @@
-# The Full Computer-Use Spread
+# Capability Map
 
-**Native, closed-loop computer use for Ubuntu 26, GNOME 50, and Wayland.**
+`gnome-wayland-computer-use` treats GNOME Wayland as several complementary
+surfaces instead of pretending one API can represent the whole desktop.
 
-This is not a screenshot-and-hope macro layer. `gnome-wayland-computer-use` gives an agent a complete operating model for seeing, understanding, controlling, verifying, and recovering on the real Linux desktop.
+## Capability ladder
 
-## See the right thing
+| Capability | Primary | Degrades to |
+|---|---|---|
+| Semantic inspection | AT-SPI / runtime AX | visible pixels |
+| Semantic click/value/text | runtime driver | coordinate delivery → foreground |
+| Visible-screen capture | XDG ScreenCast + PipeWire | Screenshot portal → legacy GNOME → Shift+Print |
+| Pixel-only GLFW/Vulkan/canvas | screen pixels + coordinates | normal foreground/window selection |
+| Installed web-app identity | live app/window identity | desktop launcher cache → browser identity |
+| Synthetic keyboard/pointer recovery | runtime driver | `/dev/uinput` + `ydotool` |
+| Privileged Ubuntu mutation | graphical `pkexec` | explicit manual action |
 
-- Discover running applications and windows only when target identity is ambiguous.
-- Cache resolved app/window identity until navigation, disappearance, or a failed scoped action invalidates it.
-- Distinguish installed standalone web apps from the browser engine underneath them using desktop IDs, WM class, launch flags, and accessible identity.
-- Capture a specific application instead of exposing the whole desktop.
-- Read an **AX-only accessibility tree** as the default when text, roles, and state are sufficient.
-- Capture a clean **vision image** only for visual reasoning.
-- Capture in **SOM mode** with numbered visual targets plus accessibility only when both pixels and semantic grounding are required.
-- Capture the **desktop layer**—wallpaper and desktop icons—without covering application windows.
-- Capture the **visible screen**, including windows, through the GNOME screenshot stack.
-- Route desktop and screen intent separately instead of pretending they mean the same thing.
-- Work display-by-display with coordinates relative to the latest relevant image.
+## Screen capture
 
-## Understand native interfaces
+The capture helper intentionally owns one truthful visual surface: the **visible
+display**.
 
-- Inspect accessible widgets, editable fields, buttons, menus, lists, sliders, dialogs, and window structure through AT-SPI.
-- Scope dense Electron, Chromium, browser, and IDE accessibility trees to the intended application.
-- Prefer stable semantic elements over brittle coordinates.
-- Treat element references as short-lived tokens and re-observe at real invalidation boundaries: navigation, dialogs, changing lists, or a stale-element verdict.
-- Distinguish nested scrolling regions instead of blindly scrolling the outer window.
-- Resolve browser-backed app identity once instead of repeatedly searching or recapturing to rediscover the same PWA.
+`--screen` selects it directly. `--desktop` remains a compatibility alias.
+There is no hidden-window desktop compositor, WinRects verification transaction,
+or project-owned Shell extension.
 
-## Act across the whole desktop vocabulary
+### Hot path
 
-- Click, double-click, right-click, and middle-click.
-- Type complete text in one semantic action instead of character-by-character loops.
-- Send keyboard shortcuts as one hotkey action.
-- Set accessible values directly for selects, popup controls, and sliders.
-- Scroll vertically or horizontally, anchored to an element or coordinate, and verify at a meaningful boundary instead of after every notch.
-- Drag and drop between accessible elements.
-- Drag across canvases and inaccessible drop zones using fresh image coordinates.
-- Fill forms, replace field values, submit, and verify the resulting state.
-- Operate menus and native selectors.
-- Handle modal dialogs and file choosers.
-- Work across multiple windows and displays.
-- Wait only for genuine asynchronous interface changes that provide no completion signal.
+XDG ScreenCast selects one monitor and exposes it through PipeWire. On portal
+v4+, the helper requests persistent permission and stores the returned restore
+token. Restore tokens are single-use, so every successful restored session
+replaces the cached token with the new token returned by the portal.
 
-## Co-work without stealing the desktop
+That turns the permission chooser into a first-use/revocation boundary rather
+than a tax on every screenshot.
 
-- Deliver supported AT-SPI actions in the background.
-- Target application windows without raising them.
-- Preserve the user’s foreground workflow whenever the application permits it.
-- Escalate from semantic background action to pixel targeting only when needed.
-- Escalate to foreground input only after the driver reports that background delivery is unavailable or ineffective.
-- Use `/dev/uinput` through Ubuntu’s `ydotool` as an explicit final recovery layer.
+### Recovery
 
-The escalation ladder is intentional:
+1. one-shot XDG Screenshot portal;
+2. `gnome-screenshot` only where the legacy GNOME path is still viable;
+3. Shift+Print through `ydotool`.
 
-1. Accessible element, background delivery.
-2. Pixel target from the latest image when semantics are unavailable.
-3. Foreground delivery for the same action.
-4. Raw synthetic input only after native paths and diagnostics are exhausted.
+Portal cancellation stops the chain rather than opening another permission UI.
+All writes are atomic.
 
-## Prove that actions worked without slowing everything down
+## Wallpaper and desktop icons
 
-Every task follows a decision-boundary loop:
+A wallpaper asset is configuration, not a special screenshot surface. Resolve
+GNOME's configured background file when the user wants the image itself.
 
-> **Route → cheapest useful evidence → semantic action span → verify only what changed → continue.**
+Desktop icons supplied by another extension are ordinary visible pixels. This
+skill does not depend on that extension's scene graph or private geometry.
 
-- Accept structured driver read-back when it directly proves the requested postcondition.
-- Avoid duplicate post-action captures merely to prove that a verified action was verified.
-- Avoid observations between deterministic, semantically coupled inputs when the next input does not depend on newly rendered state.
-- Re-observe after navigation, new dialogs, materially changed lists, stale references, focus escalation, or visual ambiguity.
-- Read structured driver verdicts such as confirmed, unverifiable, suspected no-op, or background unavailable.
-- Verify text values, selection changes, moved objects, closed dialogs, opened pages, and other meaningful outcomes.
-- Re-plan instead of repeating the same failed action blindly.
-- Use atomic screenshot writes so failed capture attempts never replace a valid image.
+## Accessible applications
 
-## Capture GNOME properly
+AT-SPI is the cheapest reliable observation surface when the target exposes
+roles, names, values, focus, and actions. It supports low-round-trip workflows
+such as:
 
-### Desktop layer
+- inspect field → click → type complete text;
+- set accessible menu/select/slider values semantically;
+- discover dialog roles and fill deterministic fields;
+- inspect text-heavy applications without pixels;
+- verify state through structured driver read-back.
 
-The GNOME Shell extension captures wallpaper and desktop icons while excluding application-window actors from the offscreen render. It verifies that focus, workspace, and window state remain unchanged.
+Element identities are short-lived across structural UI changes.
 
-A compatibility route can temporarily show the desktop, capture it, restore the previous state, and compare compositor state before reporting success. The compatibility path polls for the screenshot and compositor restoration instead of imposing fixed multi-second sleeps.
+## Pixel-only applications
 
-### Visible screen
+GLFW, Vulkan, games, canvas-heavy tools, remote-viewer surfaces, and other
+custom-rendered apps may expose no useful accessibility tree. They may also be
+missing from the runtime's semantic `list_apps` / `list_windows` inventory.
 
-The screen router uses the strongest available GNOME path in order:
+That does **not** make them uncontrollable.
 
-1. Supported `gnome-screenshot --file` behavior.
-2. The non-interactive `org.freedesktop.portal.Screenshot` request.
-3. GNOME’s direct screenshot shortcut through `ydotool`.
+If the surface is visibly present:
 
-Portal cancellation ends the chain cleanly instead of opening another chooser. ScreenCast/PipeWire remains an opt-in diagnostic fallback because it may present a sharing prompt. `capture.sh --timing` reports elapsed milliseconds without changing normal output.
+1. capture the visible screen;
+2. locate it visually;
+3. act with coordinates from the fresh image;
+4. recapture after layout-changing actions;
+5. foreground/select it with ordinary desktop gestures if obscured.
 
-## Cross the privilege boundary safely
+Semantic inventory is advisory. Visible pixels are authoritative for visible
+pixel-only surfaces.
 
-- Present a narrow graphical PolicyKit prompt for an explicitly authorized package or host change.
-- Run the smallest exact command through `pkexec`.
-- Keep the installer itself unprivileged.
-- Verify the result afterward without privilege.
-- Avoid typing passwords, using `sudo -S`, or opening a general-purpose root shell.
+## Window geometry
 
-## Diagnose and recover the stack
+This repository does not require WinRects or another GNOME Shell geometry
+helper. A missing rectangle in the runtime driver is a reason to switch evidence
+surfaces, not a reason to modify GNOME Shell.
 
-- Check GNOME and Wayland session compatibility.
-- Verify toolkit accessibility and the AT-SPI bus.
-- Inspect the persistent `cua-driver` service.
-- Diagnose compositor capture, screenshot routing, focus preservation, coordinates, `/dev/uinput`, and synthetic input.
-- Resolve installed browser/PWA/Electron launchers with `scripts/app-identity.sh` without taking a screenshot.
-- Emit human-readable or JSON diagnostics.
-- Preserve and restore existing Hermes computer-use and screenshot skills.
-- Remove managed services, routing, extensions, udev rules, and skills through a deliberate teardown path.
-- Keep first-use version checks cache-only so computer-use startup never waits on the network; explicit update checks may refresh the cache.
+## Installed web apps
 
-## Agent-native integration
+The identity resolver distinguishes standalone browser-backed applications from
+generic browser chrome using:
 
-The project ships independently authored integrations for their actual runtimes:
+- live app/window identity;
+- desktop file IDs;
+- `StartupWMClass`;
+- `--app-id=`;
+- `--app=`;
+- browser-engine hints.
 
-- A canonical Hermes `computer-use` skill with latency-aware AX/vision/SOM routing, semantic input spans, structured verification, and escalation.
-- An OpenAI-native Agent Skill that follows the runtime’s live tool schema instead of inventing Hermes-shaped arguments.
-- Shared GNOME host helpers for capture, installed-app identity, diagnostics, recovery, and teardown.
-- One installer that selects the right integration while preserving existing agent configuration.
+The launcher inventory is cached to keep repeated routing cheap.
 
-## The point
+## Input
 
-Linux agents should be able to do more than poke pixels at a screenshot.
+Semantic/background input is preferred. Coordinate delivery is appropriate for
+pixel-only surfaces. Foreground delivery is an escalation, not a default.
 
-They should understand the application, act through native semantics, stay out of the user’s way, cross system boundaries responsibly, spend round-trips only where a decision actually changes, verify every meaningful result, and recover intelligently when the ideal path is unavailable.
+`ydotool` remains an explicit final fallback through `/dev/uinput`; it is not
+required for portal capture.
 
-That is the computer-use surface this repository delivers.
+## Multi-display
+
+The ScreenCast portal selects a monitor source. The returned stream represents
+that monitor and may include compositor-space metadata. Do not assume physical
+pixel coordinates and compositor logical coordinates are identical under
+fractional scaling.
+
+Coordinate actions must come from the latest relevant image/target geometry.
+
+## Permission boundaries
+
+- First ScreenCast use may require GNOME monitor-sharing consent.
+- Revoked/invalid restore permission may cause the chooser to reappear.
+- Cancelling that chooser is a real denial and halts the capture chain.
+- Privileged host changes use narrow graphical PolicyKit prompts.
+- Foreground input is visible and should follow the user's active-task intent.
+
+## Completion proof
+
+A computer-use action is complete when the requested postcondition is proven by
+structured read-back or fresh evidence appropriate to the target. A ceremonial
+extra screenshot is unnecessary when stronger proof already exists.
