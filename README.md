@@ -240,7 +240,8 @@ portal/plugin compatibility.
 The broker is a speed layer, not a new authority or single point of failure.
 `scripts/capture.sh` remains the independent direct path underneath it.
 
-Technical broker failure can fall through to the direct capture ladder:
+**Capture order stays independent from Cua.** Technical broker failure can fall
+through to the direct capture ladder:
 
 1. **XDG ScreenCast + PipeWire**;
 2. **XDG Screenshot portal**;
