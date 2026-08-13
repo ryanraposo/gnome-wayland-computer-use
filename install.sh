@@ -47,22 +47,44 @@ check_start_atspi_service() {
     for _ in {1..30}; do [ -S "$(check_get_atspi_socket)" ] && return 0; sleep 0.1; done
     return 1
 }
+check_portal_interface() {
+    local interface="$1"
+    gdbus introspect --session --dest org.freedesktop.portal.Desktop \
+        --object-path /org/freedesktop/portal/desktop 2>/dev/null |
+        grep -q "interface org.freedesktop.portal.${interface}"
+}
+check_pipewire_foundation() {
+    command -v pw-cli >/dev/null 2>&1 && pw-cli info 0 >/dev/null 2>&1
+}
 
-echo -e "
+print_mark() {
+    echo -e "
 ▄ ▄▄ ▄▄▄▄
    ▄▀ 0x0 ▀▄
     █  ───  █
     █  ███  █
      ▀▀   ▀▀
 "
+}
+
+print_mark
 
 COMPAT=false
 UNATTENDED=false
 SESSION_RELOAD_NEEDED=false
+SESSION_RELOAD_INPUT=false
+SESSION_RELOAD_WINRECTS=false
 RUNTIME_MODE=auto
 TARGET_USER="${SUDO_USER:-${USER:-$(id -un)}}"
 UINPUT_DEVICE="${GNOME_WAYLAND_UINPUT_DEVICE:-/dev/uinput}"
 SYSTEM_PYTHON="${GNOME_WAYLAND_SYSTEM_PYTHON:-/usr/bin/python3}"
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/gnome-wayland-computer-use"
+WINRECTS_MARKER="$STATE_DIR/cua-winrects-managed"
+WINRECTS_UUID='winrects@cua'
+WINRECTS_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/gnome-shell/extensions/$WINRECTS_UUID"
+CUA_HOME="${CUA_DRIVER_HOME:-$HOME/.cua-driver}"
+CUA_HELPER_DIR="$CUA_HOME/packages/current/wayland-helper"
+CUA_HELPER_INSTALLER="$CUA_HELPER_DIR/install.sh"
 
 for arg in "$@"; do
     case "$arg" in
@@ -81,8 +103,8 @@ for arg in "$@"; do
 Usage: install.sh [--compat] [--unattended] [--hermes|--agent-only]
   --compat      Install without requiring an active GNOME Wayland session
   --unattended  Mark piped/automated execution (privilege prompts may remain)
-  --hermes      Require and configure Hermes
-  --agent-only  Install the shared Agent Skills stack without Hermes
+  --hermes      Require and configure Hermes + Cua GNOME precision control
+  --agent-only  Install the shared Agent Skills stack without Hermes/Cua
 HELP
             exit 0
             ;;
@@ -121,8 +143,8 @@ else
 fi
 command -v gsettings &>/dev/null || error "gsettings not found"
 
-# ── 2. Accessibility + native capture dependencies ──────────────────────
-info "[2/5] Preparing accessibility and native capture..."
+# ── 2. Accessibility + Ubuntu-native observation foundation ─────────────
+info "[2/5] Preparing accessibility and native observation..."
 gsettings set org.gnome.desktop.interface toolkit-accessibility true
 if check_is_atspi_bus_alive; then
     success "AT-SPI2 D-Bus reachable"
@@ -143,6 +165,18 @@ add_pkg() {
     missing_packages+=("$pkg")
 }
 
+# Ubuntu 26.04 GNOME normally ships PipeWire, WirePlumber, and the GNOME portal.
+# Verify that foundation first, then repair with official distro packages only
+# when the host is incomplete or has been pared down.
+if ! check_pipewire_foundation; then
+    add_pkg pipewire
+    add_pkg pipewire-pulse
+    add_pkg wireplumber
+fi
+if ! check_portal_interface ScreenCast || ! check_portal_interface Screenshot; then
+    add_pkg xdg-desktop-portal
+    add_pkg xdg-desktop-portal-gnome
+fi
 command -v ydotool &>/dev/null || add_pkg ydotool
 if [ -z "$SYSTEM_PYTHON" ] ||
    ! "$SYSTEM_PYTHON" -c "import gi; gi.require_version('Gio','2.0'); from gi.repository import Gio" 2>/dev/null; then
@@ -164,10 +198,26 @@ fi
 
 if [ "${#missing_packages[@]}" -gt 0 ]; then
     command -v apt-get &>/dev/null || error "Ubuntu/Debian package manager required for: ${missing_packages[*]}"
-    info "Installing capture/input packages: ${missing_packages[*]}"
+    info "Repairing host foundation with Ubuntu packages: ${missing_packages[*]}"
     as_root apt-get install -y "${missing_packages[@]}" || error "Package installation failed"
 fi
-success "Native capture stack prepared (XDG ScreenCast + PipeWire; Screenshot recovery)"
+
+# These services are normally socket/D-Bus activated on Ubuntu. Starting them is
+# harmless after repair and avoids declaring a freshly installed foundation dead.
+systemctl --user start pipewire.socket pipewire.service wireplumber.service 2>/dev/null || true
+systemctl --user start xdg-desktop-portal.service xdg-desktop-portal-gnome.service 2>/dev/null || true
+
+if check_pipewire_foundation; then
+    success "PipeWire/WirePlumber foundation ready"
+else
+    warn "PipeWire core is not responding yet; diagnose after the current session settles"
+fi
+if check_portal_interface ScreenCast; then
+    success "GNOME XDG ScreenCast portal ready"
+else
+    warn "ScreenCast portal is not reachable yet"
+fi
+success "Observation stack prepared (XDG ScreenCast + PipeWire; Screenshot recovery)"
 
 # ── 3. Skill bundle and migration ────────────────────────────────────────
 info "[3/5] Installing the computer-use skill bundle..."
@@ -338,19 +388,20 @@ install_soul_routing() {
     {
         printf '%s\n' "$SOUL_START"
         cat <<'SOUL'
-## Ubuntu GNOME Wayland screen capture
+## Ubuntu GNOME Wayland computer use
 
-For requests to capture the desktop, screen, or what is currently visible, run:
+For requests to capture the visible desktop, run:
 
 ```bash
 HERMES_SKILLS_HOME="${HERMES_HOME:-$HOME/.hermes}"
 "$HERMES_SKILLS_HOME/skills/computer-use/scripts/capture.sh" --media --screen
 ```
 
-Preserve the emitted `MEDIA:` line. The hot path is XDG ScreenCast + PipeWire
-with persistent restore permission when supported. `--desktop` is a compatibility
-alias for the visible display. Do not install or depend on a GNOME Shell capture
-or window-geometry helper.
+Observation is XDG ScreenCast + PipeWire and is independent of Shell helpers.
+For control, use Hermes computer_use: AT-SPI remains background-first and Cua's
+own WinRects GNOME adapter may supply authoritative Mutter geometry, verified
+activation, compositor capture, and the agent cursor. Do not call WinRects from
+the capture helper or recreate Cua's D-Bus protocol.
 SOUL
         printf '%s\n' "$SOUL_END"
         [ ! -s "$clean" ] || { printf '\n'; cat "$clean"; }
@@ -358,7 +409,57 @@ SOUL
     chmod 600 "$next"
     mv "$next" "$SOUL_FILE"
     rm -f "$clean"
-    success "Hermes screen-capture routing activated"
+    success "Hermes computer-use routing activated"
+}
+
+winrects_is_active() {
+    command -v gnome-extensions >/dev/null 2>&1 || return 1
+    gnome-extensions info "$WINRECTS_UUID" 2>/dev/null | grep -q 'State:[[:space:]]*ACTIVE'
+}
+
+winrects_package_matches_install() {
+    [ -f "$CUA_HELPER_DIR/$WINRECTS_UUID/extension.js" ] || return 1
+    [ -f "$CUA_HELPER_DIR/$WINRECTS_UUID/metadata.json" ] || return 1
+    [ -f "$WINRECTS_DIR/extension.js" ] || return 1
+    [ -f "$WINRECTS_DIR/metadata.json" ] || return 1
+    cmp -s "$CUA_HELPER_DIR/$WINRECTS_UUID/extension.js" "$WINRECTS_DIR/extension.js" &&
+        cmp -s "$CUA_HELPER_DIR/$WINRECTS_UUID/metadata.json" "$WINRECTS_DIR/metadata.json"
+}
+
+provision_cua_winrects() {
+    local preexisting=false needs_install=true
+    [ -d "$WINRECTS_DIR" ] && preexisting=true
+
+    if [ ! -x "$CUA_HELPER_INSTALLER" ]; then
+        warn "Cua GNOME precision unavailable: package helper missing at ${CUA_HELPER_INSTALLER/$HOME/\~}"
+        warn "Observation and AT-SPI remain ready; no extension will be downloaded independently"
+        return 0
+    fi
+
+    if winrects_package_matches_install && winrects_is_active; then
+        needs_install=false
+        success "Cua WinRects current and ACTIVE"
+    fi
+
+    if $needs_install; then
+        info "Provisioning Cua's bundled GNOME precision helper..."
+        "$CUA_HELPER_INSTALLER" || {
+            warn "Cua WinRects installer failed; GNOME precision control remains degraded"
+            return 0
+        }
+        if ! $preexisting && [ -d "$WINRECTS_DIR" ]; then
+            mkdir -p "$STATE_DIR"
+            : > "$WINRECTS_MARKER"
+        fi
+
+        if winrects_is_active && winrects_package_matches_install; then
+            success "Cua WinRects installed and ACTIVE"
+        else
+            SESSION_RELOAD_WINRECTS=true
+            SESSION_RELOAD_NEEDED=true
+            warn "Cua WinRects installed/updated; one GNOME session reload is required to activate this helper"
+        fi
+    fi
 }
 
 remove_legacy_capture_extension
@@ -367,7 +468,7 @@ if $HERMES_ENABLED; then
     install_hermes_skill
     install_soul_routing
 fi
-success "Project Shell capture extension retired; native portal capture installed"
+success "Project Shell capture extension retired; native observation installed"
 
 # ── 4. Input recovery ────────────────────────────────────────────────────
 info "[4/5] Configuring explicit input recovery..."
@@ -376,6 +477,7 @@ if [ ! -c "$UINPUT_DEVICE" ]; then as_root modprobe uinput 2>/dev/null || warn "
 
 if ! id -nG "$TARGET_USER" 2>/dev/null | tr ' ' '\n' | grep -qx input; then
     as_root usermod -aG input "$TARGET_USER"
+    SESSION_RELOAD_INPUT=true
     SESSION_RELOAD_NEEDED=true
     warn "Added $TARGET_USER to input group; sign out/in once for that fallback permission"
 else
@@ -420,14 +522,18 @@ else
     error "ydotoold is missing after package installation"
 fi
 
-# ── 5. Runtime ───────────────────────────────────────────────────────────
+# ── 5. Runtime and Cua GNOME precision ──────────────────────────────────
 if $HERMES_ENABLED; then
-    info "[5/5] Connecting Hermes computer_use..."
+    info "[5/5] Connecting Hermes computer_use + Cua GNOME precision..."
     if ! command -v cua-driver &>/dev/null; then
         hermes computer-use install || error "Hermes could not install cua-driver"
     fi
     command -v cua-driver &>/dev/null || error "cua-driver is still not on PATH"
     cua-driver telemetry disable &>/dev/null || true
+
+    # Cua owns WinRects code and protocol. We only invoke the helper installer
+    # shipped inside the installed Cua package; never vendor or download it.
+    provision_cua_winrects
 
     mkdir -p "$HOME/.config/systemd/user"
     cat > "$HOME/.config/systemd/user/gnome-wayland-computer-use.service" <<'SERVICE'
@@ -455,7 +561,7 @@ SERVICE
     success "Hermes computer_use backend ready"
 else
     info "[5/5] Finalizing shared agent integration..."
-    success "Shared GNOME host stack ready"
+    success "Shared GNOME host stack ready; Cua/WinRects intentionally not acquired"
 fi
 
 echo ""
@@ -464,17 +570,19 @@ echo ""
 echo -e "  \e[33mDiagnose:\e[0m      $PRIMARY_DIR/scripts/diagnose.sh"
 echo -e "  \e[33mCapture:\e[0m       $PRIMARY_DIR/scripts/capture.sh --timing --screen /tmp/screen.png"
 if $SESSION_RELOAD_NEEDED; then
-    echo -e "  \e[33mNext:\e[0m          Sign out of GNOME and back in once for input-group fallback access"
+    echo -e "  \e[33mNext:\e[0m          Sign out of GNOME and back in once."
+    if $SESSION_RELOAD_WINRECTS && $SESSION_RELOAD_INPUT; then
+        echo "                 This activates Cua WinRects and your new fallback input permission."
+    elif $SESSION_RELOAD_WINRECTS; then
+        echo "                 Screen capture and accessibility already work; the reload activates"
+        echo "                 authoritative GNOME geometry, verified activation, and the Cua agent cursor."
+    else
+        echo "                 This activates your new fallback input permission."
+    fi
 elif $HERMES_ENABLED; then
-    echo -e "  \e[33mNext:\e[0m          Start a new Hermes session; first screen capture may ask for monitor permission"
+    echo -e "  \e[33mNext:\e[0m          Start a new Hermes session; first ScreenCast capture may ask for monitor permission"
 else
-    echo -e "  \e[33mNext:\e[0m          Start a new agent session; first screen capture may ask for monitor permission"
+    echo -e "  \e[33mNext:\e[0m          Start a new agent session; first ScreenCast capture may ask for monitor permission"
 fi
 
-echo -e "
-     ▄ ▄▄ ▄▄▄▄
-   ▄▀ 0x0 ▀▄
-    █  ───  █
-    █  ███  █
-     ▀▀   ▀▀
-"
+print_mark

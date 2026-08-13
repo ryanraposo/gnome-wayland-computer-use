@@ -16,6 +16,7 @@ confirm() {
 }
 
 removed=0
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/gnome-wayland-computer-use"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "  gnome-wayland-computer-use teardown"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -30,6 +31,37 @@ if [ -f "$CUA_FILE" ] && confirm "Remove $CUA_SERVICE?"; then
     systemctl --user daemon-reload
     check_ok "Removed $CUA_SERVICE"
     ((removed++)) || true
+fi
+
+# Cua WinRects is removed only when this project recorded that it caused the
+# extension to be installed. Cua owns the code/protocol; this marker owns only
+# our provisioning decision.
+WINRECTS_UUID='winrects@cua'
+WINRECTS_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/gnome-shell/extensions/$WINRECTS_UUID"
+WINRECTS_MARKER="$STATE_DIR/cua-winrects-managed"
+if [ -f "$WINRECTS_MARKER" ]; then
+    if [ -d "$WINRECTS_DIR" ] && confirm "Remove Cua WinRects installed by this project?"; then
+        command -v gnome-extensions &>/dev/null && gnome-extensions disable "$WINRECTS_UUID" 2>/dev/null || true
+        enabled=$(gsettings get org.gnome.shell enabled-extensions 2>/dev/null || true)
+        if [ -n "$enabled" ] && command -v python3 >/dev/null 2>&1; then
+            updated=$(python3 - "$enabled" "$WINRECTS_UUID" <<'PY'
+import ast, sys
+try:
+    items = ast.literal_eval(sys.argv[1])
+except Exception:
+    raise SystemExit(1)
+print(repr([item for item in items if item != sys.argv[2]]))
+PY
+) || updated=""
+            [ -z "$updated" ] || gsettings set org.gnome.shell enabled-extensions "$updated" 2>/dev/null || true
+        fi
+        rm -rf "$WINRECTS_DIR"
+        rm -f "$WINRECTS_MARKER"
+        check_ok "Removed project-provisioned Cua WinRects"
+        ((removed++)) || true
+    elif [ ! -d "$WINRECTS_DIR" ]; then
+        rm -f "$WINRECTS_MARKER"
+    fi
 fi
 
 # Managed uinput rule.
@@ -63,10 +95,11 @@ if confirm "Revert toolkit-accessibility to false?"; then
     ((removed++)) || true
 fi
 
-# Migration cleanup for obsolete project extension. Never touch unrelated extensions.
+# Obsolete project capture extension is managed migration debris: always remove
+# it if found. It is never a user-owned dependency in 2.3.
 LEGACY_UUID='desktop-capture@gnome-wayland-computer-use'
 LEGACY_DIR="$HOME/.local/share/gnome-shell/extensions/$LEGACY_UUID"
-if [ -d "$LEGACY_DIR" ] && confirm "Remove obsolete project capture extension $LEGACY_UUID?"; then
+if [ -d "$LEGACY_DIR" ]; then
     command -v gnome-extensions &>/dev/null && gnome-extensions disable "$LEGACY_UUID" 2>/dev/null || true
     rm -rf "$LEGACY_DIR"
     check_ok "Removed obsolete project capture extension"
@@ -74,13 +107,12 @@ if [ -d "$LEGACY_DIR" ] && confirm "Remove obsolete project capture extension $L
 fi
 
 # Portal restore state belongs to this project and can be revoked independently.
-STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/gnome-wayland-computer-use"
 if [ -e "$STATE_DIR/screencast-restore-token" ] && confirm "Remove cached ScreenCast restore token?"; then
     rm -f "$STATE_DIR/screencast-restore-token"
-    rmdir "$STATE_DIR" 2>/dev/null || true
     check_ok "Removed cached ScreenCast restore token"
     ((removed++)) || true
 fi
+rmdir "$STATE_DIR" 2>/dev/null || true
 
 # Skill files.
 SKILL_NAME='gnome-wayland-computer-use'
@@ -130,7 +162,7 @@ SOUL_FILE="$HERMES_HOME/SOUL.md"
 SOUL_START='<!-- gnome-wayland-computer-use:start -->'
 SOUL_END='<!-- gnome-wayland-computer-use:end -->'
 SOUL_CREATED_MARKER="$BACKUP_ROOT/soul-created-by-installer"
-if [ -f "$SOUL_FILE" ] && grep -Fxq "$SOUL_START" "$SOUL_FILE" && confirm "Remove managed capture routing from ${SOUL_FILE/$HOME/\~}?"; then
+if [ -f "$SOUL_FILE" ] && grep -Fxq "$SOUL_START" "$SOUL_FILE" && confirm "Remove managed computer-use routing from ${SOUL_FILE/$HOME/\~}?"; then
     clean=$(mktemp "${SOUL_FILE}.clean.XXXXXX")
     awk -v start="$SOUL_START" -v end="$SOUL_END" '
         $0 == start { managed = 1; next }
@@ -154,4 +186,4 @@ echo ""
 check_info "Manual cleanup choices:"
 check_info "  input group: sudo deluser $USER input"
 check_info "  ydotool package: sudo apt remove ydotool"
-check_info "  unrelated GNOME Shell extensions are intentionally untouched"
+check_info "  pre-existing Cua WinRects and unrelated GNOME extensions are preserved"

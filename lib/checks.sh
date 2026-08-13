@@ -10,12 +10,6 @@ check_hr()   { echo "───────────────────�
 CK_SCORE=0; CK_TOTAL=0
 check_pass()  { ((CK_SCORE++)) || true; ((CK_TOTAL++)) || true; }
 check_xfail() { ((CK_TOTAL++)) || true; }
-check_print_summary() {
-    echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "  Result: $CK_SCORE / $CK_TOTAL checks passed"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-}
 
 check_version_ge() {
     [ $# -eq 2 ] || return 2
@@ -94,6 +88,12 @@ check_portal_interface() {
 }
 check_is_screencast_portal_ready() { check_portal_interface ScreenCast; }
 check_is_screenshot_portal_ready() { check_portal_interface Screenshot; }
+check_is_pipewire_core_ready() {
+    command -v pw-cli &>/dev/null && pw-cli info 0 &>/dev/null
+}
+check_is_wireplumber_ready() {
+    systemctl --user is-active wireplumber.service &>/dev/null || pgrep -x wireplumber &>/dev/null
+}
 check_is_pipewire_capture_ready() {
     local python="${GNOME_WAYLAND_SYSTEM_PYTHON:-/usr/bin/python3}"
     [ -x "$python" ] || python="$(command -v python3 2>/dev/null || true)"
@@ -107,6 +107,38 @@ check_has_screencast_restore_token() {
 }
 check_legacy_capture_extension_absent() {
     [ ! -d "$HOME/.local/share/gnome-shell/extensions/desktop-capture@gnome-wayland-computer-use" ]
+}
+
+check_winrects_dir() {
+    printf '%s\n' "${XDG_DATA_HOME:-$HOME/.local/share}/gnome-shell/extensions/winrects@cua"
+}
+check_cua_helper_installer() {
+    printf '%s\n' "${CUA_DRIVER_HOME:-$HOME/.cua-driver}/packages/current/wayland-helper/install.sh"
+}
+check_is_cua_winrects_installed() { [ -f "$(check_winrects_dir)/extension.js" ] && [ -f "$(check_winrects_dir)/metadata.json" ]; }
+check_is_cua_helper_packaged() { [ -x "$(check_cua_helper_installer)" ]; }
+check_is_cua_winrects_active() {
+    command -v gnome-extensions &>/dev/null || return 1
+    gnome-extensions info winrects@cua 2>/dev/null | grep -q 'State:[[:space:]]*ACTIVE'
+}
+check_has_cua_winrects_owner_marker() {
+    [ -f "${XDG_STATE_HOME:-$HOME/.local/state}/gnome-wayland-computer-use/cua-winrects-managed" ]
+}
+check_get_winrects_bus_owner_pid() {
+    local owner pid
+    owner=$(gdbus call --session --dest org.freedesktop.DBus --object-path /org/freedesktop/DBus \
+        --method org.freedesktop.DBus.GetNameOwner org.cua.WinRects 2>/dev/null | sed -n "s/.*'\([^']*\)'.*/\1/p")
+    [ -n "$owner" ] || return 1
+    pid=$(gdbus call --session --dest org.freedesktop.DBus --object-path /org/freedesktop/DBus \
+        --method org.freedesktop.DBus.GetConnectionUnixProcessID "$owner" 2>/dev/null | grep -oE '[0-9]+' | head -1)
+    [ -n "$pid" ] || return 1
+    printf '%s\n' "$pid"
+}
+check_is_winrects_served_by_gnome_shell() {
+    local pid exe
+    pid=$(check_get_winrects_bus_owner_pid) || return 1
+    exe=$(readlink -f "/proc/$pid/exe" 2>/dev/null || true)
+    [ "$(basename "$exe")" = gnome-shell ]
 }
 
 check_session() {
@@ -156,17 +188,25 @@ check_screenshot_portal() {
     if check_is_screenshot_portal_ready; then check_ok "XDG Screenshot portal ready"; check_pass; return 0; fi
     check_fail "XDG Screenshot portal not reachable"; check_xfail; return 1
 }
+check_pipewire_core() {
+    if check_is_pipewire_core_ready; then check_ok "PipeWire core responding"; check_pass; return 0; fi
+    check_fail "PipeWire core not responding"; check_xfail; return 1
+}
+check_wireplumber() {
+    if check_is_wireplumber_ready; then check_ok "WirePlumber session manager active"; check_pass; return 0; fi
+    check_fail "WirePlumber not active"; check_xfail; return 1
+}
 check_pipewire_capture() {
-    if check_is_pipewire_capture_ready; then check_ok "PipeWire/GStreamer capture ready"; check_pass; return 0; fi
-    check_fail "PipeWire/GStreamer capture stack incomplete"; check_xfail; return 1
+    if check_is_pipewire_capture_ready; then check_ok "GStreamer PipeWire capture ready"; check_pass; return 0; fi
+    check_fail "GStreamer PipeWire capture stack incomplete"; check_xfail; return 1
 }
 check_restore_token() {
     if check_has_screencast_restore_token; then check_ok "ScreenCast restore token cached"; check_pass; return 0; fi
     check_info "No ScreenCast restore token yet (first capture may ask for monitor permission)"; check_pass; return 0
 }
 check_legacy_capture_extension() {
-    if check_legacy_capture_extension_absent; then check_ok "Legacy capture extension absent"; check_pass; return 0; fi
-    check_fail "Legacy capture extension still installed; rerun installer to retire it"; check_xfail; return 1
+    if check_legacy_capture_extension_absent; then check_ok "Obsolete project capture extension removed"; check_pass; return 0; fi
+    check_fail "Obsolete project capture extension still installed; rerun installer"; check_xfail; return 1
 }
 check_uinput() {
     if check_has_uinput_device; then check_ok "/dev/uinput present"; check_pass; return 0; fi
@@ -182,7 +222,35 @@ check_ydotoold() {
     check_fail "ydotoold not running"; check_xfail; return 1
 }
 check_cua_driver() {
-    if ! check_is_hermes_integration_enabled; then check_info "Hermes cua-driver backend not selected"; check_pass; return 0; fi
+    if ! check_is_hermes_integration_enabled; then check_info "Hermes/Cua profile not selected"; check_pass; return 0; fi
     if check_is_cua_driver_running; then check_ok "Hermes computer_use backend running"; check_pass; return 0; fi
     check_fail "Hermes computer_use backend not ready"; check_xfail; return 1
+}
+check_cua_helper_package() {
+    if ! check_is_hermes_integration_enabled; then check_info "Cua GNOME precision not selected"; check_pass; return 0; fi
+    if check_is_cua_helper_packaged; then check_ok "Cua package contains wayland-helper/install.sh"; check_pass; return 0; fi
+    check_fail "Cua package does not contain the documented Wayland helper installer"; check_xfail; return 1
+}
+check_cua_winrects_installed() {
+    if ! check_is_hermes_integration_enabled; then check_info "Cua WinRects not selected"; check_pass; return 0; fi
+    if check_is_cua_winrects_installed; then check_ok "Cua WinRects installed"; check_pass; return 0; fi
+    check_fail "Cua WinRects not installed"; check_xfail; return 1
+}
+check_cua_winrects_active() {
+    if ! check_is_hermes_integration_enabled; then check_info "Cua WinRects not selected"; check_pass; return 0; fi
+    if check_is_cua_winrects_active; then check_ok "winrects@cua ACTIVE"; check_pass; return 0; fi
+    if check_is_cua_winrects_installed; then
+        check_info "winrects@cua installed but not ACTIVE — GNOME session reload required"
+        check_xfail
+        return 1
+    fi
+    check_fail "winrects@cua unavailable"; check_xfail; return 1
+}
+check_cua_winrects_bus() {
+    if ! check_is_hermes_integration_enabled; then check_info "Cua WinRects bus not selected"; check_pass; return 0; fi
+    if check_is_winrects_served_by_gnome_shell; then check_ok "org.cua.WinRects served by GNOME Shell"; check_pass; return 0; fi
+    if check_is_cua_winrects_installed && ! check_is_cua_winrects_active; then
+        check_info "org.cua.WinRects pending GNOME session reload"; check_xfail; return 1
+    fi
+    check_fail "org.cua.WinRects is not owned by GNOME Shell"; check_xfail; return 1
 }
