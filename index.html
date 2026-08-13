@@ -1,208 +1,75 @@
 <!doctype html>
 <html lang="en">
-
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description"
-        content="Low-latency computer use for Ubuntu 26.04 GNOME Wayland: AX-first automation, smart installed-web-app routing, fast capture, and verified recovery." />
-    <title>gnome-wayland-computer-use</title>
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0 }
-        body {
-            font-family: 'Courier New', Courier, monospace;
-            color: #000;
-            background: #fff;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            min-height: 100vh;
-            padding: 40px 20px
-        }
-        main { max-width: 720px; width: 100% }
-        h1 { font-size: 1.8em; letter-spacing: -.5px; text-align: center }
-        .dog {
-            font-family: 'Courier New', Courier, monospace;
-            white-space: pre;
-            font-size: 14px;
-            line-height: 1.2;
-            text-align: center;
-            margin: 8px 0 18px;
-            color: #000
-        }
-        p { color: #555; font-size: 14px; line-height: 1.6; text-align: center }
-        .learn-more {
-            display: block;
-            width: max-content;
-            max-width: 100%;
-            font-size: 13px;
-            color: #000;
-            margin: 14px auto 20px;
-            text-decoration: none
-        }
-        .learn-more:hover { text-decoration: underline }
-        .fast-path {
-            margin: 0 0 20px;
-            padding: 11px 14px;
-            border: 1px solid #ddd;
-            border-radius: 8px;
-            background: #fafafa;
-            color: #111;
-            text-align: center;
-            font-size: 12px;
-            line-height: 1.55
-        }
-        .modes {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px;
-            margin: 0 0 20px
-        }
-        .mode {
-            border: 1px solid #ddd;
-            border-radius: 8px;
-            padding: 13px 14px;
-            color: #555;
-            font-size: 12px;
-            line-height: 1.55
-        }
-        .mode strong { display: block; color: #000; font-size: 13px; margin-bottom: 3px }
-        .note {
-            margin: 0 0 20px;
-            padding: 10px 14px;
-            border-left: 3px solid #000;
-            background: #f9f9f9;
-            color: #555;
-            font-size: 12px;
-            line-height: 1.55
-        }
-        code { font-family: inherit; color: #000 }
-        .curl-wrap {
-            background: #f5f5f5;
-            border: 1px solid #ddd;
-            border-radius: 8px;
-            padding: 14px 16px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin: 20px 0
-        }
-        .curl-code {
-            font-family: inherit;
-            font-size: 13px;
-            white-space: nowrap;
-            flex: 1;
-            overflow-x: auto;
-            scrollbar-width: none
-        }
-        .curl-code::-webkit-scrollbar { display: none }
-        .curl-btn {
-            flex-shrink: 0;
-            background: none;
-            border: 1px solid #bbb;
-            border-radius: 5px;
-            cursor: pointer;
-            padding: 5px 7px;
-            line-height: 0;
-            color: #666;
-            transition: .15s
-        }
-        .curl-btn:hover { background: #eaeaea; border-color: #888; color: #000 }
-        .links {
-            text-align: center;
-            font-size: 13px;
-            padding: 32px 0 0;
-            color: #999;
-            white-space: nowrap
-        }
-        .links a { color: #000; text-decoration: none }
-        .links a:hover { text-decoration: underline }
-        @media (max-width: 560px) { .modes { grid-template-columns: 1fr } }
-    </style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Fast closed-loop computer use for Ubuntu GNOME Wayland: accessibility when semantics exist, pixels when they do not, native portals for the screen.">
+  <title>gnome-wayland-computer-use</title>
+  <style>
+    :root { color-scheme: light dark; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    body { max-width: 900px; margin: 0 auto; padding: 56px 24px 96px; line-height: 1.55; }
+    h1 { font-size: clamp(2rem, 6vw, 4.4rem); line-height: .95; letter-spacing: -.06em; margin: 16px 0 22px; }
+    h2 { margin-top: 48px; letter-spacing: -.03em; }
+    .hero { font-size: 1.15rem; max-width: 720px; }
+    .mark { white-space: pre; font-weight: 700; }
+    .pill { display: inline-block; border: 1px solid currentColor; border-radius: 999px; padding: 4px 10px; margin: 2px 4px 2px 0; font-size: .82rem; }
+    pre { overflow-x: auto; padding: 16px; border: 1px solid color-mix(in srgb, currentColor 28%, transparent); border-radius: 12px; }
+    code { font-family: inherit; }
+    table { width: 100%; border-collapse: collapse; }
+    td, th { text-align: left; vertical-align: top; padding: 10px 8px; border-bottom: 1px solid color-mix(in srgb, currentColor 18%, transparent); }
+    .good { font-weight: 700; }
+    footer { margin-top: 64px; opacity: .7; }
+  </style>
 </head>
-
 <body>
-    <main>
-        <h1>gnome-wayland-computer-use</h1>
-        <pre class="dog">▄ ▄▄ ▄▄▄▄
+  <div class="mark">▄ ▄▄ ▄▄▄▄
    ▄▀ 0x0 ▀▄
     █  ───  █
     █  ███  █
-     ▀▀   ▀▀</pre>
-        <p style="margin-top:6px">Low-latency ⚕ computer use ⚕ for <strong>Ubuntu 26.04 GNOME Wayland</strong></p>
+     ▀▀   ▀▀</div>
 
-        <a class="learn-more"
-            href="https://github.com/ryanraposo/gnome-wayland-computer-use#computer-use-operating-model">How does it work? →</a>
+  <h1>GNOME Wayland<br>computer use.</h1>
+  <p class="hero">Accessibility when semantics exist. Pixels when they do not. Native XDG portals for the screen.</p>
+  <p>
+    <span class="pill">Ubuntu 26.04</span>
+    <span class="pill">GNOME 50</span>
+    <span class="pill">Wayland</span>
+    <span class="pill">Hermes + Agent Skills</span>
+  </p>
 
-        <div class="fast-path">
-            <strong>Route once → cheapest useful evidence → semantic action span → verify at a real decision boundary.</strong>
-        </div>
+  <h2>Install</h2>
+  <pre><code>curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh | bash</code></pre>
 
-        <div class="modes">
-            <div class="mode">
-                <strong>AX first</strong>
-                Read text, roles, state, and targetable widgets without paying for pixels when accessibility is enough.
-            </div>
-            <div class="mode">
-                <strong>Installed web apps stay apps</strong>
-                PWAs and standalone browser apps keep their own identity instead of collapsing into generic Chrome or Firefox.
-            </div>
-            <div class="mode">
-                <strong>Fast capture</strong>
-                Desktop and screen fallbacks poll for readiness instead of imposing fixed multi-second screenshot sleeps.
-            </div>
-            <div class="mode">
-                <strong>Less ritual</strong>
-                Verified actions continue in deterministic spans; fresh observations happen when the next decision actually needs them.
-            </div>
-        </div>
+  <h2>No Shell helper required.</h2>
+  <p>Version 2.3 removes the project-owned desktop-capture extension and the accidental WinRects dependency from capture. Missing semantic geometry degrades to visible pixels instead of another GNOME Shell extension.</p>
 
-        <div class="curl-wrap">
-            <span class="curl-code" id="curl">curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh | bash</span>
-            <button class="curl-btn" id="copy" onclick="copyCurl()" title="Copy to clipboard"
-                aria-label="Copy install command">
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"
-                    stroke-linecap="round" stroke-linejoin="round">
-                    <rect x="3" y="3" width="10" height="12" rx="1" />
-                    <path d="M5 1h6a1 1 0 0 1 1 1v2" />
-                </svg>
-            </button>
-        </div>
+  <table>
+    <tr><th>Need</th><th>Primary</th><th>Recovery</th></tr>
+    <tr><td>Accessible UI</td><td>AT-SPI / native driver</td><td>pixels → foreground</td></tr>
+    <tr><td>Visible screen</td><td>XDG ScreenCast + PipeWire</td><td>Screenshot portal → Shift+Print</td></tr>
+    <tr><td>GLFW / Vulkan / canvas</td><td>screen pixels + coordinates</td><td>normal window selection</td></tr>
+    <tr><td>Installed web apps</td><td>live identity + launcher cache</td><td>browser identity</td></tr>
+  </table>
 
-        <div class="note">
-            <strong>Runtime-aware:</strong> Hermes on PATH gets the full persistent <code>cua-driver</code> integration.
-            Other agents get the same GNOME host stack plus a portable Agent Skill. First-use routing stays off the network;
-            app identity is cached; capture timing is diagnosable; recovery services restart quickly.
-        </div>
+  <h2>Fast capture after one real permission.</h2>
+  <p>The hot path is ScreenCast + PipeWire. On portal v4+, the helper requests persistent permission and rotates the single-use restore token after every restored session. The one-shot Screenshot portal is recovery, not the steady-state architecture.</p>
+  <pre><code>CAPTURE="$HOME/.agents/skills/gnome-wayland-computer-use/scripts/capture.sh"
+"$CAPTURE" --timing --screen /tmp/screen.png</code></pre>
+  <p>The first capture may ask you to choose a monitor. Later calls restore the approved source while permission remains valid.</p>
 
-        <div class="note">
-            <strong>Desktop ≠ screen:</strong> “desktop” means wallpaper and desktop icons. “screen” means the visible display,
-            including windows. The compositor path preserves focus/workspace/window state; compatibility capture restores and verifies it.
-        </div>
+  <h2>Pixel-only means pixel-only.</h2>
+  <p>A Vulkan or GLFW window can be plainly visible while exposing no useful AT-SPI tree and no semantic window record. The skill does not confuse that with absence. It captures the display, grounds visually, and acts by coordinates.</p>
 
-        <pre class="dog" style="margin-bottom:0">     ▄ ▄▄ ▄▄▄▄
-   ▄▀ 0x0 ▀▄
-    █  ───  █
-    █  ███  █
-     ▀▀   ▀▀</pre>
-        <div class="links">
-            <a href="https://github.com/ryanraposo/gnome-wayland-computer-use">github</a> ·
-            <a href="https://github.com/ryanraposo/gnome-wayland-computer-use/blob/main/PERF_NOTES.md">performance</a> ·
-            <a href="https://github.com/nousresearch/hermes-agent">hermes</a> ·
-            by <a href="https://github.com/ryanraposo">ryanraposo</a>
-        </div>
-    </main>
+  <h2>Installed web apps stay apps.</h2>
+  <p>Standalone browser-backed apps keep their own identity through live window data, desktop IDs, <code>StartupWMClass</code>, <code>--app-id=</code>, and <code>--app=</code>. The resolver caches launcher inventory instead of rediscovering it every turn.</p>
 
-    <script>
-        function copyCurl() {
-            navigator.clipboard.writeText(document.getElementById('curl').textContent);
-            const b = document.getElementById('copy');
-            b.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5 6 11.5 13 4.5"/></svg>';
-            setTimeout(() => {
-                b.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="10" height="12" rx="1"/><path d="M5 1h6a1 1 0 0 1 1 1v2"/></svg>';
-            }, 1500);
-        }
-    </script>
+  <h2>Route once → cheapest truthful evidence.</h2>
+  <p>AX for readable state. Pixels for custom rendering. Deterministic click → type and type → submit spans stay together. Fresh evidence is paid for at real decision boundaries, not after every input.</p>
+
+  <h2>Diagnose the actual layers.</h2>
+  <pre><code>~/.agents/skills/gnome-wayland-computer-use/scripts/diagnose.sh</code></pre>
+  <p>A healthy capture stack reports ScreenCast, PipeWire/GStreamer, Screenshot recovery, restore-token state, and <span class="good">legacy capture extension absent</span>.</p>
+
+  <footer>gnome-wayland-computer-use · MIT · Ryan Raposo</footer>
 </body>
-
 </html>
