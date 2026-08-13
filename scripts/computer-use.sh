@@ -14,13 +14,16 @@ usage() {
 /computer-use commands
 
   /computer-use status
-      Compact Cua, RemoteDesktop, observer and managed-memory status.
+      Compact Cua, RemoteDesktop, observer and .gwcu status.
 
   /computer-use managed
-      Enable managed project AGENTS.md identity truths.
+      Enable managed repo/workspace-local .gwcu truths in the current scope.
 
   /computer-use managed on|off|status
-      Change or inspect project-local managed AGENTS.md routing memory.
+      Change or inspect persistence. Enabling creates .gwcu; Git scopes also get /.gwcu in .gitignore.
+
+  /computer-use truths
+      Show the current .gwcu scope, path and stored truth counts.
 
   /computer-use consent
       Explain and verify the GNOME RemoteDesktop -> EIS/libei control path.
@@ -52,15 +55,37 @@ case "$command" in
         out=$("$PROFILE" managed "$mode" --machine)
         "$PYTHON" - "$out" <<'PY'
 import json,sys
-d=json.loads(sys.argv[1]); enabled=bool(d.get("managed_agents"))
-print(f"Managed AGENTS.md blocks: {'ON' if enabled else 'OFF'}")
+d=json.loads(sys.argv[1]); enabled=bool(d.get("managed_truths")); s=d.get('scope') or {}
+print(f"Managed .gwcu truths: {'ON' if enabled else 'OFF'}")
 if enabled:
-    print("Stable project app identities may be remembered in a bounded managed block.")
-    print("A warm identity hit can remove 100% of the repeat identity-routing setup call.")
+    print("Stable local facts may be remembered in the current repo/workspace .gwcu.")
+    print("Git scopes keep /.gwcu in the root .gitignore before truth is written.")
+    print("A warm identity hit skips repeated launcher/PWA identity resolution.")
 else:
-    print("Project AGENTS.md files will not be written by GWCU.")
+    print("GWCU will not read or write persisted .gwcu truths on the hot path.")
+if s.get('path'): print(f"Current truth file: {s['path']}")
 print(f"Preference: {d.get('path')}")
 PY
+        ;;
+    truths)
+        set +e; out=$("$PROFILE" truths status --machine); rc=$?; set -e
+        [ -n "$out" ] || out='{"schema":"gwcu.truths.v1","ok":false,"code":"unavailable"}'
+        "$PYTHON" - "$out" <<'PY'
+import json,sys
+d=json.loads(sys.argv[1]); c=d.get('counts') or {}
+print(".gwcu truths")
+print(f"  status: {d.get('code','unknown')}")
+if d.get('root'): print(f"  scope: {d['root']}")
+if d.get('path'): print(f"  file: {d['path']}")
+print(f"  git scope: {'yes' if d.get('git') else 'no'}")
+if c:
+    print(f"  apps: {c.get('apps',0)}")
+    print(f"  observed facts: {c.get('observed',0)}")
+    print(f"  capabilities: {c.get('capabilities',0)}")
+    print(f"  calibration: {c.get('calibration',0)}")
+    print(f"  preferences: {c.get('preferences',0)}")
+PY
+        exit 0
         ;;
     consent)
         set +e; out=$("$PORTAL" --status 2>/dev/null); rc=$?; set -e
@@ -95,12 +120,13 @@ PY
         "$PYTHON" - "$managed" "$portal" "$health" "$portal_rc" "$health_rc" <<'PY'
 import json,sys
 m=json.loads(sys.argv[1]); p=json.loads(sys.argv[2]); h=json.loads(sys.argv[3])
-portal=p.get('portal',{}); token=portal.get('restore_token',{}); report=h.get('report') or {}
+portal=p.get('portal',{}); token=portal.get('restore_token',{}); report=h.get('report') or {}; scope=m.get('scope') or {}
 print("Computer use")
 print(f"  Cua health: {report.get('overall') or h.get('code','unknown')}")
 print(f"  RemoteDesktop portal: {'available' if portal.get('available') else 'unavailable'}")
 print(f"  RemoteDesktop restore token: {'present' if token.get('present') else 'not established'}")
-print(f"  managed AGENTS.md: {'on' if m.get('managed_agents') else 'off'}")
+print(f"  managed .gwcu: {'on' if m.get('managed_truths') else 'off'}")
+if scope.get('path'): print(f"  truth file: {scope['path']}")
 print("  control: Cua -> GNOME RemoteDesktop -> EIS/libei")
 print("  whole-screen observation: XDG ScreenCast -> PipeWire")
 PY
