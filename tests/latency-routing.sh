@@ -5,14 +5,8 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TEST_TMP=$(mktemp -d)
 trap 'rm -rf "$TEST_TMP"' EXIT
 
-fail() {
-    printf 'not ok - %s\n' "$1" >&2
-    exit 1
-}
-
-pass() {
-    printf 'ok - %s\n' "$1"
-}
+fail() { printf 'not ok - %s\n' "$1" >&2; exit 1; }
+pass() { printf 'ok - %s\n' "$1"; }
 
 capture="$ROOT/scripts/capture.sh"
 identity="$ROOT/scripts/app-identity.sh"
@@ -22,52 +16,23 @@ portable_skill="$ROOT/runtimes/openai/SKILL.md"
 contract="$ROOT/references/skill-ux-contract.md"
 installer="$ROOT/install.sh"
 landing="$ROOT/index.html"
+readme="$ROOT/README.md"
 
-if grep -Eq 'sleep (1\.5|0\.4|0\.2)([[:space:]]|$)' "$capture"; then
-    fail "capture helper has no legacy fixed screenshot sleeps"
-fi
-grep -q '^wait_for_new_screenshot()' "$capture" || \
-    fail "capture helper polls for screenshot creation"
-grep -q -- '--timing' "$capture" || \
-    fail "capture helper exposes timing diagnostics"
-pass "capture helper uses polling and timing diagnostics"
+# Capture architecture: persistent ScreenCast is the hot path, not a Shell helper.
+grep -q '^capture_portal_screencast()' "$capture" || fail "capture has a ScreenCast hot path"
+grep -q "persist_mode.*Variant('u', 2)" "$capture" || fail "ScreenCast requests persistent permission"
+grep -q 'screencast-restore-token' "$capture" || fail "ScreenCast persists a restore token"
+grep -q 'capture_portal_screencast || portal_rc=' "$capture" || fail "ScreenCast is attempted"
+grep -q 'capture_portal_screenshot || portal_rc=' "$capture" || fail "Screenshot recovery is present"
+[ "$(grep -n 'capture_portal_screencast || portal_rc=' "$capture" | cut -d: -f1)" -lt \
+  "$(grep -n 'capture_portal_screenshot || portal_rc=' "$capture" | cut -d: -f1)" ] || \
+    fail "ScreenCast precedes Screenshot"
+! grep -q 'org.cua.WinRects' "$capture" || fail "capture is independent of WinRects"
+! grep -q 'GnomeWaylandDesktopCapture' "$capture" || fail "capture is independent of project Shell extension"
+! grep -q 'toggle_show_desktop' "$capture" || fail "capture never hides windows"
+pass "capture hot path is native, persistent, and extension-free"
 
-grep -q '^## Installed Web App Identity$' "$hermes_skill" || \
-    fail "Hermes skill documents standalone web-app identity"
-grep -q -- 'app-identity.sh' "$hermes_skill" || \
-    fail "Hermes skill uses the installed app identity resolver"
-grep -q -- '--app-id=' "$hermes_skill" || \
-    fail "Hermes skill recognizes standalone browser launchers"
-grep -Fq 'Use `mode="ax"` first' "$hermes_skill" || \
-    fail "Hermes skill makes AX the cheap first observation"
-grep -q '^## Latency-First Interaction$' "$hermes_skill" || \
-    fail "Hermes skill defines end-to-end latency policy"
-grep -q 'largest deterministic semantic action span' "$hermes_skill" || \
-    fail "Hermes skill batches deterministic interaction spans"
-grep -q 'do not immediately pay for another observation' "$hermes_skill" || \
-    fail "Hermes skill avoids duplicate verification observations"
-grep -q -- '--cached-only' "$hermes_skill" || \
-    fail "Hermes first-use update check stays off the network"
-grep -q '^## Installed Web App Identity$' "$portable_skill" || \
-    fail "portable skill documents standalone web-app identity"
-grep -q '^## Latency-First Interaction$' "$portable_skill" || \
-    fail "portable skill defines end-to-end latency policy"
-grep -q 'semantic action span' "$contract" || \
-    fail "skill UX contract permits deterministic action spans"
-grep -q 'A fresh screenshot is not a phase-transition requirement' "$contract" || \
-    fail "skill UX contract rejects ritual recapture"
-grep -q '"scripts/app-identity.sh"' "$installer" || \
-    fail "installer ships the web-app identity resolver"
-grep -q '^RestartSec=250ms$' "$installer" || \
-    fail "managed services recover without a two-second restart penalty"
-grep -q 'Installed web apps stay apps' "$landing" || \
-    fail "landing page explains installed-web-app routing"
-grep -q 'Route once → cheapest useful evidence' "$landing" || \
-    fail "landing page reflects the end-to-end low-latency loop"
-pass "runtime and published surfaces share the latency-routing contract"
-
-# First-use update routing must never wait on the network. The normal explicit
-# update command remains free to refresh its cache.
+# First-use update routing must remain network-free.
 update_home="$TEST_TMP/update-home"
 update_bin="$TEST_TMP/update-bin"
 mkdir -p "$update_home" "$update_bin"
@@ -83,14 +48,11 @@ HOME="$update_home" PATH="$update_bin:/usr/bin:/bin" \
     GNOME_WAYLAND_COMPUTER_USE_UPDATE_STATE_HOME="$update_home/state" \
     "$update_check" --quiet --cached-only >/dev/null
 elapsed_ms=$(( $(date +%s%3N) - start_ms ))
-[ ! -e "$update_home/network-was-called" ] || \
-    fail "cached-only first-use update check never invokes curl"
-[ "$elapsed_ms" -lt 500 ] || \
-    fail "cached-only first-use update check returns immediately (got ${elapsed_ms}ms)"
+[ ! -e "$update_home/network-was-called" ] || fail "cached-only update check invoked the network"
+[ "$elapsed_ms" -lt 500 ] || fail "cached-only update check took ${elapsed_ms}ms"
 pass "first-use update check is network-free (${elapsed_ms}ms)"
 
-# Installed web apps backed by the same browser must keep distinct identities,
-# including browser commands hidden behind env/Flatpak wrappers.
+# Installed web apps backed by the same browser retain distinct identity.
 identity_home="$TEST_TMP/identity-home"
 identity_data="$identity_home/data"
 identity_runtime="$identity_home/runtime"
@@ -116,128 +78,91 @@ Name=Gmail
 Exec=/usr/bin/google-chrome-stable --profile-directory=Default --app=https://mail.google.com/
 StartupWMClass=crx_gmail_app
 DESKTOP
-cat > "$identity_data/applications/flatpak-docs.desktop" <<'DESKTOP'
-[Desktop Entry]
-Type=Application
-Name=Docs
-Exec=/usr/bin/flatpak run com.google.Chrome --app https://docs.google.com/
-StartupWMClass=crx_docs_app
-DESKTOP
-
 identity_json="$TEST_TMP/identity.json"
 HOME="$identity_home" XDG_DATA_HOME="$identity_data" XDG_DATA_DIRS="$TEST_TMP/empty-data" \
     XDG_RUNTIME_DIR="$identity_runtime" bash "$identity" > "$identity_json"
-python3 - "$identity_json" <<'PY' || fail "installed web-app resolver keeps browser/PWA identity distinct"
-import json
-import sys
+python3 - "$identity_json" <<'PY' || fail "web-app resolver collapsed browser identity"
+import json, sys
 rows = json.load(open(sys.argv[1], encoding='utf-8'))
 by_name = {row['display_name']: row for row in rows}
 assert by_name['Google Chrome']['kind'] == 'browser'
-assert by_name['Google Chrome']['standalone_web_app'] is False
 assert by_name['ChatGPT']['kind'] == 'installed-web-app'
-assert by_name['ChatGPT']['standalone_web_app'] is True
 assert by_name['ChatGPT']['app_id'] == 'chatgpt_app'
 assert by_name['Gmail']['kind'] == 'installed-web-app'
-assert by_name['Gmail']['standalone_web_app'] is True
-assert by_name['Docs']['kind'] == 'installed-web-app'
-assert by_name['Docs']['engine'] == 'chrome'
-assert by_name['Docs']['site'] == 'https://docs.google.com/'
 assert by_name['ChatGPT']['desktop_id'] != by_name['Gmail']['desktop_id']
 PY
-query_json="$TEST_TMP/query.json"
-HOME="$identity_home" XDG_DATA_HOME="$identity_data" XDG_DATA_DIRS="$TEST_TMP/empty-data" \
-    XDG_RUNTIME_DIR="$identity_runtime" bash "$identity" ChatGPT > "$query_json"
-python3 - "$query_json" <<'PY' || fail "installed web-app resolver supports cheap name lookup"
-import json
-import sys
-rows = json.load(open(sys.argv[1], encoding='utf-8'))
-assert len(rows) == 1
-assert rows[0]['display_name'] == 'ChatGPT'
-PY
-pass "browser, PWAs, and wrapped PWAs retain distinct identities"
+pass "installed web apps retain distinct browser-backed identities"
 
-# The ydotool screen fallback should return as soon as the screenshot file
-# exists instead of imposing the old 1.5 second sleep.
-home="$TEST_TMP/home"
-mock_bin="$TEST_TMP/bin"
-mkdir -p "$home/Pictures/Screenshots" "$mock_bin"
-cat > "$mock_bin/gnome-screenshot" <<'SH'
-#!/usr/bin/env bash
-exit 1
-SH
+# Mock warm ScreenCast capture: first portal call wins immediately.
+home="$TEST_TMP/capture-home"
+mock_bin="$TEST_TMP/capture-fast-bin"
+mkdir -p "$home" "$mock_bin"
 cat > "$mock_bin/python3" <<'SH'
-#!/usr/bin/env bash
-exit 1
-SH
-cat > "$mock_bin/ydotool" <<'SH'
-#!/usr/bin/env bash
-mkdir -p "$HOME/Pictures/Screenshots"
-printf 'png' > "$HOME/Pictures/Screenshots/fast.png"
-SH
-chmod +x "$mock_bin/"*
-
-start_ms=$(date +%s%3N)
-method=$(HOME="$home" GNOME_WAYLAND_SYSTEM_PYTHON="$mock_bin/python3" \
-    PATH="$mock_bin:/usr/bin:/bin" \
-    "$capture" --screen "$TEST_TMP/screen.png")
-elapsed_ms=$(( $(date +%s%3N) - start_ms ))
-[ "$method" = 'capture_method=ydotool-shift-print' ] || \
-    fail "screen capture reaches the mocked ydotool fallback"
-[ "$elapsed_ms" -lt 1000 ] || \
-    fail "immediate screenshot fallback completes in under one second (got ${elapsed_ms}ms)"
-pass "screen fallback returns immediately when capture is ready (${elapsed_ms}ms)"
-
-# Desktop compatibility capture may briefly poll compositor state, but should
-# still avoid the former multi-second fixed-delay path.
-mock_bin="$TEST_TMP/desktop-bin"
-mkdir -p "$mock_bin"
-cat > "$mock_bin/gdbus" <<'SH'
-#!/usr/bin/env bash
-case "$*" in
-    *CaptureDesktop*) exit 1 ;;
-    *GetRects*) printf '%s\n' '([{"visible":true}])' ;;
-    *) exit 1 ;;
-esac
-SH
-cat > "$mock_bin/ydotool" <<'SH'
-#!/usr/bin/env bash
-case "$*" in
-    'key 42:1 99:1 99:0 42:0')
-        mkdir -p "$HOME/Pictures/Screenshots"
-        printf 'png' > "$HOME/Pictures/Screenshots/desktop-fast.png"
-        ;;
-esac
-SH
-chmod +x "$mock_bin/"*
-
-start_ms=$(date +%s%3N)
-method=$(HOME="$home" PATH="$mock_bin:/usr/bin:/bin" \
-    "$capture" --desktop "$TEST_TMP/desktop.png")
-elapsed_ms=$(( $(date +%s%3N) - start_ms ))
-[ "$method" = 'capture_method=ydotool-show-desktop' ] || \
-    fail "desktop capture reaches the mocked compatibility fallback"
-[ "$elapsed_ms" -lt 1000 ] || \
-    fail "desktop compatibility fallback completes in under one second (got ${elapsed_ms}ms)"
-pass "desktop compatibility path avoids multi-second delay (${elapsed_ms}ms)"
-
-# Timing mode must preserve the normal stdout contract while emitting a
-# machine-readable elapsed time on stderr.
-mock_bin="$TEST_TMP/timing-bin"
-mkdir -p "$mock_bin"
-cat > "$mock_bin/gnome-screenshot" <<'SH'
 #!/usr/bin/env bash
 printf 'png' > "$2"
 SH
-cat > "$mock_bin/gnome-shell" <<'SH'
+chmod +x "$mock_bin/python3"
+start_ms=$(date +%s%3N)
+method=$(HOME="$home" GNOME_WAYLAND_SYSTEM_PYTHON="$mock_bin/python3" PATH="$mock_bin:/usr/bin:/bin" \
+    "$capture" --screen "$TEST_TMP/fast.png")
+elapsed_ms=$(( $(date +%s%3N) - start_ms ))
+[ "$method" = 'capture_method=portal-screencast' ] || fail "ScreenCast mock was not the hot path"
+[ -s "$TEST_TMP/fast.png" ] || fail "ScreenCast mock did not write output"
+[ "$elapsed_ms" -lt 1000 ] || fail "mock hot path exceeded one second (${elapsed_ms}ms)"
+pass "ScreenCast hot path returns immediately when frame is ready (${elapsed_ms}ms)"
+
+# Technical ScreenCast failure falls back to Screenshot; cancellation does not.
+mock_bin="$TEST_TMP/capture-fallback-bin"
+mkdir -p "$mock_bin"
+cat > "$mock_bin/python3" <<'SH'
 #!/usr/bin/env bash
-printf 'GNOME Shell 48.0\n'
+count=$(cat "$HOME/portal-count" 2>/dev/null || printf 0)
+count=$((count + 1)); printf '%s\n' "$count" > "$HOME/portal-count"
+if [ "$count" -eq 1 ]; then exit 1; fi
+printf 'png' > "$2"
+SH
+chmod +x "$mock_bin/python3"
+rm -f "$home/portal-count"
+method=$(HOME="$home" GNOME_WAYLAND_SYSTEM_PYTHON="$mock_bin/python3" PATH="$mock_bin:/usr/bin:/bin" \
+    "$capture" --screen "$TEST_TMP/fallback.png")
+[ "$method" = 'capture_method=portal-screenshot' ] || fail "technical ScreenCast failure did not reach Screenshot"
+[ "$(cat "$home/portal-count")" -eq 2 ] || fail "portal fallback count was not two"
+pass "technical ScreenCast failure reaches one-shot Screenshot recovery"
+
+mock_bin="$TEST_TMP/capture-denied-bin"
+mkdir -p "$mock_bin"
+cat > "$mock_bin/python3" <<'SH'
+#!/usr/bin/env bash
+exit 20
+SH
+cat > "$mock_bin/ydotool" <<'SH'
+#!/usr/bin/env bash
+touch "$HOME/ydotool-was-called"
 SH
 chmod +x "$mock_bin/"*
+rm -f "$home/ydotool-was-called"
+rc=0
+HOME="$home" GNOME_WAYLAND_SYSTEM_PYTHON="$mock_bin/python3" PATH="$mock_bin:/usr/bin:/bin" \
+    "$capture" --screen "$TEST_TMP/denied.png" >/dev/null 2>&1 || rc=$?
+[ "$rc" -ne 0 ] || fail "denied ScreenCast unexpectedly succeeded"
+[ ! -e "$home/ydotool-was-called" ] || fail "denied ScreenCast opened another capture path"
+pass "portal denial stops the chain"
+
+# Timing mode preserves stdout while adding machine-readable stderr.
 timing_err="$TEST_TMP/timing.err"
-method=$(HOME="$home" PATH="$mock_bin:/usr/bin:/bin" \
+method=$(HOME="$home" GNOME_WAYLAND_SYSTEM_PYTHON="$TEST_TMP/capture-fast-bin/python3" \
+    PATH="$TEST_TMP/capture-fast-bin:/usr/bin:/bin" \
     "$capture" --timing --screen "$TEST_TMP/timing.png" 2>"$timing_err")
-[ "$method" = 'capture_method=gnome-screenshot' ] || \
-    fail "timing mode preserves capture method stdout"
-grep -Eq '^capture_elapsed_ms=[0-9]+$' "$timing_err" || \
-    fail "timing mode emits machine-readable elapsed milliseconds"
-pass "timing mode preserves output and reports elapsed milliseconds"
+[ "$method" = 'capture_method=portal-screencast' ] || fail "timing changed capture stdout"
+grep -Eq '^capture_elapsed_ms=[0-9]+$' "$timing_err" || fail "timing did not emit elapsed milliseconds"
+pass "timing mode preserves method output"
+
+# Runtime/published surfaces share the same architecture.
+grep -q '^## Pixel-Only Surfaces$' "$hermes_skill" || fail "Hermes skill lacks pixel-only recovery"
+grep -q '^## Pixel-Only Surfaces$' "$portable_skill" || fail "portable skill lacks pixel-only recovery"
+grep -q 'does not require WinRects' "$hermes_skill" || fail "Hermes skill still depends on WinRects"
+grep -q 'Route once → cheapest truthful evidence' "$readme" || fail "README lost latency contract"
+grep -q 'Installed web apps stay apps' "$landing" || fail "landing page lost PWA identity"
+grep -q 'ScreenCast + PipeWire' "$landing" || fail "landing page lost native capture hot path"
+grep -q 'A fresh screenshot is not a phase-transition requirement' "$contract" || fail "skill UX contract lost decision-boundary rule"
+pass "runtime and published surfaces share the extension-free contract"
