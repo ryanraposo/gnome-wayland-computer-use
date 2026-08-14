@@ -1,170 +1,143 @@
-# Determinism
+# Determinism contract
 
-The model should decide **intent**, not desktop mechanics.
+GWCU exists to spend model calls on decisions, not mechanics.
 
-## Rule 1: one control authority
+## 1. Cua is the control authority
 
-Cua Driver owns the control state machine.
+Cua Driver owns desktop targeting, geometry, activation, pointer/keyboard
+delivery, verification, effects and refusals.
 
-```text
-intent → Cua state → Cua action → Cua verdict
-```
+Never create a shadow control plane with `ydotool`, `/dev/uinput`, guessed
+focus, or a project RDP/VNC server.
 
-GWCU programs do not compete with Cua for semantics, geometry, activation,
-input, verification, or refusal policy.
+Never answer a Cua refusal with raw pointer/keyboard injection.
 
-## Rule 2: observation answers only observation
+Never retry the same failed delivery shape blindly.
 
-GWCU's ScreenCast/PipeWire broker provides whole-screen evidence. It never
-becomes a second computer-control backend.
+## 2. WORLDLINE owns transient truth
 
-## Rule 3: machine truth is literal
+WORLDLINE maintains revisioned, session-scoped facts and predicates.
 
-`gwcu.diagnose.v2` uses top-level `ok=true` only when the current session is
-actually ready. Cua readiness comes from Cua's stable `health_report`; doctor
-output is supplemental detail.
+Facts are **valid until invalidated**. An action or event invalidates the
+dependency paths it can affect; unrelated facts remain usable.
 
-## Rule 4: scripts compose scripts
+WORLDLINE is read-only. It does not become an alternate actuator.
 
-A local subprocess is cheap. A model/tool boundary is expensive.
+## 3. Observation is an interrupt
 
-```text
-uncertain target
-→ profile.sh route
-  → .gwcu lookup
-  → identity resolver only on miss
-  → stable write-back only when managed + exact
-  → gwcu.route.v1
+Do not perform `observe → model → act → observe` ceremonially.
 
-host contradiction
-→ profile.sh recover
-  → cached profile
-  → refresh only if stale/missing
-     → diagnose.sh
-  → gwcu.route.v1
-```
+A new model-visible observation is justified only when fresh state can change
+the next action and local predicates/oracles cannot establish that state.
 
-`route` never wakes diagnostics merely because target identity is uncertain.
-`recover` is the deliberate expensive path but still costs one outer agent call.
+Expected postconditions should be evaluated locally.
 
-## Rule 5: consecutive determined actions are one call
+## 4. Direct truth beats visual inference
 
-If two or more consecutive Cua actions are fully determined by the same current
-evidence, they **MUST cross the model/tool boundary exactly once**.
+Prefer:
 
 ```text
-WRONG
-click → model → type → model → Enter
-
-RIGHT
-model decides click → type → Enter
-  → ONE computer-use.sh span invocation
-      → Cua click
-      → Cua type_text
-      → Cua key_press
-  → model only at the next real decision boundary
+AT-SPI event
+filesystem event
+process state
+D-Bus property
+gsettings value
+network state
+task-specific watcher
 ```
 
-A successful action does not justify model re-entry. Split a span only when its
-result can change the remaining action/arguments, grounding becomes stale, a
-real async transition needs fresh evidence, Cua fails/refuses, or new user
-authorization/choice is required.
+before interpreting pixels.
 
-The installed span executor keeps one Cua MCP session open and performs the
-already-decided Cua operations internally. This guarantees one **outer**
-model-visible invocation; it does not claim an atomic native Cua batch RPC.
+Use ScreenCast/PipeWire when the task is genuinely visual or cheaper evidence is
+insufficient.
 
-The executor fails closed at the first Cua failure/refusal/transport boundary.
-No later queued action may execute after that boundary.
+## 5. Determined action spans cross once
 
-## Rule 6: persistent local truth has one surface
+When two or more consecutive Cua actions are completely determined by the same
+evidence, execute them behind one model/tool boundary.
 
-Persistent machine/workspace truth belongs in `.gwcu`, not `AGENTS.md`, prompt
-prose, task logs, or scattered cache files.
+A span stops at the first real boundary:
 
-Scope resolution:
+- returned state can change the next action;
+- target identity became stale;
+- a branch was not declared;
+- an asynchronous transition lacks a sufficient completion predicate;
+- Cua fails/refuses;
+- user authorization or choice is required.
+
+No fixed sleep or ritual screenshot belongs between already-decided actions.
+
+## 6. Predicates are postconditions
+
+A transaction should say what must become true.
 
 ```text
-explicit GWCU_SCOPE_ROOT
-→ Git worktree root, when inside Git
-→ nearest existing ancestor .gwcu, outside Git
-→ current workdir
+act
+→ WORLDLINE revision
+→ predicate true
+→ continue
 ```
 
-A Git repository always owns its own root truth file, even beneath a broader
-non-Git workspace. Outside Git, an existing ancestor `.gwcu` may define a
-long-lived general workspace.
+If a declared expectation cannot be established, surface the conflict instead
+of manufacturing certainty.
 
-For Git scopes, managed persistence must establish `/.gwcu` in the root
-`.gitignore` before the first truth write. If safe ignore setup fails, the write
-fails.
+## 7. `.gwcu` is durable truth only
 
-## Rule 7: truth classes have different ownership
+`.gwcu` stores low-churn repo/workspace facts that are valuable on later runs.
 
-`.gwcu` uses schema `gwcu.truths.v1` and separates:
+WORLDLINE state never belongs in `.gwcu`.
 
-- `observed`: generated low-churn environment facts;
-- `capabilities`: generated compact capability conclusions;
-- `calibration`: generated learned mappings/measurements;
-- `preferences`: user-authored choices, preserved on regeneration;
-- `apps`: generated stable launcher/PWA identity.
+Persistent machine/user truth never belongs in AGENTS.md.
 
-Generated sections store conclusions, not transcripts. They may be regenerated.
-Preferences and unknown top-level extension keys are preserved.
+Screenshots, documents, task history, transient focus, secrets and raw health
+payloads are not durable truth.
 
-Never store screenshots, user text, task/conversation history, secrets,
-clipboard content, raw health dumps, transient focus, or transient geometry.
+## 8. One call owns local fan-out
 
-**Live Cua state always wins on contradiction.**
+If a deterministic local script can answer a question, call the script once.
 
-## Rule 8: one-time setup belongs in installation
-
-The installer owns one-time machine/user setup:
-
-- Ubuntu foundation repair;
-- qualified Cua installation;
-- Cua GNOME helper installation;
-- managed-`.gwcu` preference;
-- RemoteDesktop/EIS control authorization;
-- Hermes `/computer-use` plugin registration when Hermes is present;
-- observer installation;
-- health proof and ownership bookkeeping.
-
-`.gwcu` itself is scope-local and created lazily where durable work happens.
-
-## Rule 9: remove ritual from the hot path
-
-A known target triggers **zero GWCU setup calls** before Cua.
-
-It does not trigger update checks, broad diagnostics, app/window enumeration,
-whole-screen capture, toolkit classification, fallback speculation, model
-re-entry between already-decided actions, or blind retries.
+Examples:
 
 ```text
-one target state → ONE deterministic action-span call → real decision boundary
+profile.sh route
+profile.sh recover
+worldline-capture.sh
+action span
 ```
 
-## Rule 10: use Hermes primitives by job shape
+Do not make the model manually perform the script's internal steps.
+
+## 9. Contradiction beats cache
+
+`.gwcu` accelerates routing; it is not control authority.
+
+Live Cua state and current WORLDLINE evidence win when durable truth
+contradicts reality.
+
+## 10. Consent stays explicit
+
+GNOME Wayland is the intended session. No X11 or XWayland session is required.
+
+Cua's local pointer/keyboard path is:
 
 ```text
-stable recurring mechanics → repository script
-one-off mechanical fan-out → execute_code
-independent reasoning       → delegate_task
-bounded long process        → terminal background + notify_on_complete
-real user choice            → clarify
-interactive desktop action  → parent Cua loop
+GNOME RemoteDesktop portal → EIS → libei
 ```
 
-Portal consent and interactive desktop decisions stay in the parent session.
+Whole-screen visual observation is independently authorized through
+ScreenCast/PipeWire.
 
-## Rule 11: refusals are information
+## 11. Installation is deterministic
 
-If Cua says a delivery shape is unavailable, choose a genuinely different
-supported Cua route or report the limitation. Do not inject raw input into the
-currently focused application.
+The installer must:
 
-## Rule 12: installation is a deterministic program
+- detect/qualify Ubuntu 26.04 GNOME Wayland;
+- pin Cua instead of using `latest`;
+- repair explicit portal/PipeWire/AT-SPI dependencies;
+- establish RemoteDesktop consent;
+- install WORLDLINE and observer lifecycle;
+- preserve host-owned packages on teardown;
+- prove Cua/runtime health before declaring readiness.
 
-There is one installer source. It verifies first, repairs only missing Ubuntu
-foundation, provisions through upstream-supported paths, and validates the
-finished system. Runtime patching of a second installer is forbidden.
+The uninstaller must reverse only GWCU-owned integration and preserve
+repo/workspace `.gwcu` content.

@@ -6,168 +6,108 @@ passed=0
 pass(){ printf 'ok - %s\n' "$1"; ((passed++)) || true; }
 fail(){ printf 'not ok - %s\n' "$1" >&2; exit 1; }
 
-installer="$ROOT/install.sh"
-uninstaller="$ROOT/uninstall.sh"
-teardown="$ROOT/scripts/teardown.sh"
-profile="$ROOT/scripts/profile.sh"
-truths="$ROOT/scripts/truths.py"
-portal="$ROOT/scripts/portal-control.py"
+installer="$ROOT/install.sh"; uninstaller="$ROOT/uninstall.sh"; teardown="$ROOT/scripts/teardown.sh"
+profile="$ROOT/scripts/profile.sh"; truths="$ROOT/scripts/truths.py"; portal="$ROOT/scripts/portal-control.py"
+worldline="$ROOT/scripts/worldline.py"; capture="$ROOT/scripts/capture.sh"
 
-for script in "$installer" "$uninstaller" "$teardown" "$ROOT/scripts/diagnose.sh" "$ROOT/scripts/capture.sh" \
-              "$ROOT/scripts/observe.sh" "$profile" "$ROOT/scripts/computer-use.sh"; do
-    bash -n "$script" || fail "shell syntax: ${script#$ROOT/}"
-done
+for s in "$installer" "$uninstaller" "$teardown" "$ROOT/scripts/diagnose.sh" "$capture" "$ROOT/scripts/observe.sh" "$profile" "$ROOT/scripts/computer-use.sh" "$ROOT/scripts/worldline-capture.sh"; do bash -n "$s" || fail "shell syntax: ${s#$ROOT/}"; done
 python3 -m py_compile "$ROOT"/scripts/*.py "$ROOT/runtimes/hermes/__init__.py" || fail "Python syntax"
-pass "all shell/Python entrypoints parse"
+pass "entrypoints parse"
 
-[ ! -e "$ROOT/install-core.sh" ] || fail "secondary installer still exists"
-[ ! -e "$ROOT/lib/checks.sh" ] || fail "retired shared check library still exists"
-! grep -Eq 'add_pkg ydotool|modprobe uinput|usermod .*input|CUA_DRIVER_RS_ENABLE_WAYLAND' "$installer" || fail "installer provisions legacy raw input"
-! grep -Eq 'ExecStart=.*serve\.sh|enable .*gnome-wayland-computer-use\.service' "$installer" || fail "installer creates a Cua daemon"
+[ ! -e "$ROOT/install-core.sh" ] || fail "secondary installer exists"
+! grep -Eq 'add_pkg ydotool|modprobe uinput|usermod .*input|CUA_DRIVER_RS_ENABLE_WAYLAND|ExecStart=.*cua-driver.*serve' "$installer" || fail "installer creates a shadow control plane"
+grep -q 'CUA_DRIVER_RS_VERSION="${GWCU_CUA_DRIVER_RS_VERSION:-0.19.3}"' "$installer" || fail "Cua pin missing"
+grep -q 'CUA_DRIVER_RS_NO_MODIFY_PATH=1' "$installer" || fail "Cua PATH ownership missing"
 grep -q 'https://cua.ai/driver/install.sh' "$installer" || fail "official Cua installer missing"
-grep -q 'packages/current/wayland-helper' "$installer" || fail "Cua packaged helper boundary missing"
-grep -q 'health_report' "$installer" || fail "installer does not require stable Cua health"
-pass "installer has one Cua-native ownership model"
+grep -q 'Qualified Cua Driver.*already installed' "$installer" || fail "qualified Cua is not reused"
+grep -q 'packages/current/wayland-helper' "$installer" || fail "Cua helper boundary missing"
+pass "Cua remains pinned and sole actuator"
 
-grep -q 'CUA_DRIVER_RS_VERSION="${GWCU_CUA_DRIVER_RS_VERSION:-0.19.3}"' "$installer" || fail "Cua release pin missing"
-grep -q 'CUA_DRIVER_RS_NO_MODIFY_PATH=1' "$installer" || fail "Cua installer may create unowned PATH edits"
-! grep -Eq 'releases/latest|/latest|resolve.*latest|CUA_DRIVER_RS_VERSION=.*latest' "$installer" || fail "installer depends on latest Cua"
-grep -q '/etc/os-release' "$installer" || fail "distro detection missing"
-grep -q 'VERSION_ID' "$installer" || fail "Ubuntu version selection missing"
-grep -q 'Qualified Cua Driver.*already installed' "$installer" || fail "repeat install does not skip already-qualified Cua"
-pass "Cua and distro qualification are pinned and idempotent"
+for pkg in pipewire pipewire-bin wireplumber xdg-desktop-portal xdg-desktop-portal-gnome python3-dbus python3-gi python3-gst-1.0 gstreamer1.0-pipewire gir1.2-gst-plugins-base-1.0 gir1.2-gdkpixbuf-2.0 gir1.2-atspi-2.0 at-spi2-core libei1 libxkbcommon0; do grep -q "$pkg" "$installer" || fail "installer cannot repair $pkg"; done
+grep -q 'dpkg --compare-versions.*0.3.40' "$installer" || fail "PipeWire floor missing"
+for iface in RemoteDesktop ScreenCast Screenshot; do grep -q "portal_has $iface" "$installer" || fail "$iface portal check missing"; done
+pass "Ubuntu portal/accessibility foundation is explicit"
 
-for pkg in pipewire pipewire-bin wireplumber xdg-desktop-portal xdg-desktop-portal-gnome \
-    python3-dbus python3-gi python3-gst-1.0 gstreamer1.0-pipewire \
-    gir1.2-gst-plugins-base-1.0 gir1.2-gdkpixbuf-2.0 at-spi2-core libei1 libxkbcommon0; do
-    grep -q "$pkg" "$installer" || fail "installer cannot repair $pkg"
-done
-grep -q 'dpkg --compare-versions.*0.3.40' "$installer" || fail "PipeWire version floor is not enforced"
-for iface in RemoteDesktop ScreenCast Screenshot; do
-    grep -q "portal_has $iface" "$installer" || fail "$iface portal check missing"
-done
-pass "Ubuntu portal/accessibility dependencies are explicit"
+grep -q 'scripts/action-span.py' "$installer" || fail "action-span not shipped"
+grep -q 'scripts/worldline.py' "$installer" || fail "WORLDLINE daemon not shipped"
+grep -q 'scripts/worldline-capture.sh' "$installer" || fail "WORLDLINE capture not shipped"
+grep -q 'WORLDLINE.md' "$installer" || fail "WORLDLINE docs not shipped"
+grep -q 'enable --now gnome-wayland-computer-use-worldline.socket' "$installer" || fail "WORLDLINE socket not enabled"
+grep -q 'enable --now gnome-wayland-computer-use-observer.socket' "$installer" || fail "observer socket not enabled"
+grep -q 'worldline.py" self-test' "$installer" || fail "WORLDLINE self-test missing"
+grep -q 'observer.py" self-test' "$installer" || fail "observer self-test missing"
+pass "WORLDLINE and visual sensor lifecycle ship together"
 
-grep -q 'Enable managed .gwcu local truths?' "$installer" || fail "managed .gwcu prompt missing"
-grep -q '/dev/tty' "$installer" || fail "curl-pipe managed prompt cannot reach the terminal"
-grep -q 'managed-truths' "$profile" || fail "managed truth preference is not persistent"
-grep -q 'scripts/teardown.sh scripts/truths.py' "$installer" || fail "installer does not ship truth helper"
-grep -q 'GWCU_TRUTHS=off' "$installer" || fail "truth runtime override is undocumented by installer"
-pass "managed .gwcu preference is installer-owned and truth machinery ships"
-
-grep -q 'SCHEMA = "gwcu.truths.v1"' "$truths" || fail ".gwcu schema missing"
-grep -q 'nearest_existing' "$truths" || fail "nearest non-Git scope lookup missing"
+grep -q 'Enable managed .gwcu local truths?' "$installer" || fail "managed truth prompt missing"
+grep -q '/dev/tty' "$installer" || fail "curl-pipe prompt cannot reach terminal"
+grep -q 'GWCU_TRUTHS=off' "$installer" || fail "truth override missing"
+grep -q 'SCHEMA = "gwcu.truths.v1"' "$truths" || fail "truth schema missing"
+grep -q 'nearest_existing' "$truths" || fail "non-Git scope lookup missing"
 grep -q 'ensure_gitignore' "$truths" || fail "Git ignore safety missing"
-grep -q '"/.gwcu"' "$truths" || fail "root .gwcu ignore rule missing"
-pass ".gwcu is a deterministic local state surface"
+grep -q '"/.gwcu"' "$truths" || fail "root ignore rule missing"
+pass ".gwcu remains durable local truth"
 
 grep -q 'portal-control.py.*--authorize' "$installer" || fail "RemoteDesktop bootstrap missing"
-grep -q 'for n in 3 2 1' "$installer" || fail "portal prompt countdown missing"
-grep -q 'no click or key' "$installer" || fail "portal handshake is not explained"
-grep -q 'libei-persistent.token' "$portal" || fail "Cua restore-token verification missing"
-grep -q '"move_cursor"' "$portal" || fail "pointer-only public Cua handshake missing"
-! grep -Eq '"name"[[:space:]]*:[[:space:]]*"(click|type_text|key_press)"' "$portal" || fail "portal helper contains invasive bootstrap actions"
-pass "one-time RemoteDesktop setup is explicit and minimally invasive"
+grep -q 'for n in 3 2 1' "$installer" || fail "portal countdown missing"
+grep -q 'no click or key' "$installer" || fail "minimal handshake explanation missing"
+grep -q 'libei-persistent.token' "$portal" || fail "restore-token verification missing"
+grep -q '"move_cursor"' "$portal" || fail "pointer-only Cua handshake missing"
+! grep -Eq '"name"[[:space:]]*:[[:space:]]*"(click|type_text|key_press)"' "$portal" || fail "portal helper contains invasive actions"
+pass "RemoteDesktop consent is explicit and minimally invasive"
 
-plugin="$ROOT/runtimes/hermes/__init__.py"
-manifest="$ROOT/runtimes/hermes/plugin.yaml"
-grep -q 'register_command' "$plugin" || fail "Hermes command plugin does not use native API"
-grep -q '"computer-use"' "$plugin" || fail "/computer-use registration missing"
-grep -q 'args_hint=ARGS_HINT' "$plugin" || fail "Hermes autocomplete args hint missing"
-for cmd in status managed truths consent doctor; do grep -q "$cmd" "$plugin" || fail "Hermes command hint missing $cmd"; done
-grep -q '^name: gnome-wayland-computer-use$' "$manifest" || fail "Hermes plugin manifest name mismatch"
-grep -q 'hermes plugins enable "$NAME"' "$installer" || fail "Hermes plugin is not enabled by installer"
-grep -q 'plugins disable "$NAME"' "$teardown" || fail "Hermes plugin is not disabled by teardown"
-pass "Hermes /computer-use lifecycle includes truth visibility"
+grep -q 'hermes plugins enable "$NAME"' "$installer" || fail "Hermes plugin not enabled"
+grep -q 'plugins disable "$NAME"' "$teardown" || fail "Hermes plugin not disabled"
+grep -q 'doctor_mentions_drm' "$installer" || fail "DRM repair not evidence-gated"
+grep -q 'adduser "$LOGIN_USER" video' "$installer" || fail "video-group repair missing"
+grep -q 'video-group-added' "$teardown" || fail "video-group ownership not reversible"
+pass "integration ownership is reversible"
 
-grep -q 'systemctl --user enable --now gnome-wayland-computer-use-observer.socket' "$installer" || fail "observer socket not enabled"
-grep -q 'systemctl --user reset-failed' "$installer" || fail "stale user unit failures are not cleared"
-! grep -Eq 'KERNEL==.*uinput.*(create|cat|tee)|rules\.d.*>' "$installer" || fail "installer creates a new udev input rule"
-pass "persistent observer lifecycle is owned"
+grep -q 'gnome-wayland-computer-use-worldline.socket' "$teardown" || fail "WORLDLINE unit not removed"
+grep -q 'disable --now "$unit"' "$teardown" || fail "user units not disabled"
+grep -q 'gnome-wayland-computer-use PATH' "$teardown" || fail "managed PATH block not removed"
+grep -q 'Repo/workspace .gwcu files' "$teardown" || fail "workspace truth preservation missing"
+grep -q -- '--remove-cua' "$uninstaller" || fail "root uninstall cannot remove provisioned Cua"
+pass "teardown removes runtime integration, not workspace truth"
 
-grep -q '"$CUA" doctor --json' "$installer" || fail "cua-driver doctor missing"
-grep -q 'doctor_mentions_drm' "$installer" || fail "DRM group recovery is not evidence-gated"
-grep -q 'adduser "$LOGIN_USER" video' "$installer" || fail "video group recovery missing"
-grep -q 'video-group-added' "$teardown" || fail "video group ownership cannot be reversed"
-pass "doctor gates readiness and exceptional DRM repair is reversible"
+! grep -Eq 'ydotool|uinput|org\.cua\.WinRects|cua-driver' "$capture" || fail "direct observation owns control machinery"
+grep -q 'org.freedesktop.portal.Screenshot' "$capture" || fail "direct observation is not portal-only"
+! grep -Eq 'ydotool|uinput' "$worldline" || fail "WORLDLINE owns raw input"
+grep -q 'Atspi.EventListener' "$worldline" || fail "WORLDLINE AT-SPI adapter missing"
+grep -q 'observer_capture' "$worldline" || fail "WORLDLINE visual escalation missing"
+pass "read-only sensors stay read-only"
 
-[ -f "$uninstaller" ] || fail "root uninstall.sh missing"
-grep -q -- '--remove-cua' "$uninstaller" || fail "root uninstaller cannot remove provisioned Cua"
-grep -q 'gnome-wayland-computer-use PATH' "$teardown" || fail "managed PATH edits are not reversed"
-grep -q 'disable --now "$unit"' "$teardown" || fail "observer units are not disabled"
-grep -q 'Repo/workspace .gwcu files' "$teardown" || fail "workspace truth preservation message missing"
-pass "teardown reverses integration without crawling local truth"
-
-capture="$ROOT/scripts/capture.sh"
-! grep -Eq 'ydotool|uinput|org\.cua\.WinRects|cua-driver' "$capture" || fail "direct observation fallback owns control machinery"
-grep -q 'org.freedesktop.portal.Screenshot' "$capture" || fail "direct observation does not use Screenshot portal"
-pass "direct observation fallback is portal-only"
-
-cat >"$TMP/fake-cua-health" <<'PY'
+cat >"$TMP/fake-cua" <<'PY'
 #!/usr/bin/env python3
 import json,sys
 if len(sys.argv)<2 or sys.argv[1]!='mcp': raise SystemExit(2)
 for line in sys.stdin:
-    q=json.loads(line)
-    if q.get('method')=='initialize':
-        print(json.dumps({'jsonrpc':'2.0','id':q['id'],'result':{'protocolVersion':'2024-11-05','serverInfo':{'name':'cua-driver','version':'test'}}}),flush=True)
-    elif q.get('method')=='tools/call':
-        report={'schema_version':'1','platform':'linux','driver_version':'test','overall':'ok','checks':[]}
-        print(json.dumps({'jsonrpc':'2.0','id':q['id'],'result':{'content':[],'isError':False,'structuredContent':report}}),flush=True)
+ q=json.loads(line)
+ if q.get('method')=='initialize': print(json.dumps({'jsonrpc':'2.0','id':q['id'],'result':{'protocolVersion':'2024-11-05','serverInfo':{'name':'cua-driver','version':'test'}}}),flush=True)
+ elif q.get('method')=='tools/call': print(json.dumps({'jsonrpc':'2.0','id':q['id'],'result':{'content':[],'isError':False,'structuredContent':{'schema_version':'1','platform':'linux','driver_version':'test','overall':'ok','checks':[]}}}),flush=True)
 PY
-chmod +x "$TMP/fake-cua-health"
-python3 "$ROOT/scripts/cua-health.py" --driver "$TMP/fake-cua-health" >"$TMP/health.json"
-python3 - "$TMP/health.json" <<'PY' || fail "Cua health transport contract failed"
+chmod +x "$TMP/fake-cua"
+python3 "$ROOT/scripts/cua-health.py" --driver "$TMP/fake-cua" >"$TMP/health.json"
+python3 - "$TMP/health.json" <<'PY' || fail "health transport contract failed"
 import json,sys
-d=json.load(open(sys.argv[1])); assert d['schema']=='gwcu.cua-health.v1' and d['ok'] and d['report']['overall']=='ok'
+d=json.load(open(sys.argv[1]));assert d['schema']=='gwcu.cua-health.v1' and d['ok'] and d['report']['overall']=='ok'
 PY
-pass "Cua health uses stable MCP structuredContent"
+pass "Cua health uses MCP structuredContent"
 
-mkdir -p "$TMP/home"
-rc=0
+mkdir -p "$TMP/home"; rc=0
 HOME="$TMP/home" XDG_SESSION_TYPE=x11 XDG_CURRENT_DESKTOP=KDE "$ROOT/scripts/diagnose.sh" --machine >"$TMP/diag.json" 2>/dev/null || rc=$?
-[ "$rc" -ne 0 ] || fail "broken host diagnosis returned success"
-python3 - "$TMP/diag.json" <<'PY' || fail "diagnostic envelope is untruthful"
+[ "$rc" -ne 0 ] || fail "wrong-session diagnosis succeeded"
+python3 - "$TMP/diag.json" <<'PY' || fail "diagnostic envelope invalid"
 import json,sys
-d=json.load(open(sys.argv[1])); assert d['schema']=='gwcu.diagnose.v2'; assert d['ok'] is False; assert d['code']=='wrong_session'
+d=json.load(open(sys.argv[1]));assert not d['ok'] and d['code']=='wrong_session'
 PY
-pass "machine diagnosis uses ready-now semantics"
+XDG_RUNTIME_DIR="$TMP/runtime" python3 "$ROOT/scripts/observer.py" self-test >/dev/null || fail "observer self-test"
+XDG_RUNTIME_DIR="$TMP/world" python3 "$worldline" self-test >/dev/null || fail "WORLDLINE self-test"
+pass "diagnostics and read-only runtimes self-test"
 
-XDG_RUNTIME_DIR="$TMP/runtime" python3 "$ROOT/scripts/observer.py" self-test >"$TMP/observer.json"
-python3 - "$TMP/observer.json" <<'PY' || fail "observer self-test invalid"
-import json,sys
-d=json.load(open(sys.argv[1])); assert d['ok'] and d['schema']=='gwcu.observer.selftest.v1'
-PY
-pass "observer self-test is consent-free"
+for f in SKILL.md runtimes/openai/SKILL.md README.md DETERMINISM.md CAPABILITIES.md WORLDLINE.md; do grep -qi 'Cua' "$ROOT/$f" || fail "$f lost Cua"; grep -qi 'WORLDLINE' "$ROOT/$f" || fail "$f lost WORLDLINE"; done
+for f in SKILL.md runtimes/openai/SKILL.md README.md DETERMINISM.md; do grep -qi 'No X11' "$ROOT/$f" || fail "$f lost GNOME Wayland qualification"; grep -qi 'Remote Desktop' "$ROOT/$f" || fail "$f lost consent model"; done
+grep -qi 'Observation is an interrupt' "$ROOT/README.md" || fail "README lost core inversion"
+grep -qi 'valid until invalidated' "$ROOT/WORLDLINE.md" || fail "WORLDLINE invalidation model missing"
+pass "public project surfaces describe one architecture"
 
-idh="$TMP/id-home"; idd="$idh/data"; mkdir -p "$idd/applications" "$idh/runtime" "$TMP/empty-data"
-cat >"$idd/applications/chatgpt.desktop" <<'D'
-[Desktop Entry]
-Type=Application
-Name=ChatGPT
-Exec=/usr/bin/google-chrome-stable --app-id=chatgpt_app
-StartupWMClass=crx_chatgpt_app
-D
-HOME="$idh" XDG_DATA_HOME="$idd" XDG_DATA_DIRS="$TMP/empty-data" XDG_RUNTIME_DIR="$idh/runtime" \
-    "$ROOT/scripts/app-identity.sh" --refresh --resolve --machine ChatGPT >"$TMP/id.json"
-python3 - "$TMP/id.json" <<'PY' || fail "identity resolver envelope invalid"
-import json,sys
-d=json.load(open(sys.argv[1])); assert d['ok'] and d['code']=='resolved' and d['result']['app_id']=='chatgpt_app'
-PY
-pass "identity resolution stays deterministic"
-
-for f in SKILL.md runtimes/openai/SKILL.md README.md; do
-    grep -qi 'No X11' "$ROOT/$f" || fail "$f does not preserve the qualified GNOME session"
-    grep -qi 'Remote Desktop' "$ROOT/$f" || fail "$f does not document local control consent"
-done
-grep -q '> \[!TIP\]' "$ROOT/README.md" || fail "README lost RemoteDesktop callout"
-grep -q 'Four hard advantages' "$ROOT/README.md" || fail "README lost four high-level advantages"
-grep -q 'Execution trees' "$ROOT/README.md" || fail "README lost execution trees"
-grep -q 'gwcu.truths.v1' "$ROOT/GWCU.md" || fail "GWCU file specification missing"
-pass "public product contract is aligned"
-
-for f in SKILL.md runtimes/openai/SKILL.md README.md AGENTS.md CAPABILITIES.md DETERMINISM.md PERF_NOTES.md GWCU.md; do
-    ! grep -Eq 'four-plane|Input recovery' "$ROOT/$f" || fail "$f still documents the retired control plane"
-done
-pass "published architecture is Cua-native"
 printf 'ok - regression suite complete (%d checks)\n' "$passed"

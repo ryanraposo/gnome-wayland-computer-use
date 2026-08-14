@@ -3,178 +3,163 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="description" content="Deterministic, call-efficient computer use for Ubuntu 26.04 GNOME.">
-<title>gnome-wayland-computer-use</title>
+<title>GWCU — WORLDLINE computer use for GNOME Wayland</title>
+<meta name="description" content="Event-driven, call-efficient computer use for Ubuntu 26.04 GNOME Wayland. Cua controls. WORLDLINE watches. .gwcu remembers.">
 <style>
-:root{color-scheme:dark;--bg:#080808;--panel:#101010;--line:#292929;--ink:#f6f6f2;--muted:#aaa9a2;--blue:#8ab4ff;--green:#9ce8b5;--violet:#c6b2ff;--gold:#f4dc98;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
-*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:radial-gradient(900px 560px at 82% -8%,#18223a 0,transparent 58%),var(--bg);color:var(--ink)}
-.wrap{max-width:1120px;margin:auto;padding:70px 24px 100px}.mark{white-space:pre;color:var(--blue);line-height:1.05}.eyebrow{margin-top:34px;color:var(--muted);letter-spacing:.14em;text-transform:uppercase;font-size:.78rem}
-.hero h1{font-size:clamp(3rem,8vw,6.8rem);letter-spacing:-.078em;line-height:.86;margin:15px 0 28px;max-width:1000px}.lede{max-width:900px;font-size:clamp(1.05rem,2vw,1.35rem);line-height:1.65}.lede strong{color:white}
-.pills{display:flex;flex-wrap:wrap;gap:7px;margin:28px 0 50px}.pill{border:1px solid #343434;border-radius:999px;padding:8px 11px;color:#c8c8c2;font-size:.83rem;background:#0d0d0d}
-.cta{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;border:1px solid var(--line);border-radius:18px;padding:18px 20px;background:#050505;overflow:auto}.cta code{white-space:nowrap;color:#e9edf8}.cta span{color:var(--green);font-size:.82rem}
-section{margin-top:74px}h2{font-size:1rem;text-transform:uppercase;letter-spacing:.16em;margin:0 0 22px;color:#d8d8d2}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
-.card{border:1px solid var(--line);border-radius:18px;padding:23px;background:linear-gradient(180deg,#121212,#0d0d0d);min-height:220px}.card .num{font-size:.75rem;letter-spacing:.16em;color:#676761;margin-bottom:26px}.card b{display:block;font-size:1rem;line-height:1.35;margin-bottom:14px}.card p{margin:0;color:var(--muted);line-height:1.62;font-size:.92rem}
-.blue{color:var(--blue)}.green{color:var(--green)}.violet{color:var(--violet)}.gold{color:var(--gold)}
-.flow{border:1px solid var(--line);border-radius:18px;padding:25px;background:#0c0c0c;overflow:auto;white-space:pre;color:#d9d9d4;line-height:1.65}.split{display:grid;grid-template-columns:1fr 1fr;gap:12px}.split .flow{height:100%}
-.truth{font-size:clamp(1.45rem,3vw,2.4rem);line-height:1.25;letter-spacing:-.035em;max-width:920px}.truth strong{color:var(--green)}.small{color:var(--muted);line-height:1.7;max-width:920px}
-.notice{border:1px solid #285437;border-radius:18px;padding:23px;background:linear-gradient(180deg,#0c1710,#0b110d);max-width:940px}.notice b{color:var(--green)}.notice p{color:#c3c9c2;line-height:1.7;margin:.7rem 0 0}
-.commands{display:grid;grid-template-columns:1fr 1fr;gap:12px}.command{border:1px solid var(--line);border-radius:14px;background:#0d0d0d;padding:18px}.command code{color:#f3f3ee}.command span{display:block;color:var(--muted);margin-top:8px;line-height:1.5;font-size:.88rem}
-.footer{margin-top:90px;border-top:1px solid var(--line);padding-top:28px;color:#777;font-size:.9rem}
-@media(max-width:900px){.grid{grid-template-columns:1fr 1fr}.split{grid-template-columns:1fr}}@media(max-width:650px){.grid,.commands{grid-template-columns:1fr}.cta{grid-template-columns:1fr}.cta span{display:none}.wrap{padding-top:42px}.hero h1{font-size:clamp(2.8rem,16vw,5rem)}}
+:root{color-scheme:dark;--bg:#090b0d;--panel:#101419;--line:#26303a;--text:#f4f7fa;--muted:#9ca8b5;--accent:#b8ff72;--cyan:#72ecff;--pink:#ff7dc8;--max:1100px}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:16px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+a{color:var(--cyan);text-decoration:none}a:hover{text-decoration:underline}
+.wrap{width:min(var(--max),calc(100% - 36px));margin:auto}
+nav{display:flex;justify-content:space-between;align-items:center;padding:22px 0;border-bottom:1px solid var(--line)}
+.brand{font-weight:800;letter-spacing:.08em}.tag{color:var(--muted);font-size:13px}
+.hero{padding:78px 0 52px;display:grid;grid-template-columns:1.15fr .85fr;gap:38px;align-items:center}
+h1{font-size:clamp(44px,7vw,82px);line-height:.96;letter-spacing:-.055em;margin:0 0 24px}.accent{color:var(--accent)}
+.lede{font-size:20px;max-width:720px;color:#cbd4dc}.buttons{display:flex;gap:12px;flex-wrap:wrap;margin-top:28px}
+.button{display:inline-block;padding:11px 15px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--text)}.button.primary{background:var(--accent);color:#10150b;border-color:var(--accent);font-weight:800}
+pre{white-space:pre-wrap;background:#07090b;border:1px solid var(--line);border-radius:10px;padding:20px;overflow:auto;color:#d9e1e8}
+.hero pre{margin:0;font-size:13px}.section{padding:52px 0;border-top:1px solid var(--line)}
+h2{font-size:30px;margin:0 0 12px;letter-spacing:-.03em}.sub{color:var(--muted);max-width:760px;margin:0 0 28px}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}.card{border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:22px}
+.card b{display:block;margin-bottom:8px;color:var(--accent)}.card p{margin:0;color:#c6d0d9}
+.flow{display:grid;grid-template-columns:1fr 1fr;gap:18px}.bad b{color:#ff8b8b}.good b{color:var(--accent)}
+.kicker{color:var(--pink);font-weight:800;letter-spacing:.08em;font-size:12px;text-transform:uppercase}
+code{color:#e7edf2}.facts{display:flex;gap:10px;flex-wrap:wrap;margin:22px 0}.pill{border:1px solid var(--line);border-radius:999px;padding:7px 11px;color:#c7d1da}
+footer{padding:40px 0 70px;color:var(--muted);border-top:1px solid var(--line)}
+@media(max-width:800px){.hero,.grid,.flow{grid-template-columns:1fr}.hero{padding-top:48px}nav .tag{display:none}}
 </style>
 </head>
-<body><main class="wrap">
-<header class="hero">
-<div class="mark">▄ ▄▄ ▄▄▄▄
-   ▄▀ 0x0 ▀▄
-    █  ───  █
-    █  ███  █
-     ▀▀   ▀▀</div>
-<div class="eyebrow">gnome-wayland-computer-use</div>
-<h1>Spend calls<br>on the task.</h1>
-<p class="lede"><strong>Deterministic computer use for Ubuntu 26.04 GNOME.</strong> Cua owns control. GWCU finishes one-time setup, compiles recurring mechanics into local programs, and turns durable observations into repo/workspace information in <code>.gwcu</code>.</p>
-<div class="pills"><span class="pill">Ubuntu 26.04</span><span class="pill">GNOME 50</span><span class="pill">Cua 0.19.3 pinned</span><span class="pill">RemoteDesktop + EIS/libei</span><span class="pill">AT-SPI</span><span class="pill">ScreenCast + PipeWire</span></div>
-<div class="cta"><code>curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh | bash</code><span>setup once → READY</span></div>
-</header>
+<body>
+<div class="wrap">
+<nav><div class="brand">GWCU // WORLDLINE</div><div class="tag">Ubuntu 26.04 · GNOME Wayland · Cua Driver</div></nav>
 
-<section>
-<h2>Four hard advantages</h2>
+<section class="hero">
+<div>
+<div class="kicker">computer use without the ritual</div>
+<h1>Keep the desktop out of the <span class="accent">model loop.</span></h1>
+<p class="lede">Cua controls the desktop. WORLDLINE maintains live revisioned state, invalidates only what changed, and wakes deterministic work when postconditions become true. <code>.gwcu</code> remembers durable truth for later.</p>
+<div class="buttons">
+<a class="button primary" href="#install">Install</a>
+<a class="button" href="WORLDLINE.md">Read WORLDLINE</a>
+<a class="button" href="README.md">README</a>
+</div>
+</div>
+<pre>model
+  │ intent
+  ▼
+WORLDLINE ── conflict ───────→ model
+  │
+  ▼
+Cua action span
+  │
+  ▼
+GNOME Wayland
+  │
+  ├─ AT-SPI
+  ├─ direct oracles
+  └─ ScreenCast / PipeWire
+       when visual truth matters
+  │
+  ▼
+next revision
+  │
+  └─ predicate true → continue locally</pre>
+</section>
+
+<section class="section">
+<div class="kicker">the inversion</div>
+<h2>Observation is an interrupt, not an RPC.</h2>
+<p class="sub">Most GUI transitions do not deserve another LLM turn. WORLDLINE treats desktop knowledge as valid until something actually invalidates it.</p>
+<div class="flow">
+<div class="card bad"><b>ordinary computer use</b><pre>observe
+→ model
+→ click
+→ observe
+→ model
+→ type
+→ observe
+→ model</pre></div>
+<div class="card good"><b>GWCU</b><pre>model decides
+→ Cua acts
+→ WORLDLINE revises
+→ predicate satisfied
+→ continue locally
+
+model re-enters on conflict</pre></div>
+</div>
+</section>
+
+<section class="section">
 <div class="grid">
-<div class="card"><div class="num">01</div><b class="green">ZERO-CEREMONY HOT PATH</b><p>A known app/window pays <strong>0 GWCU setup calls</strong> before Cua. No diagnostic or enumeration ritual.</p></div>
-<div class="card"><div class="num">02</div><b class="blue">PROGRAMS COLLAPSE MECHANICS</b><p>Route and recovery compose lower-level probes locally. Several operations still cost the agent <strong>one outer call</strong>.</p></div>
-<div class="card"><div class="num">03</div><b class="violet">.GWCU TURNS OBSERVATION INTO INFORMATION</b><p>A cold exact identity becomes local truth. Warm routes skip repeat launcher/PWA discovery without touching AGENTS.md.</p></div>
-<div class="card"><div class="num">04</div><b class="gold">INSTALL ONCE, USE IT</b><p>Dependencies, pinned Cua, GNOME control consent, truth preference, Hermes commands, observer lifecycle, and health proof happen up front.</p></div>
+<div class="card"><b>VALID UNTIL INVALIDATED</b><p>A click invalidates the facts it could have affected. Unrelated state survives the revision.</p></div>
+<div class="card"><b>POSTCONDITION = OBSERVATION</b><p>Wait for a filesystem, AT-SPI, settings, process, task or visual predicate instead of asking the model what happened.</p></div>
+<div class="card"><b>CUA REMAINS AUTHORITY</b><p>One actuator. No ydotool, /dev/uinput, guessed focus, project RDP/VNC server or refusal bypass.</p></div>
+<div class="card"><b>.GWCU REMEMBERS LATER</b><p>Durable repo/workspace identity and capability truth stays separate from transient WORLDLINE revisions.</p></div>
 </div>
 </section>
 
-<section>
-<h2>What it actually feels like</h2>
-<div class="split">
-<div class="flow">KNOWN TARGET
-
-[KNOW] target already bound
-  ↓
-[CUA #1] useful target state
-  ↓
-[DECIDE] AX or PX
-  ↓
-[CUA #2] useful action
-  ↓
-done
-
-SAVED
-0 GWCU setup calls
-0 enumeration
-0 screenshot prelude
-0 diagnostics</div>
-<div class="flow">WARM .GWCU ROUTE
-
-[KNOW] name, identity uncertain
-  ↓
-[TOOL #1] profile.sh route
-  ├─ repo/workspace .gwcu
-  ├─ exact identity hit
-  ├─ no launcher scan
-  ├─ no diagnostics
-  └─ no rewrite
-  ↓
-[CUA #1] useful action
-
-SAVED
-100% repeat identity-resolution work</div>
+<section class="section">
+<div class="kicker">one revision</div>
+<h2>The daemon routine</h2>
+<pre>capture(trigger)
+  stamp boundary
+  drain AT-SPI events
+  update semantic facts
+  ingest process / filesystem / D-Bus / settings / network / task facts
+  request visual evidence only if required
+  correlate changes
+  invalidate affected dependencies
+  evaluate predicates
+  seal revision
+  wake deterministic transactions
+  interrupt the model only on real conflict</pre>
+<div class="facts">
+<span class="pill">AT-SPI</span><span class="pill">PipeWire</span><span class="pill">ScreenCast</span><span class="pill">RemoteDesktop</span><span class="pill">EIS/libei</span><span class="pill">filesystem</span><span class="pill">process</span><span class="pill">gsettings</span>
 </div>
 </section>
 
-<section>
-<h2>Cold once → warm forever-ish</h2>
-<div class="flow">FIRST ENCOUNTER
-[TOOL] route
-  → resolve repo/workspace scope
-  → .gwcu miss
-  → deterministic launcher/PWA resolver
-  → exact identity
-  → Git scope? establish /.gwcu in root .gitignore first
-  → atomic .gwcu write
-  → one compact route result
+<section class="section">
+<div class="kicker">authority</div>
+<h2>Cua changes the desktop. WORLDLINE never does.</h2>
+<p class="sub">On GNOME Wayland, Cua uses the compositor-approved Remote Desktop portal to obtain a local EIS/libei pointer and keyboard session. WORLDLINE and the observer are read-only knowledge infrastructure.</p>
+<pre>Cua Driver
+  → org.freedesktop.portal.RemoteDesktop
+  → EIS
+  → libei
+  → desktop
 
-NEXT ENCOUNTER
-[TOOL] route
-  → .gwcu hit
-  → no identity resolver
-  → no AGENTS parsing
-  → no diagnostic fan-out
-  → one compact route result</div>
-<p class="small">Live Cua state still wins on contradiction. Stored truth removes repeated mechanics; it never becomes control authority.</p>
+WORLDLINE
+  → events / direct facts / optional ScreenCast
+  → revision / predicates / conflicts
+  → no input injection</pre>
 </section>
 
-<section>
-<h2>.gwcu</h2>
-<p class="truth">One local truth file. <strong>No diary.</strong></p>
-<div class="flow">{
+<section class="section">
+<div class="kicker">durable truth</div>
+<h2><code>.gwcu</code> is memory, not runtime state.</h2>
+<p class="sub">Stable app identity, capability conclusions, calibration and preferences can survive a session. Screenshots, documents, transient focus and WORLDLINE revisions cannot.</p>
+<pre>{
   "apps": {},
   "calibration": {},
   "capabilities": {},
   "observed": {},
   "preferences": {},
   "schema": "gwcu.truths.v1"
-}</div>
-<p class="small"><code>observed</code>, <code>capabilities</code>, <code>calibration</code>, and <code>apps</code> are generated truth. <code>preferences</code> are user-owned and survive generated-truth regeneration. GWCU stores conclusions, not screenshots, task history, user text, raw health dumps, focus state, or transient geometry.</p>
+}</pre>
 </section>
 
-<section>
-<h2>Repo and non-Git scope</h2>
-<div class="flow">GWCU_SCOPE_ROOT override
-  → Git worktree root, when inside Git
-  → nearest ancestor containing .gwcu, outside Git
-  → current working directory</div>
-<p class="small">Git repositories are always isolated to their own root, even beneath a general workspace. Outside Git, a workspace such as <code>~/.gwcw</code> can keep one <code>.gwcu</code> for its descendants. In Git, GWCU ensures <code>/.gwcu</code> is in the root <code>.gitignore</code> before truth is created; unsafe ignore setup makes persistence fail closed.</p>
+<section class="section" id="install">
+<div class="kicker">setup</div>
+<h2>One installer. One control plane.</h2>
+<p class="sub">The installer qualifies Ubuntu 26.04 GNOME Wayland, repairs the portal/PipeWire/AT-SPI foundation, installs pinned Cua, establishes local control consent, and enables WORLDLINE plus the lazy visual observer.</p>
+<pre>curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh | bash</pre>
+<p><strong>Uninstall:</strong></p>
+<pre>curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/uninstall.sh | bash</pre>
+<p class="sub">Uninstall removes GWCU-managed WORLDLINE/observer services and transient state while preserving repo/workspace <code>.gwcu</code> content.</p>
 </section>
 
-<section>
-<h2>Host contradiction</h2>
-<div class="flow">[TOOL #1] profile.sh recover
-  → cached profile
-  → refresh only if stale/missing
-      → diagnose.sh
-          → Cua health
-          → portal/session facts
-          → observer facts
-  → one deterministic next action</div>
-<p class="small">The model never pays separate turns for <code>read → interpret → refresh → interpret → diagnose → interpret</code>.</p>
-</section>
-
-<section>
-<h2>Remote Desktop, explained once</h2>
-<div class="notice"><b>GNOME is naming a local compositor permission.</b><p>Cua uses <code>org.freedesktop.portal.RemoteDesktop</code> to obtain an EIS/libei pointer + keyboard session. GWCU installs no RDP/VNC server or raw-input daemon. On a fresh install, the terminal explains the handshake and counts down 3 → 2 → 1 before the GNOME prompt. The bootstrap moves the pointer once: no click, no key.</p></div>
-</section>
-
-<section>
-<h2>Hermes /computer-use</h2>
-<div class="commands">
-<div class="command"><code>/computer-use status</code><span>Cua, portal, restore token, and managed truth status.</span></div>
-<div class="command"><code>/computer-use managed on|off|status</code><span>Control repo/workspace-local .gwcu persistence.</span></div>
-<div class="command"><code>/computer-use truths</code><span>Show the active truth scope, path, and counts.</span></div>
-<div class="command"><code>/computer-use consent</code><span>Verify RemoteDesktop → EIS/libei.</span></div>
-<div class="command"><code>/computer-use doctor</code><span>Run deterministic installed-system diagnosis.</span></div>
+<footer>
+GWCU · Cua controls · WORLDLINE watches · .gwcu remembers · <a href="DETERMINISM.md">determinism contract</a>
+</footer>
 </div>
-</section>
-
-<section>
-<h2>Install contract</h2>
-<p class="truth">Prepare once. <strong>Prove READY.</strong></p>
-<p class="small">The installer repairs missing Ubuntu foundation, pins Cua 0.19.3, installs Cua's GNOME helper, records the managed-.gwcu preference, establishes GNOME local control permission, registers Hermes commands when present, enables the warm observer, runs Cua doctor, consumes Cua health_report, and records reversible ownership.</p>
-</section>
-
-<section>
-<h2>Uninstall</h2>
-<div class="cta"><code>curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/uninstall.sh | bash</code><span>reversible ownership</span></div>
-<p class="small">Installer-owned integration is removed. Repo/workspace <code>.gwcu</code> files and their ignore protection remain local workspace content.</p>
-</section>
-
-<section>
-<h2>The point</h2>
-<p class="truth">Observe once.<br>Turn it into information.<br><strong>Spend the next call on the task.</strong></p>
-</section>
-
-<div class="footer">gnome-wayland-computer-use · deterministic computer use for Ubuntu 26.04 GNOME</div>
-</main></body></html>
+</body>
+</html>

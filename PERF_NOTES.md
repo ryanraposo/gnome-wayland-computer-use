@@ -1,116 +1,132 @@
-# Performance Notes
+# Performance notes
 
-Performance is measured in **agent round-trips and repeated work**, not only
-milliseconds.
+GWCU optimizes **model boundaries first**, then local latency.
 
-## First-use call budget
+A 20 ms local optimization is useful. Eliminating a full model/tool round-trip
+is usually more useful.
 
-| Situation | GWCU calls before first useful Cua state |
-|---|---:|
-| known app/window | **0** |
-| uncertain installed/PWA identity | **1** — `profile.sh route` |
-| host/runtime contradiction | **1** — `profile.sh recover` |
-| explicit whole-screen request | **1** — `observe.sh` |
+## The expensive loop
 
-## `.gwcu` effect
-
-Managed truth does not claim to cut an entire task by 100%. A warm exact app hit
-eliminates **100% of the repeated launcher/PWA identity-resolution stage inside
-the route call**.
-
-Cold:
+Naive desktop automation:
 
 ```text
-route call
-→ resolve scope
-→ .gwcu miss
-→ launcher/PWA resolution
-→ Git scope: ensure /.gwcu is ignored
-→ write stable identity
-→ Cua
+observe
+→ model
+→ act
+→ observe
+→ model
+→ act
 ```
 
-Warm:
+The main cost is repeated serialization, inference and tool orchestration around
+state transitions that can often be verified locally.
+
+## Savings hierarchy
+
+### 1. Keep determined actions inside one call
+
+If click, type and Enter are already determined, `computer-use.sh span` keeps
+one Cua MCP process/session open for the sequence.
 
 ```text
-route call
-→ nearest .gwcu
-→ exact identity hit
-→ no resolver
-→ no rewrite
-→ Cua
+3 model-visible calls → 1 model-visible call
 ```
 
-The route call itself remains one outer call. What disappears is repeated local
-mechanical discovery and the model deliberation that would otherwise surround
-it.
+### 2. Wait on predicates instead of screenshots
 
-With persistence disabled:
+WORLDLINE can wait for:
 
 ```text
-route call → identity resolver → Cua
-route call → identity resolver → Cua
-route call → identity resolver → Cua
+filesystem/process/task event
+gsettings/network state
+AT-SPI mutation
+declared direct fact
 ```
 
-With persistence enabled:
+and wake work when the postcondition becomes true.
 
 ```text
-route call → identity resolver → write .gwcu → Cua
-route call → .gwcu hit → Cua
-route call → .gwcu hit → Cua
+act → observe → model → continue
 ```
 
-## Fast path
+becomes:
 
 ```text
-known target
-→ one Cua target/window state
-→ AX or PX from that state
-→ deterministic action span
-→ verify only when the next decision depends on it
+act → WORLDLINE predicate → continue
 ```
 
-There are no GWCU diagnostics, update checks, launcher scans, or whole-screen
-captures on that path.
+### 3. Preserve unaffected knowledge
 
-## Non-Git workspaces
+Valid-until-invalidated facts prevent unrelated UI activity from forcing a
+whole-state rediscovery.
 
-Nearest-existing `.gwcu` scope discovery means a general workspace can pay the
-cold discovery cost once for all descendants. A structure such as
-`~/.gwcw/.gwcu` avoids creating unrelated truth files in every scratch
-subdirectory.
+### 4. Route stable identity locally
 
-## One-time work is amortized in installation
+`.gwcu` can skip repeated launcher/PWA resolution. `profile.sh route` owns the
+miss path in one call.
 
-The installer handles interactions that should not consume later task turns:
-managed-truth preference, GNOME RemoteDesktop authorization, Hermes slash
-command registration, native dependency repair, observer setup, and readiness
-proof. Exact qualified Cua and an existing RemoteDesktop restore token skip
-their corresponding repeated setup.
+### 5. Keep visual capture warm and optional
 
-## Whole-screen capture
+The observer is socket activated and can keep ScreenCast/PipeWire warm across a
+short visual burst. WORLDLINE asks for a fresh frame only when a transaction
+needs visual evidence.
 
-The private socket is cheap; the broker starts on demand; one portal session and
-PipeWire remote stay warm for a bounded task burst; idle expiry releases them.
-The direct fallback is Screenshot-portal-only.
+## What to measure
 
-## Release measurements
+Useful benchmark counters are:
 
-Live GNOME 50 smoke should record:
+```text
+model-visible tool calls / task
+model re-entries / task
+Cua actions / model-visible call
+WORLDLINE revisions / task
+predicates satisfied locally / task
+visual captures / task
+conflicts returned to model / task
+route cache hit rate
+```
 
-- fresh installer consent path and repeat-install path;
-- cold first RemoteDesktop consent;
-- cold first ScreenCast consent;
-- warm broker p50/p95 capture latency;
-- known-target Cua state latency;
-- `.gwcu` cold route and warm route latency;
-- identity-resolver invocation count across cold/warm runs;
-- non-Git ancestor-scope lookup latency;
-- semantic background action latency;
-- exact foreground escalation latency;
-- pixel-only target action latency;
-- model/tool boundaries for representative known, ambiguous, and recovery tasks.
+The target is not “few revisions.” Revisions are cheap local bookkeeping.
 
-The north-star benchmark is simple: **how few decisions and calls does the agent
-need to finish the task correctly?**
+The target is:
+
+> **many mechanically useful revisions per model re-entry.**
+
+## Latency discipline
+
+Avoid:
+
+- fixed sleeps;
+- repeated host preflights;
+- full-screen capture after every action;
+- separate model calls for deterministic routing fan-out;
+- restarting Cua or ScreenCast infrastructure inside a span;
+- re-reading durable truth that is already in the current execution context.
+
+Prefer:
+
+- event-driven completion;
+- bounded local timeouts;
+- one Cua MCP session per span;
+- socket-activated persistent sensors;
+- direct oracles;
+- regional/visual escalation only after cheaper evidence is insufficient.
+
+## Benchmark truthfulness
+
+Do not claim a theoretical model-call reduction as measured performance.
+
+For each scenario, record:
+
+```text
+initial knowledge
+actions issued
+WORLDLINE revisions
+local predicates
+visual captures
+model-visible calls
+conflicts/escalations
+elapsed wall time
+```
+
+That makes the speed advantage attributable instead of theatrical.

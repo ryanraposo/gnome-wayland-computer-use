@@ -1,84 +1,107 @@
-# Capability Map
+# Capabilities
 
-## Ownership
+GWCU is an operating layer around Cua Driver for Ubuntu 26.04 GNOME Wayland.
 
-| Capability | Authority | Ubuntu/GNOME substrate | GWCU role |
-|---|---|---|---|
-| Target discovery/state | Cua Driver | GNOME/AT-SPI/Mutter | instruct agent to use Cua directly |
-| Semantic actions | Cua Driver | AT-SPI | provision accessibility; do not reimplement actions |
-| Target pixels | Cua Driver | Cua platform capture | none |
-| Window geometry / exact activation | Cua Driver | `winrects@cua` + Mutter | install Cua's packaged helper |
-| Foreground input | Cua Driver | RemoteDesktop → EIS/libei | establish one-time portal consent during install |
-| Verification/refusal | Cua Driver | platform-specific | consume structured results |
-| Cua readiness | Cua Driver | stable `health_report` | transport, do not reconstruct |
-| Whole visible screen | GWCU | ScreenCast + PipeWire | private warm broker + Screenshot fallback |
-| App identity | GWCU | desktop entries | deterministic resolver |
-| Durable local truth | GWCU | repo/workspace `.gwcu` | compact acceleration surface; live Cua wins |
-| Installed-system readiness | GWCU + Cua | session + observation + Cua health | one compressed verdict |
-| Hermes slash commands | Hermes plugin API | user plugin | `/computer-use` status/managed/truths/consent/doctor |
-| User choices | Hermes `clarify` / installer tty | user | explicit decisions only |
+## Responsibilities
 
-## `.gwcu` truth boundary
+| Surface | Owns | Does not own |
+|---|---|---|
+| **Cua Driver** | semantic/pixel targeting, geometry, activation, input, verification, refusals | durable workspace memory |
+| **WORLDLINE** | transient facts, revisions, invalidation, predicates, conflict/wake signals | input injection or intent reasoning |
+| **Observer** | optional whole-screen ScreenCast/PipeWire frames | desktop control |
+| **`.gwcu`** | durable low-churn repo/workspace truth | transient UI state |
+| **Profile/router** | deterministic app/PWA identity and host recovery composition | live control |
 
-Persistent machine/workspace state never belongs in `AGENTS.md`.
+## WORLDLINE inputs
 
-`.gwcu` is a repo/workspace-scoped file with schema `gwcu.truths.v1`:
+Current v1 can ingest:
 
-```text
-observed       generated low-churn environment facts
-capabilities   generated compact capability conclusions
-calibration    generated learned measurements/mappings
-preferences    user-authored behavior choices; preserved
-apps           generated stable launcher/PWA identity
-```
+- AT-SPI focus/object/window events through Python GI;
+- task-specific events over the private Unix socket;
+- session/desktop facts;
+- GNOME settings;
+- NetworkManager state;
+- requested process facts from `/proc`;
+- requested filesystem facts;
+- fresh observer frames when visual evidence is requested.
 
-Scope:
+WORLDLINE turns those sources into one revision vocabulary:
 
 ```text
-GWCU_SCOPE_ROOT override
-→ Git worktree root, when inside Git
-→ nearest ancestor containing .gwcu, outside Git
-→ current working directory
+changed
+invalidated
+preserved
+predicates_satisfied
+woken
+conflicts
 ```
 
-Git repositories are always isolated to their own root, including repositories
-nested inside a broader non-Git workspace. Managed Git scopes establish
-`/.gwcu` in the root `.gitignore` before the file is created. Non-Git scopes use
-the nearest existing ancestor `.gwcu` and need no ignore mutation.
+## Desktop control
 
-Generated truth can be rebuilt. Preferences and unknown top-level extension
-keys survive generated-truth regeneration. Live evidence outranks all stored
-generated truth.
+Cua is the sole actuator.
 
-## Explicitly out of architecture
+GNOME Wayland control follows:
 
-GWCU does not install or own:
+```text
+Cua → org.freedesktop.portal.RemoteDesktop → EIS → libei
+```
 
-- `/dev/uinput` policy;
-- `ydotool` / `ydotoold` control;
-- `input` group membership;
-- a project-managed `cua-driver serve` daemon;
-- an RDP/VNC server;
-- a private WinRects client;
-- toolkit-specific focus guessing;
-- machine/display truth embedded in prompt prose.
+No X11 or XWayland session is required.
 
-## RemoteDesktop boundary
+GWCU does not install a raw-input daemon, project udev input rule or RDP/VNC
+server.
 
-GNOME's `org.freedesktop.portal.RemoteDesktop` is used as the local
-compositor-approved input API. Cua requests pointer + keyboard, receives an
-EIS/libei session, and may persist GNOME's revocable restore token.
+## Visual observation
 
-GWCU's bootstrap uses one Cua desktop `move_cursor` action to establish that
-session: no click and no key. `/computer-use consent` and `portal-control.py
---status` surface the contract.
+Whole-screen observation follows:
 
-## Installer completion states
+```text
+GWCU observer
+→ org.freedesktop.portal.ScreenCast
+→ PipeWire
+→ frame
+```
 
-| State | Meaning |
-|---|---|
-| `READY` | native substrate, control consent, observer, Cua health, and GNOME helper are ready |
-| `READY EXCEPT GNOME HELPER RELOAD` | control consent/health are ready; updated WinRects needs one Shell reload/sign-out |
-| failure | unresolved dependency, consent, Cua health, or observer problem |
+It is independently consented and independently socket activated. WORLDLINE can
+request it, but does not require a ScreenCast session for semantic/direct
+revisions.
 
-There is no successful “mostly installed, diagnose it yourself” state.
+## Action composition
+
+`computer-use.sh span` keeps one Cua MCP session open for a predetermined
+sequence of actions. The span stops at the first Cua failure/refusal/transport
+boundary.
+
+`worldline-capture.sh` provides a deterministic postcondition surface around
+runtime state.
+
+Together they let a caller collapse mechanics without replacing Cua.
+
+## Durable routing
+
+`profile.sh route` performs:
+
+```text
+.gwcu lookup
+→ local app/PWA resolver only on miss
+→ optional stable writeback
+→ one gwcu.route.v1 result
+```
+
+`profile.sh recover` composes cached host state and diagnosis behind one call.
+
+## Installation
+
+The installer owns one-time integration:
+
+- explicit Ubuntu portal/PipeWire/AT-SPI dependencies;
+- pinned Cua qualification;
+- Cua GNOME helper;
+- RemoteDesktop permission bootstrap;
+- WORLDLINE + observer user units;
+- skill/runtime deployment;
+- optional Hermes command plugin;
+- reversible ownership metadata.
+
+It does not take ownership of Ubuntu's host packages merely because it repaired
+them.

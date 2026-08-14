@@ -15,17 +15,21 @@ metadata:
 
 # Computer Use on Ubuntu GNOME
 
-Use **Cua Driver as the control authority**. GWCU prepares Ubuntu/GNOME once,
-turns recurring mechanics into deterministic local programs, stores only useful
-durable local truth in `.gwcu` when managed truth is enabled, and keeps
-whole-screen observation independent.
+Use **Cua Driver as the control authority**.
 
-> **The model decides intent. Programs collapse mechanics. Cua executes.**
+GWCU adds two things around it:
+
+- **WORLDLINE** — transient revisioned facts, invalidation and postconditions.
+- **`.gwcu`** — durable repo/workspace truth worth reusing later.
+
+> **The model decides intent. WORLDLINE holds the control loop. Cua executes.**
 
 Cua owns semantic and pixel actions, target/window state, GNOME geometry,
-verified activation, input delivery, cursor behavior, effects, escalation, and
-structured refusals. Never recreate those mechanisms with AT-SPI scripts,
-WinRects D-Bus calls, `ydotool`, `/dev/uinput`, or guessed focus.
+verified activation, input delivery, cursor behavior, effects, escalation and
+structured refusals.
+
+WORLDLINE never injects input. It watches current state and wakes deterministic
+work when declared predicates become true.
 
 ## GNOME portal contract
 
@@ -34,81 +38,77 @@ required.**
 
 Cua uses GNOME's `org.freedesktop.portal.RemoteDesktop` API to obtain a local
 pointer/keyboard EIS/libei session. The installer normally establishes this
-one-time permission before declaring the machine ready. GNOME may label the UI
-"Remote Desktop" or "remote control"; this integration does not install an
-RDP/VNC server, raw-input daemon, or project input udev rule.
+one-time permission before declaring the machine ready.
 
-A separate explicit whole-screen observation uses ScreenCast and may have its
-own screen-selection consent. Denial/cancellation is terminal for that attempt.
+GNOME may label the permission "Remote Desktop" or "remote control"; GWCU does
+not install an RDP/VNC server, raw-input daemon or project input udev rule.
+
+Whole-screen observation is separate: the observer uses ScreenCast/PipeWire and
+may have its own consent.
+
+## Core rule
+
+**Observation is an interrupt, not a ritual RPC.**
+
+Do not assume every action invalidates every fact.
+
+When an action sequence and its postconditions are already determined:
+
+```text
+model
+→ one local call
+→ Cua actions
+→ WORLDLINE revisions/predicates
+→ continue locally
+→ model only at a real decision boundary
+```
+
+A model/tool round-trip is justified only when fresh state can actually change
+the next decision and the local runtime cannot establish it.
 
 ## Call budget
 
-Spend a model/tool round-trip only when it can change the next action.
-
-| Situation | GWCU setup calls before useful work |
+| Situation | setup calls before useful work |
 |---|---:|
 | known app/window | **0** |
 | uncertain installed/PWA identity | **1** — `profile.sh route` |
 | host/runtime contradiction | **1** — `profile.sh recover` |
+| local postcondition/revision | **1** — `worldline-capture.sh` |
 | explicit whole-screen observation | **1** — `observe.sh` |
 
-A known target goes directly to Cua. Do not ceremonially preflight the host.
+The WORLDLINE call is local deterministic machinery. It should replace repeated
+model-visible observation, not add ceremony to every action.
 
-## Workflow contract
+## Execution ladder
 
-Take control and do the requested work. Ask only when target, outcome, or
-authorization is materially ambiguous. For terminal/admin tasks, use the
-terminal directly.
-
-Keep normal computer use target-scoped. Diagnostics, update checks, host
-inventories, and whole-screen capture stay off the success path unless returned
-evidence or the task genuinely requires them.
-
-Use the execution mechanism that matches the work:
+Choose the cheapest sufficient mechanism:
 
 ```text
-stable recurring mechanics → repository script
-one-off mechanical fan-out → execute_code
-independent reasoning       → delegate_task
-bounded long process        → terminal(background=true, notify_on_complete=true)
-real user choice            → clarify
-interactive desktop action  → parent Cua loop
+durable known fact            → .gwcu / current context
+current transient fact        → WORLDLINE
+stable recurring mechanics    → repository script
+one-off mechanical fan-out    → execute_code
+predetermined GUI sequence    → one Cua action span
+explicit visual uncertainty   → WORLDLINE visual / observe.sh
+independent reasoning         → delegate_task
+real user choice              → clarify
+unresolved desktop conflict   → parent Cua/model loop
 ```
 
 Keep portal consent and user-facing desktop decisions in the parent session.
-Delegate independent reasoning, not the interactive control loop. Prefer
-`execute_code` over a chain of model/tool calls when a sequence is fully
-programmatic.
+Delegate independent reasoning, not the interactive control loop.
 
-## Execution state machine
+## Known target
 
-### Known target
+Start with useful Cua state. Use a grounded semantic element when one exists;
+otherwise use pixels from the same target state.
 
-Start with one useful Cua target/window state. Reuse semantics and pixels from
-that state. Use a grounded semantic element when one exists; otherwise act from
-the same target pixels. Consume Cua's effect, verification, delivery result, and
-escalation instead of predicting application behavior.
-
-```text
-known target
-→ one Cua target/window state
-→ AX when grounded / PX from the same state when visual
-→ deterministic Cua action span
-→ verify only at the next real decision boundary
-```
-
-## One-call action spans
-
-**Hard invariant:** if two or more consecutive Cua actions are fully determined
-by the same current evidence, they **MUST cross the model/tool boundary exactly
-once**.
-
-Do not emit `click → model → type → model → key` as separate tool calls when the
-click result cannot change the text or key that follows. Build the complete
-deterministic span first, then execute it through the installed composition
-surface:
+If two or more consecutive Cua actions are fully determined by the same current
+evidence, they **MUST cross the model/tool boundary exactly once**.
 
 ```bash
+ROOT="$HOME/.agents/skills/gnome-wayland-computer-use"
+
 "$ROOT/scripts/computer-use.sh" span --actions-json '{
   "schema":"gwcu.action-span.request.v1",
   "actions":[
@@ -119,92 +119,103 @@ surface:
 }'
 ```
 
-That is **one model-visible/tool invocation**. Inside it, GWCU keeps one Cua MCP
-session open and issues the already-decided Cua operations in order. Cua remains
-the sole control authority. This is composition, not an alternate input stack
-and not a claim that Cua exposes an atomic multi-action RPC.
+The installed runner keeps one Cua MCP session open for the already-decided
+sequence and stops at the first Cua failure/refusal/transport boundary.
 
-A span ends only at a genuine decision boundary. Split before the next action
-only when at least one of these is true:
+Split a span only when:
 
 - fresh returned/rendered state can change the next action or its arguments;
-- navigation, a dialog, target disappearance, or stale identity invalidates the
-  evidence used to construct the remaining span;
-- a real asynchronous transition has no sufficient completion signal yet;
-- Cua reports failure, refusal, ambiguity, or another result requiring a new
-  strategy;
-- new user authorization or a real user choice is required.
+- navigation/dialog/target disappearance invalidates remaining evidence;
+- an async transition has no sufficient completion predicate;
+- Cua reports failure, refusal or ambiguity requiring a new strategy;
+- new authorization or a real user choice is required.
 
-Otherwise, **keep going inside the same call**. No ritual screenshot, fixed
-sleep, model re-entry, or verification call belongs between already-decided
-consecutive actions.
+Otherwise keep going. No ritual screenshot or fixed sleep belongs between
+already-decided actions.
 
-The installed span runner itself stops immediately on the first Cua
-failure/refusal/transport boundary and never executes later queued actions after
-that boundary.
+## WORLDLINE postconditions
 
-```text
-[KNOW] field, text, and submit action are already grounded
-   ↓
-[DECIDE] click → type → Enter
-   ↓
-[TOOL #1: ONE ACTION SPAN]
-   ├─ Cua click
-   ├─ Cua type_text
-   └─ Cua key_press
-   ↓
-[BACK] one span result
-   ↓
-[DECIDE] only now, if fresh state can change what happens next
-```
-
-### Unknown or browser-backed target
-
-Do **one local routing call**:
+Use WORLDLINE when the executor can state what must become true.
 
 ```bash
-ROOT="$HOME/.agents/skills/gnome-wayland-computer-use"
+"$ROOT/scripts/worldline-capture.sh" \
+  --trigger action:save \
+  --expect-json '[
+    {"path":"task.document.saved","op":"eq","value":true}
+  ]'
+```
+
+A capture seals one local revision from queued events/direct oracles and
+evaluates the predicates.
+
+Event sources can contribute authoritative facts:
+
+```bash
+python3 "$ROOT/scripts/worldline.py" request --json '{
+  "op":"event",
+  "event":{
+    "source":"task",
+    "type":"download-complete",
+    "facts":{"task.download.foo_zip":true},
+    "invalidates":["ui.downloads"]
+  }
+}'
+```
+
+Prefer direct evidence to pixels:
+
+```text
+AT-SPI
+filesystem
+process
+D-Bus
+gsettings
+network
+task watcher
+```
+
+Use visual evidence only when those cannot answer the question:
+
+```bash
+"$ROOT/scripts/worldline-capture.sh" --trigger visual:needed --visual
+```
+
+WORLDLINE runtime state is transient and lives under `$XDG_RUNTIME_DIR`.
+
+## Unknown or browser-backed target
+
+Make one local routing call:
+
+```bash
 "$ROOT/scripts/profile.sh" route --machine "<target name>"
 ```
 
-Inside that one call:
+Inside that call:
 
 ```text
 repo/workspace .gwcu lookup
 → deterministic launcher/PWA resolver only on miss
-→ stable exact identity written back only when managed truth is enabled
+→ optional stable writeback
 → gwcu.route.v1
 ```
 
-`gwcu.route.v1` returns one of:
+`.gwcu` accelerates identity. It is never control authority.
 
-```text
-target_resolved  → give target + identity evidence to Cua
-live_target      → launcher metadata is absent; ask Cua for live target state
-target_ambiguous → disambiguate only the returned candidates
-```
+**Live Cua/WORLDLINE state wins on contradiction.**
 
-`.gwcu` is an acceleration surface, never control authority. **Live Cua state
-wins on contradiction.** Do not separately call `app-identity.sh`,
-`profile.sh read`, diagnostics, and app/window enumeration when `route` already
-answers the uncertainty.
+## Host contradiction
 
-### Host contradiction
-
-If a result contradicts installed/runtime state, make **one recovery call**:
+If evidence contradicts the installed/runtime state:
 
 ```bash
 "$ROOT/scripts/profile.sh" recover --machine
 ```
 
-That command reads cached session truth and, only when stale/missing, refreshes
-through `diagnose.sh` inside the same invocation.
+Do not make the model perform `read → refresh → diagnose` separately.
 
-Do not make the model perform `read → refresh → diagnose` as separate tool calls.
+## Whole screen
 
-### Whole screen
-
-For an explicit whole-screen request, or only when target-scoped Cua evidence
+For an explicit whole-screen request, or when target-scoped/direct evidence
 cannot bind the requested object:
 
 ```bash
@@ -212,33 +223,27 @@ cannot bind the requested object:
 "$ROOT/scripts/observe.sh" --media --screen
 ```
 
-The lazy observer keeps a portal-scoped PipeWire stream warm for a short task
-burst. Installation/login itself does not open ScreenCast consent.
+The observer keeps a portal-scoped PipeWire stream warm for a short task burst.
+Installation does not open ScreenCast merely to preheat it.
 
-## `.gwcu`: local truths, not prompt prose
+## `.gwcu`: durable truth, not runtime state
 
 Persistent machine/workspace truth belongs in a single `.gwcu` file, **never in
 `AGENTS.md`**.
 
-Scope resolution is deterministic:
+Scope:
 
 ```text
 GWCU_SCOPE_ROOT override
-→ Git worktree root, when inside Git
-→ nearest ancestor already containing .gwcu, outside Git
+→ Git worktree root
+→ nearest ancestor already containing .gwcu outside Git
 → current working directory
 ```
 
-Git repositories are always isolated to their own root truth file. A repo nested
-inside a general workspace such as `~/.gwcw/` does **not** inherit
-`~/.gwcw/.gwcu`. Outside Git, descendants of `~/.gwcw/` can reuse that workspace
-truth file until a more specific non-Git `.gwcu` exists.
+Git repositories are isolated to their own root truth file. Managed Git truth
+adds `/.gwcu` to the root `.gitignore` before the first write.
 
-When managed truth is enabled in a Git worktree, GWCU adds `/.gwcu` to the root
-`.gitignore` **before** creating the file. If it cannot safely establish the
-ignore rule, it refuses the persistent write.
-
-`.gwcu` is canonical JSON with schema `gwcu.truths.v1` and explicit sections:
+Schema:
 
 ```json
 {
@@ -251,150 +256,66 @@ ignore rule, it refuses the persistent write.
 }
 ```
 
-- `observed`: low-churn facts directly observed from the environment.
-- `capabilities`: compact current capability conclusions.
-- `calibration`: stable learned measurements/mappings.
-- `preferences`: user-authored behavior preferences; preserve on regeneration.
-- `apps`: stable launcher/PWA target identity.
+Never persist screenshots, documents, user text, credentials, task history,
+transient focus/geometry, or WORLDLINE revisions/predicates.
 
-Never persist screenshots, user text, task/conversation history, credentials,
-clipboard contents, raw health dumps, transient focus, or transient geometry.
-Generated truth stores conclusions, not observation transcripts.
+## Failure and refusal policy
 
-Useful truth controls:
+Treat Cua output as information.
 
-```bash
-"$ROOT/scripts/profile.sh" managed on --machine
-"$ROOT/scripts/profile.sh" managed off --machine
-"$ROOT/scripts/profile.sh" managed status --machine
-"$ROOT/scripts/profile.sh" truths status --machine
-"$ROOT/scripts/profile.sh" truths scope --machine
-"$ROOT/scripts/profile.sh" truths regenerate --machine
-```
+**Never retry the same failed delivery shape blindly.**
 
-`GWCU_TRUTHS=off` is the runtime override. The older
-`GWCU_PROJECT_MEMORY=off` override remains accepted for compatibility.
+**Never answer a Cua refusal with raw pointer/keyboard injection.**
 
-A warm exact `.gwcu` app hit skips repeated launcher/PWA resolution. It does not
-claim to remove the Cua action itself or the outer route call when routing is
-still needed.
+If Cua refuses or fails:
 
-## Hermes `/computer-use`
+1. consume its structured reason/evidence;
+2. invalidate assumptions that reason contradicts;
+3. use a different Cua-supported strategy only when justified;
+4. return to reasoning when no declared branch applies.
 
-When the Hermes plugin is installed, its native command registry exposes:
+Do not bypass the authority boundary with `ydotool`, `/dev/uinput`, guessed
+focus or an alternate control daemon.
+
+## Completion proof
+
+A task is complete when the requested outcome is established by the cheapest
+sufficient evidence:
 
 ```text
+direct oracle / WORLDLINE predicate
+→ Cua verification
+→ targeted semantic evidence
+→ visual evidence only when necessary
+```
+
+Do not add a screenshot merely to feel certain.
+
+Report real failures and unresolved conflicts. Do not manufacture success from
+an unchanged screen or a stale durable fact.
+
+## Operator surfaces
+
+```bash
 /computer-use status
-/computer-use managed
+/computer-use consent
 /computer-use managed on|off|status
 /computer-use truths
-/computer-use consent
 /computer-use doctor
-/computer-use help
 ```
 
-`managed on` enables persistence and initializes the current scope. `truths`
-shows the active `.gwcu` scope/path/counts. `consent` explains and verifies the
-RemoteDesktop → EIS/libei contract. The internal `computer-use.sh span` surface
-is for agent execution, not a user-facing slash-command workflow.
-
-## Latency-first interaction
-
-- Known app means no `list_apps` / `list_windows` ceremony.
-- No update checks, broad diagnostics, capability inventories, or whole-screen
-  capture before a normal task.
-- **Already-decided consecutive actions must use one action-span call.**
-- Reuse one Cua state across AX → PX when it supplies both.
-- Use one complete typing action, not character loops.
-- Send a shortcut in one key action.
-- Prefer semantic `set_value` when it directly establishes the value.
-- Let a confirmed click flow into deterministic typing inside the same span when
-  the click result cannot change what gets typed.
-- Use Cua read-back when it already proves the postcondition.
-- Wait only for a real asynchronous transition.
-- Consume `.gwcu` before repeating deterministic identity discovery.
-- Never retry the same failed delivery shape blindly.
-- Never answer a Cua refusal with raw pointer/keyboard injection.
-
-The ideal runtime shape is intentionally boring:
+Runtime files of interest:
 
 ```text
-Cua state once → ONE action-span call → next decision boundary
+scripts/computer-use.sh
+scripts/action-span.py
+scripts/worldline.py
+scripts/worldline-capture.sh
+scripts/observer.py
+scripts/observe.sh
+scripts/profile.sh
+scripts/truths.py
 ```
 
-## Foreground preservation
-
-Preserve the user's foreground by default. Cua owns exact target activation
-through its GNOME integration. If foreground delivery is required, let Cua
-activate and verify the exact target. Do not infer foreground need from toolkit
-labels such as GTK, Electron, browser, Vulkan, or GLFW.
-
-A structured refusal is capability information, not permission to bypass Cua.
-
-## Pixel-only surfaces
-
-An AT-SPI-empty Vulkan, GLFW, game, canvas, video, or custom-rendered window is
-**pixel-only**, not absent.
-
-If Cua resolves the GNOME window, use that target's pixels and compositor
-geometry. Do not launch a desktop-wide search because the AX tree is empty.
-
-## Deterministic script surface
-
-The agent-facing helpers are deliberately small:
-
-```bash
-# target uncertainty → one route
-"$ROOT/scripts/profile.sh" route --machine "ChatGPT"
-
-# multiple already-decided actions → ONE outer call
-"$ROOT/scripts/computer-use.sh" span --actions-json '<gwcu.action-span.request.v1>'
-
-# host contradiction → one recovery verdict
-"$ROOT/scripts/profile.sh" recover --machine
-
-# explicit whole-screen evidence → one observation
-"$ROOT/scripts/observe.sh" --machine --screen /tmp/screen.png
-
-# installed-system/truth status
-"$ROOT/scripts/computer-use.sh" status
-```
-
-Lower-level helpers exist so programs can compose programs without spending
-model turns:
-
-```text
-app-identity.sh     deterministic launcher/PWA identity
-truths.py           .gwcu scope/read/write/regeneration contract
-profile.sh read     passive cached session truth
-profile.sh refresh  → diagnose.sh → Cua health + GNOME observation health
-portal-control.py   RemoteDesktop contract + one-time pointer-only authorization
-cua-health.py       thin transport for Cua health_report structuredContent
-```
-
-Prefer composed commands above. Call lower-level helpers directly only for
-maintenance, testing, or when raw detail is the requested output.
-
-Top-level `ok=true` means the installed system is ready now. `cua-driver doctor
---json` is supplemental diagnostic detail; Cua's stable `health_report` is
-upstream control-health truth.
-
-## Cua GNOME integration
-
-GWCU qualifies Cua Driver **0.19.3**. Agents must not update Cua as task-time
-housekeeping.
-
-`winrects@cua` belongs to Cua. Never call `org.cua.WinRects` directly, vendor the
-helper, duplicate its protocol, or maintain a parallel input stack.
-
-One GNOME sign-out/in may be required after installing or updating that helper.
-
-## Maintenance
-
-```bash
-"$ROOT/scripts/check-update.sh" --force
-"$ROOT/scripts/diagnose.sh"
-"$ROOT/scripts/portal-control.py" --status
-```
-
-Maintenance is explicit and stays off the normal action path.
+The architecture source of truth is `WORLDLINE.md`; durable truth is specified
+in `GWCU.md`; hard behavioral rules are in `DETERMINISM.md`.
