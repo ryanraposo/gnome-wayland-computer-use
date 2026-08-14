@@ -33,8 +33,7 @@ work when declared predicates become true.
 
 ## GNOME portal contract
 
-GNOME Wayland is the intended session. **No X11 or XWayland session is
-required.**
+GNOME Wayland is the intended session. **No X11 or XWayland session is required.**
 
 Cua uses GNOME's `org.freedesktop.portal.RemoteDesktop` API to obtain a local
 pointer/keyboard EIS/libei session. The installer normally establishes this
