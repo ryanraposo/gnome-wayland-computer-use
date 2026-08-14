@@ -7,7 +7,7 @@ It answers:
 > What low-churn fact is worth knowing again the next time an agent works in
 > this repo or workspace?
 
-It is deliberately **not** WORLDLINE state.
+WORLDLINE is transient session state; `.gwcu` is deliberately **not** WORLDLINE state.
 
 ```text
 WORLDLINE   current session / revisions / predicates / invalidation
