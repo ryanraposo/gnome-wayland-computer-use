@@ -118,6 +118,9 @@ contradicts reality.
 
 GNOME Wayland is the intended session. No X11 or XWayland session is required.
 
+GNOME labels the compositor-mediated local control permission **Remote Desktop**.
+GWCU does not install a remote-login server.
+
 Cua's local pointer/keyboard path is:
 
 ```text
