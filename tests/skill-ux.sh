@@ -17,7 +17,7 @@ pass "runtime skills are identical and compact"
 
 for heading in \
     'Core rule' 'Call budget' 'Execution ladder' 'Known target' \
-    'WORLDLINE postconditions' 'Whole screen' '.gwcu: durable truth, not runtime state' \
+    'WORLDLINE postconditions' 'Whole screen' '`.gwcu`: durable truth, not runtime state' \
     'Failure and refusal policy' 'Completion proof'
 do
     grep -Fqi "## $heading" "$ROOT/SKILL.md" || fail "skill lost: $heading"
