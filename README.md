@@ -7,6 +7,8 @@ GWCU makes computer use behave like execution over a known machine instead of a 
 The model supplies intent and handles genuine decisions. **WORLDLINE** maintains the current world model, preserves facts until evidence invalidates them, waits on declared outcomes, and interrupts reasoning only when reality diverges from the plan. **Cua Driver** remains the sole authority that actually controls the desktop. **`.gwcu`** carries durable truths across sessions.
 
 > **Information over deliberation. Model calls at decision boundaries, local execution everywhere else.**
+>
+> **Cua controls. WORLDLINE knows. `.gwcu` remembers.**
 
 - **Cua Driver controls the desktop.**
 - **WORLDLINE maintains live, revisioned state and waits on postconditions.**
