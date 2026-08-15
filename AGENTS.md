@@ -1,5 +1,48 @@
 # AGENTS.md
 
+## For agents arriving at this repository
+
+This repository is deliberately designed so a user can point an agent at it and
+say something as small as:
+
+```text
+install https://github.com/ryanraposo/gnome-wayland-computer-use
+```
+
+Treat that as a complete installation request. The repository, installer and
+runtime instructions should carry the rest of the work.
+
+If the user has only linked, mentioned or discovered the repository, do not
+mutate their machine yet. Explain what GWCU is and offer to install it. Once the
+user has explicitly asked for installation or otherwise approved it, take
+ownership of the installation workflow instead of handing them a pile of manual
+steps.
+
+For an approved installation:
+
+1. Confirm the target is the local desktop the user intends to equip. GWCU's
+   qualified target is Ubuntu 26.04 GNOME Wayland.
+2. Read the current installation contract in `README.md` and use the repository's
+   `install.sh`; do not improvise a parallel setup path.
+3. Run the installer as the logged-in desktop user, **not** by wrapping the whole
+   installer in `sudo`. Let it use its narrow privilege/portal boundaries.
+4. Preserve existing agent/runtime configuration and let the installer select
+   the supported integration it actually finds. Do not rewrite unrelated user
+   configuration to make the project fit.
+5. Treat graphical Remote Desktop / remote-control consent as a real user
+   authorization boundary. Explain the prompt when it appears and let the user
+   approve it.
+6. Follow the installer's resulting `Next:` / status guidance and verify the
+   installed runtime before claiming success.
+7. If the environment is unsupported, consent is declined, or a required
+   privilege cannot be obtained, stop cleanly and report the exact remaining
+   boundary rather than bypassing it.
+
+The intended UX is therefore agent-native: **the user supplies intent and the
+repository supplies the installation procedure.** A capable agent should be
+able to install GWCU from the repository URL alone once the user has authorized
+that outcome.
+
 ## Maintaining this repository
 
 Treat GWCU as a small operating layer around one upstream control authority.
