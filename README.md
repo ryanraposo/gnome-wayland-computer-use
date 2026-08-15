@@ -1,8 +1,12 @@
 # gnome-wayland-computer-use
 
-**Event-driven computer use for Ubuntu 26.04 GNOME Wayland.**
+**An OS model for computer use on Ubuntu 26.04 GNOME Wayland.**
 
-GWCU keeps desktop mechanics out of the model loop.
+GWCU makes computer use behave like execution over a known machine instead of a conversation about screenshots.
+
+The model supplies intent and handles genuine decisions. **WORLDLINE** maintains the current world model, preserves facts until evidence invalidates them, waits on declared outcomes, and interrupts reasoning only when reality diverges from the plan. **Cua Driver** remains the sole authority that actually controls the desktop. **`.gwcu`** carries durable truths across sessions.
+
+> **Information over deliberation. Model calls at decision boundaries, local execution everywhere else.**
 
 - **Cua Driver controls the desktop.**
 - **WORLDLINE maintains live, revisioned state and waits on postconditions.**
