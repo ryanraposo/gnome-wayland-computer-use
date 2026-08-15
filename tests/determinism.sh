@@ -35,7 +35,7 @@ grep -q 'gnome-wayland-computer-use-worldline.socket' "$ROOT/scripts/teardown.sh
 grep -q 'Repo/workspace .gwcu files' "$ROOT/scripts/teardown.sh" || fail "teardown no longer preserves workspace truth"
 pass "WORLDLINE lifecycle is installed and reversible"
 
-# README target: at least 30% smaller than the pre-WORLDLINE 13,283-byte README.
+README_BUDGET_BYTES=9300
 size=$(wc -c <"$ROOT/README.md")
-[ "$size" -le 9298 ] || fail "README is not at least 30% smaller (size=$size)"
-pass "README is materially simpler"
+[ "$size" -le "$README_BUDGET_BYTES" ] || fail "README exceeds ${README_BUDGET_BYTES}-byte budget (size=$size)"
+pass "README stays within ${README_BUDGET_BYTES}-byte budget"
