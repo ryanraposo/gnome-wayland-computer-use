@@ -275,7 +275,7 @@ It:
 - verifies Cua health before declaring the machine ready.
 
 The first explicit whole-screen capture may still require ScreenCast consent.
-Install does not open ScreenCast merely to prove that GWCU exists.
+Install does not open ScreenCast merely to preheat it.
 
 Useful status surfaces:
 
