@@ -84,7 +84,7 @@ No screenshot.
 No model turn.
 ```
 
-This is the important distinction: WORLDLINE is not another agent and it is not another computer-use implementation. It is the machine-side continuity layer between decisions. The model does not need to know whether progress was established by AT-SPI, a process fact, a filesystem fact, a setting, or a visual escalation; it receives the next meaningful state when reasoning is actually required.
+WORLDLINE is not another agent and it is not another computer-use implementation. It is the machine-side continuity layer between decisions. The model does not need to know whether progress was established by AT-SPI, a process fact, a filesystem fact, a setting, or a visual escalation; it receives the next meaningful state when reasoning is actually required.
 
 See [WORLDLINE.md](WORLDLINE.md) for the runtime and protocol.
 
