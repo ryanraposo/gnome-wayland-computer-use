@@ -2,126 +2,97 @@
 
 **An OS model for computer use on Ubuntu 26.04 GNOME Wayland.**
 
-GWCU makes computer use behave like execution over a known machine instead of a conversation about screenshots.
+GWCU turns computer use into execution over a known machine. The model supplies intent and handles genuine decisions; local machinery carries everything already determined.
 
-The model supplies intent and handles genuine decisions. **WORLDLINE** maintains the current world model, preserves facts until evidence invalidates them, waits on declared outcomes, and interrupts reasoning only when reality diverges from the plan. **Cua Driver** remains the sole authority that actually controls the desktop. **`.gwcu`** carries durable truths across sessions.
-
-> **Information over deliberation. Model calls at decision boundaries, local execution everywhere else.**
+> **Information over deliberation. Model calls at decision boundaries.**
 >
 > **Cua controls. WORLDLINE knows. `.gwcu` remembers.**
 
-- **Cua Driver controls the desktop.**
-- **WORLDLINE maintains live, revisioned state and waits on postconditions.**
-- **`.gwcu` remembers only durable repo/workspace truth.**
-- **ScreenCast/PipeWire is an escalation sensor, not the default observation loop.**
+- **Cua Driver** is the sole desktop control authority.
+- **WORLDLINE** maintains transient, revisioned machine state and postconditions.
+- **`.gwcu`** preserves durable repo/workspace truth across sessions.
+- **ScreenCast/PipeWire** is an escalation sensor, not the observation loop.
 
 ```text
-                   intent / contingent plan
-                           │
-                           ▼
-                     ┌───────────┐
-                     │ WORLDLINE │
-                     │ revisions │
-                     │ predicates│
-                     └─────┬─────┘
-          expected change  │  real conflict
-              ┌────────────┘       └──────────→ model
-              ▼
-        Cua action span
-              │
-              ▼
-     GNOME RemoteDesktop
-          EIS / libei
-              │
-              ▼
-           desktop
-              │
-       ┌──────┴───────────────┐
-       ▼                      ▼
-   AT-SPI events       ScreenCast / PipeWire
-   direct oracles      only when visual truth
-       └──────────┬───────────┘
-                  ▼
-           next WORLDLINE
-              revision
+                intent / contingent plan
+                         │
+                         ▼
+                   ┌───────────┐
+                   │ WORLDLINE │──── conflict ────→ model
+                   └─────┬─────┘
+              expected   │
+                         ▼
+                  Cua action span
+                         │
+                         ▼
+              GNOME RemoteDesktop
+                   EIS / libei
+                         │
+                         ▼
+                      desktop
+                    ┌────┴────┐
+                    ▼         ▼
+                 AT-SPI    visual sensor
+              direct truth  when needed
+                    └────┬────┘
+                         ▼
+                 next WORLDLINE
+                     revision
 ```
 
-The point is simple: **observation is an interrupt, not a ritual RPC.**
+**Observation is an interrupt, not a ritual RPC.**
 
-## Why WORLDLINE exists
+## The inversion
 
-Ordinary computer-use loops pay for every transition:
+Ordinary computer-use loops repeatedly pay the model to discover that expected things happened:
 
 ```text
 observe → model → click → observe → model → type → observe → model → …
 ```
 
-Most of those turns are bookkeeping. A click rarely invalidates everything the
-agent already knew, and many outcomes have better evidence than pixels.
-
-WORLDLINE treats desktop state like a revisioned system:
-
-1. stamp a revision boundary;
-2. consume accessibility and direct-oracle events;
-3. invalidate only facts affected by those events/actions;
-4. take visual evidence only when the transaction needs it;
-5. evaluate postconditions and known branches locally;
-6. continue deterministic execution;
-7. interrupt the model only when reality violates the expected worldline.
-
-A fact is **valid until invalidated**. A postcondition is an observation.
+GWCU preserves information until evidence invalidates it:
 
 ```text
-action: click Save
-    ↓
-WORLDLINE sees document.dirty == false
-    ↓
-predicate satisfied
-    ↓
-continue
-
-No screenshot.
-No model turn.
+model decides
+→ Cua executes the determined span
+→ WORLDLINE observes machine evidence
+→ expected postcondition true
+→ continue locally
+→ model only when the next decision changed
 ```
 
-WORLDLINE is not another agent and it is not another computer-use implementation. It is the machine-side continuity layer between decisions. The model does not need to know whether progress was established by AT-SPI, a process fact, a filesystem fact, a setting, or a visual escalation; it receives the next meaningful state when reasoning is actually required.
+A click does not erase the known machine. WORLDLINE revises affected facts, preserves unrelated ones, and can establish outcomes from AT-SPI, process/filesystem state, settings, network/task events, or visual evidence when pixels are genuinely required.
 
-See [WORLDLINE.md](WORLDLINE.md) for the runtime and protocol.
+```text
+click Save
+→ document.dirty == false
+→ predicate satisfied
+→ continue
 
-## Control authority
+No screenshot. No model turn.
+```
 
-Cua Driver is the only input/control authority.
+WORLDLINE is not an agent and not a competing computer-use implementation. It is the continuity layer between model decisions and Cua execution. See [WORLDLINE.md](WORLDLINE.md).
 
-Cua owns live semantic/pixel targeting, GNOME geometry, activation, pointer and
-keyboard delivery, verification, effects and structured refusals. GWCU does not
-fall back to `ydotool`, `/dev/uinput`, an RDP/VNC server or guessed focus.
+## Authority
 
-On GNOME Wayland, Cua uses the compositor-approved Remote Desktop portal to
-obtain its EIS/libei input session.
+Cua Driver owns semantic/pixel targeting, geometry, activation, pointer and keyboard delivery, verification, effects and structured refusals. GWCU never bypasses Cua with `ydotool`, `/dev/uinput`, guessed focus, or a second control daemon.
 
-> [!TIP]
-> GNOME calls this permission **Remote Desktop** or **remote control**. GWCU is
-> not installing a remote-login service. It is authorizing local
-> compositor-mediated pointer/keyboard control for Cua.
+On GNOME Wayland, Cua uses the compositor-approved Remote Desktop portal to obtain its EIS/libei input session. GNOME may label this permission **Remote Desktop** or **remote control**; GWCU does not install a remote-login service.
 
 **No X11 or XWayland session is required.**
 
-## The runtime in practice
+## What execution feels like
 
 ### Known target
 
-If the target is already grounded, start useful work immediately.
-
 ```text
 known target
-→ Cua state
-→ one already-decided action span
+→ one already-decided Cua span
 → WORLDLINE waits on postconditions
 → continue locally
-→ model only on a real decision boundary
+→ model at the next real decision boundary
 ```
-
-Example:
 
 ```bash
 ROOT="$HOME/.agents/skills/gnome-wayland-computer-use"
@@ -136,13 +107,9 @@ ROOT="$HOME/.agents/skills/gnome-wayland-computer-use"
 }'
 ```
 
-Two or more consecutive Cua actions that are fully determined by the same
-evidence should cross the model/tool boundary once.
+Two or more consecutive Cua actions determined by the same evidence cross the model/tool boundary once.
 
-### Wait on reality, locally
-
-WORLDLINE can capture a revision and evaluate predicates without asking the
-model to re-observe:
+### Wait on reality
 
 ```bash
 "$ROOT/scripts/worldline-capture.sh" \
@@ -152,65 +119,52 @@ model to re-observe:
   ]'
 ```
 
-Task-specific watchers can push direct evidence into the daemon:
-
-```bash
-python3 "$ROOT/scripts/worldline.py" request --json '{
-  "op":"event",
-  "event":{
-    "source":"task",
-    "type":"download-complete",
-    "facts":{"task.download.foo_zip":true},
-    "invalidates":["ui.downloads"]
-  }
-}'
-```
-
-Then a transaction can wait on `task.download.foo_zip == true` instead of
-staring at a browser.
+Task-specific watchers can push authoritative events into WORLDLINE, so a transaction can wait on `task.download.foo_zip == true` instead of staring at a browser.
 
 ### Unknown app or PWA
-
-One routing call resolves stable launcher/PWA identity:
 
 ```bash
 "$ROOT/scripts/profile.sh" route --machine "ChatGPT"
 ```
 
-When managed truth is enabled, stable identity can be written to `.gwcu`, so
-future runs skip rediscovery.
+One local call resolves stable launcher/PWA identity. With managed truth enabled, reusable identity can be written to `.gwcu`, avoiding future rediscovery.
 
 ### Host contradiction
-
-One recovery call owns the local diagnostic fan-out:
 
 ```bash
 "$ROOT/scripts/profile.sh" recover --machine
 ```
 
-### Whole-screen visual evidence
+One recovery call owns the local diagnostic fan-out.
 
-Use it when the task is genuinely visual or semantic/direct evidence is
-insufficient:
+### Visual uncertainty
 
 ```bash
 "$ROOT/scripts/observe.sh" --machine --screen /tmp/screen.png
 ```
 
-The observer is socket-activated and keeps the ScreenCast/PipeWire stream warm
-for a short task burst. WORLDLINE can request that sensor for a revision; it
-does not make screenshots the default control loop.
+The observer is socket-activated and keeps ScreenCast/PipeWire warm for a short task burst. WORLDLINE requests it only when semantic/direct evidence is insufficient.
+
+## MCP
+
+GWCU maps cleanly onto MCP without making MCP part of the control plane.
+
+A thin MCP adapter can expose coarse deterministic operations such as **execute a Cua span**, **capture/wait on a WORLDLINE revision**, **route a target**, **recover the host**, and **request visual evidence**. WORLDLINE state can be exposed as read-only resources where useful. The model should see meaningful operations and compact results, not every internal sensor event.
+
+```text
+MCP / agent runtime     invocation boundary
+GWCU                    OS model + deterministic composition
+Cua Driver              desktop authority
+GNOME                    machine
+```
+
+The local scripts remain the canonical mechanics. MCP is an interoperable front door, not a second implementation.
 
 ## `.gwcu`: durable truth
 
 WORLDLINE state is transient. `.gwcu` is durable.
 
-`.gwcu` stores low-churn repo/workspace facts such as stable app identity,
-capability conclusions, calibration and user-authored preferences. It does not
-store screenshots, task history, transient focus, documents, credentials or
-WORLDLINE revision state.
-
-Canonical schema:
+`.gwcu` stores low-churn facts such as stable app identity, capability conclusions, calibration and user-authored preferences. It never stores screenshots, task history, transient focus, documents, credentials or WORLDLINE revisions.
 
 ```json
 {
@@ -232,52 +186,17 @@ GWCU_SCOPE_ROOT override
 → current directory
 ```
 
-For Git worktrees, managed mode writes `/.gwcu` to the root `.gitignore`
-**before** creating `.gwcu`.
-
-See [GWCU.md](GWCU.md).
-
-## What WORLDLINE senses
-
-The daemon is intentionally read-only.
-
-Current built-in inputs include:
-
-- AT-SPI accessibility events when the GI binding is available;
-- session / desktop facts;
-- GNOME settings;
-- NetworkManager connectivity;
-- requested `/proc` process facts;
-- requested filesystem `stat` facts;
-- task-specific event ingress;
-- the existing ScreenCast/PipeWire observer when visual evidence is requested.
-
-This is extensible by event source. Adding a watcher should add knowledge, not a
-second control plane.
+For Git worktrees, managed mode writes `/.gwcu` to the root `.gitignore` **before** creating `.gwcu`. See [GWCU.md](GWCU.md).
 
 ## Installation
-
-The installer is qualified for Ubuntu 26.04 GNOME Wayland and deliberately pins
-Cua Driver.
 
 ```bash
 curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh | bash
 ```
 
-It:
+The installer qualifies Ubuntu 26.04 GNOME Wayland, repairs the portal/PipeWire/AT-SPI/Python GI foundation, installs or qualifies pinned Cua Driver, establishes RemoteDesktop consent, deploys the skill and optional Hermes integration, configures managed `.gwcu`, installs socket-activated WORLDLINE/observer services, and verifies Cua health.
 
-- repairs the PipeWire, portal, AT-SPI and Python GI foundation;
-- installs/qualifies the pinned Cua Driver and its GNOME helper;
-- establishes one-time RemoteDesktop control consent;
-- installs the skill and optional Hermes command plugin;
-- asks whether managed `.gwcu` truth should be enabled;
-- installs the WORLDLINE and visual-observer socket-activated user services;
-- verifies Cua health before declaring the machine ready.
-
-The first explicit whole-screen capture may still require ScreenCast consent.
-Install does not open ScreenCast merely to prove that GWCU exists.
-
-Useful status surfaces:
+The first explicit whole-screen capture may still require separate ScreenCast consent.
 
 ```bash
 /computer-use status
@@ -293,16 +212,9 @@ Useful status surfaces:
 curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/uninstall.sh | bash
 ```
 
-Uninstall removes GWCU-managed skills/plugins, WORLDLINE and observer units,
-runtime state, PATH edits and other integration-owned artifacts. Repo/workspace
-`.gwcu` files remain local workspace content unless you remove them yourself.
-
-Use `--remove-cua` to remove Cua only when GWCU provisioned it, or `--purge-cua`
-for an explicit full Cua purge.
+Uninstall removes GWCU-owned integration and transient runtime state. Repo/workspace `.gwcu` files remain workspace content. Cua is preserved by default; use `--remove-cua` for GWCU-provisioned Cua or `--purge-cua` for an explicit full purge.
 
 ## Design rules
-
-The short constitution is [DETERMINISM.md](DETERMINISM.md):
 
 - Cua changes the desktop.
 - WORLDLINE explains what changed and what remains valid.
@@ -312,9 +224,4 @@ The short constitution is [DETERMINISM.md](DETERMINISM.md):
 - `.gwcu` contains durable truth, never prompt prose.
 - A real conflict returns control to the model.
 
-Additional references:
-
-- [WORLDLINE.md](WORLDLINE.md) — revision daemon and predicate protocol
-- [GWCU.md](GWCU.md) — `.gwcu` durable truth contract
-- [CAPABILITIES.md](CAPABILITIES.md) — runtime boundaries and surfaces
-- [PERF_NOTES.md](PERF_NOTES.md) — where latency/call savings come from
+See [DETERMINISM.md](DETERMINISM.md) for the constitution, [CAPABILITIES.md](CAPABILITIES.md) for runtime boundaries, and [PERF_NOTES.md](PERF_NOTES.md) for latency/call economics.
