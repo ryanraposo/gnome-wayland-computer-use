@@ -1,180 +1,171 @@
 #!/usr/bin/env python3
-"""Execute an already-decided Cua/WORLDLINE transaction behind one model/tool boundary.
-
-Cua Driver remains the sole actuator. WORLDLINE supplies revisioned waits,
-postconditions, conflict detection, and predetermined local branches.
-"""
+"""Execute a Cua/WORLDLINE transaction behind one model/tool boundary."""
 from __future__ import annotations
-import argparse, json, os
+import argparse,json,os,selectors,shutil,socket,subprocess,sys,time
 from pathlib import Path
-import selectors, shutil, socket, subprocess, sys, time
 from typing import Any
+sys.path.insert(0,str(Path(__file__).parent))
+from importlib.machinery import SourceFileLoader
+priority=SourceFileLoader("gwcu_control_priority",str(Path(__file__).with_name("control-priority.py"))).load_module()
 
-SCHEMA="gwcu.action-span.v1"; REQUEST_SCHEMA="gwcu.action-span.request.v1"; TRANSACTION_SCHEMA="gwcu.transaction.v1"
-PROTOCOL="2024-11-05"; MAX_ACTIONS=64; MAX_TRANSITIONS=256; MAX=1<<20
+SCHEMA="gwcu.action-span.v1";REQUEST_SCHEMA="gwcu.action-span.request.v1";TRANSACTION_SCHEMA="gwcu.transaction.v1";PROTOCOL="2024-11-05";MAX_ACTIONS=64;MAX_TRANSITIONS=256;MAX=1<<20
 
-def compact(value:Any)->str:return json.dumps(value,separators=(",",":"),ensure_ascii=True)
-def resolve_driver(explicit:str|None)->str|None:
-    if explicit:return explicit
-    env=os.environ.get("CUA_DRIVER_BIN")
-    if env:return env
-    found=shutil.which("cua-driver")
-    if found:return found
-    candidate=Path.home()/".local/bin/cua-driver"
-    return str(candidate) if candidate.is_file() and os.access(candidate,os.X_OK) else None
-def worldline_socket(explicit:str|None)->Path:
-    if explicit:return Path(explicit)
-    root=Path(os.getenv("XDG_RUNTIME_DIR",f"/run/user/{os.getuid()}"))/"gnome-wayland-computer-use"
-    return root/"worldline.sock"
-def worldline_call(path:Path,payload:dict[str,Any],timeout:float)->dict[str,Any]:
+def compact(v:Any)->str:return json.dumps(v,separators=(",",":"),ensure_ascii=True)
+def resolve_driver(x):
+    if x:return x
+    if os.getenv("CUA_DRIVER_BIN"):return os.environ["CUA_DRIVER_BIN"]
+    if shutil.which("cua-driver"):return shutil.which("cua-driver")
+    p=Path.home()/".local/bin/cua-driver";return str(p) if p.is_file() and os.access(p,os.X_OK) else None
+def worldline_socket(x):return Path(x) if x else Path(os.getenv("XDG_RUNTIME_DIR",f"/run/user/{os.getuid()}"))/"gnome-wayland-computer-use/worldline.sock"
+def worldline_call(path,payload,timeout):
     s=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM);s.settimeout(timeout)
     try:
-        s.connect(str(path));s.sendall((compact(payload)+"\n").encode());buf=bytearray()
-        while b"\n" not in buf and len(buf)<=MAX:
-            b=s.recv(65536)
-            if not b:break
-            buf.extend(b)
+        s.connect(str(path));s.sendall((compact(payload)+"\n").encode());b=bytearray()
+        while b"\n" not in b and len(b)<=MAX:
+            x=s.recv(65536)
+            if not x:break
+            b.extend(x)
     finally:s.close()
-    if len(buf)>MAX:raise RuntimeError("WORLDLINE response too large")
-    if not buf:raise RuntimeError("WORLDLINE closed without a response")
-    return json.loads(bytes(buf).split(b"\n",1)[0])
-
-def send(proc:subprocess.Popen[str],payload:dict[str,Any])->None:
-    assert proc.stdin is not None;proc.stdin.write(compact(payload)+"\n");proc.stdin.flush()
-def recv_for(proc:subprocess.Popen[str],request_id:int,timeout:float)->dict[str,Any]:
-    assert proc.stdout is not None;selector=selectors.DefaultSelector();selector.register(proc.stdout,selectors.EVENT_READ);deadline=time.monotonic()+timeout
+    if not b:raise RuntimeError("WORLDLINE closed without response")
+    return json.loads(bytes(b).split(b"\n",1)[0])
+def send(p,q):p.stdin.write(compact(q)+"\n");p.stdin.flush()
+def recv_for(p,i,t):
+    sel=selectors.DefaultSelector();sel.register(p.stdout,selectors.EVENT_READ);end=time.monotonic()+t
     try:
         while True:
-            remaining=deadline-time.monotonic()
-            if remaining<=0 or not selector.select(remaining):raise TimeoutError(f"timed out waiting for MCP response id={request_id}")
-            line=proc.stdout.readline()
+            left=end-time.monotonic()
+            if left<=0 or not sel.select(left):raise TimeoutError(f"timed out waiting for MCP response id={i}")
+            line=p.stdout.readline()
             if not line:raise RuntimeError("cua-driver MCP exited before responding")
-            msg=json.loads(line)
-            if msg.get("id")==request_id:return msg
-    finally:selector.close()
-
-def normalize_result(result:Any)->Any:
-    if not isinstance(result,dict):return result
-    structured=result.get("structuredContent",result.get("structured_content"))
-    return structured if structured is not None else result.get("content",result)
-def explicit_boundary(response:dict[str,Any])->tuple[bool,str|None]:
+            m=json.loads(line)
+            if m.get("id")==i:return m
+    finally:sel.close()
+def structured(response):
+    r=response.get("result") if isinstance(response,dict) else None
+    if not isinstance(r,dict):return None
+    s=r.get("structuredContent",r.get("structured_content"));return s if isinstance(s,dict) else None
+def normalize_result(response):
+    r=response.get("result") if isinstance(response,dict) else None
+    if not isinstance(r,dict):return r
+    s=structured(response);return s if s is not None else r.get("content",r)
+def boundary(response):
     if "error" in response:return True,"mcp_error"
-    result=response.get("result")
-    if not isinstance(result,dict):return True,"invalid_result"
-    if result.get("isError") is True:return True,"cua_error"
-    structured=result.get("structuredContent",result.get("structured_content"))
-    if isinstance(structured,dict):
-        if structured.get("ok") is False or structured.get("success") is False:return True,"cua_failure"
-        if structured.get("refused") is True:return True,"cua_refusal"
+    r=response.get("result")
+    if not isinstance(r,dict):return True,"invalid_result"
+    if r.get("isError") is True:return True,"cua_error"
+    s=structured(response)
+    if s and (s.get("ok") is False or s.get("success") is False):return True,"cua_failure"
+    if s and s.get("refused") is True:return True,"cua_refusal"
     return False,None
-
-def normalize_action(raw:dict[str,Any],index:int)->dict[str,Any]:
-    name=raw.get("name");arguments=raw.get("arguments",{})
-    if not isinstance(name,str) or not name.strip():raise ValueError(f"action {index} requires a name")
-    if not isinstance(arguments,dict):raise ValueError(f"action {index} arguments must be an object")
-    return {"name":name,"arguments":arguments}
-
-def parse_request(raw:str)->dict[str,Any]:
-    value=json.loads(raw)
-    if isinstance(value,list):value={"schema":REQUEST_SCHEMA,"actions":value}
-    if not isinstance(value,dict):raise ValueError("request must be an object or action array")
-    schema=value.get("schema")
-    if schema not in (None,REQUEST_SCHEMA,TRANSACTION_SCHEMA):raise ValueError("unsupported request schema")
-    if "steps" in value:
-        steps=value["steps"]
-        if not isinstance(steps,list) or not steps:raise ValueError("steps must be a non-empty array")
-        if len(steps)>MAX_ACTIONS:raise ValueError(f"transaction exceeds {MAX_ACTIONS} steps")
+def background_unavailable(response):
+    s=structured(response) or {};blob=compact(s).casefold()
+    return any(x in blob for x in ("background_unavailable","background unavailable","foreground_required","foreground required"))
+def normalize_action(raw,i):
+    n=raw.get("name");a=raw.get("arguments",{})
+    if not isinstance(n,str) or not n.strip():raise ValueError(f"action {i} requires a name")
+    if not isinstance(a,dict):raise ValueError(f"action {i} arguments must be an object")
+    return {"name":n,"arguments":a}
+def normalize_control(v):
+    if v is None:return {}
+    if not isinstance(v,dict):raise ValueError("control must be an object")
+    c=v.get("foreground_confidence");e=v.get("explicit_mode")
+    if c is not None and (not isinstance(c,(int,float)) or isinstance(c,bool) or not 0<=float(c)<=1):raise ValueError("foreground_confidence must be 0..1")
+    if e not in (None,"background","foreground"):raise ValueError("explicit_mode must be background|foreground")
+    return {"foreground_confidence":None if c is None else float(c),"explicit_mode":e}
+def parse_request(raw):
+    v=json.loads(raw)
+    if isinstance(v,list):v={"schema":REQUEST_SCHEMA,"actions":v}
+    if not isinstance(v,dict) or v.get("schema") not in (None,REQUEST_SCHEMA,TRANSACTION_SCHEMA):raise ValueError("unsupported request schema")
+    control=normalize_control(v.get("control"))
+    if "steps" in v:
+        steps=v["steps"]
+        if not isinstance(steps,list) or not steps or len(steps)>MAX_ACTIONS:raise ValueError("invalid steps")
         out=[]
-        for i,step in enumerate(steps):
-            if not isinstance(step,dict):raise ValueError(f"step {i} must be an object")
-            action=step.get("action",step if "name" in step else None)
-            if not isinstance(action,dict):raise ValueError(f"step {i} requires action")
-            item={"action":normalize_action(action,i)}
-            if "await" in step:
-                if not isinstance(step["await"],dict):raise ValueError(f"step {i} await must be an object")
-                item["await"]=step["await"]
-            if "next" in step:
-                if not isinstance(step["next"],(int,dict)):raise ValueError(f"step {i} next must be an index or branch map")
-                item["next"]=step["next"]
+        for i,s in enumerate(steps):
+            if not isinstance(s,dict):raise ValueError(f"step {i} must be an object")
+            a=s.get("action",s if "name" in s else None)
+            if not isinstance(a,dict):raise ValueError(f"step {i} requires action")
+            item={"action":normalize_action(a,i)}
+            if "await" in s:
+                if not isinstance(s["await"],dict):raise ValueError(f"step {i} await must be an object")
+                item["await"]=s["await"]
+            if "next" in s:item["next"]=s["next"]
             out.append(item)
-        return {"schema":TRANSACTION_SCHEMA,"steps":out,"start":int(value.get("start",0))}
-    actions=value.get("actions")
-    if not isinstance(actions,list) or not actions:raise ValueError("actions must be a non-empty JSON array")
-    if len(actions)>MAX_ACTIONS:raise ValueError(f"action span exceeds {MAX_ACTIONS} actions")
-    return {"schema":REQUEST_SCHEMA,"steps":[{"action":normalize_action(a,i)} for i,a in enumerate(actions)]}
-
-def envelope(ok:bool,code:str,*,requested:int=0,completed:int=0,results:list[dict[str,Any]]|None=None,boundary:dict[str,Any]|None=None,detail:str|None=None,revision:int|None=None)->dict[str,Any]:
-    payload={"schema":SCHEMA,"ok":ok,"code":code,"requested":requested,"completed":completed,"results":results or [],"boundary":boundary}
-    if detail:payload["detail"]=detail
-    if revision is not None:payload["revision"]=revision
-    return payload
-
-def next_index(step:dict[str,Any],current:int,wait_result:dict[str,Any]|None,total:int)->int:
-    nxt=step.get("next")
-    if isinstance(nxt,int):return nxt
-    if isinstance(nxt,dict):
-        branch=(wait_result or {}).get("matched_branch")
-        if branch is not None and branch in nxt:return int(nxt[branch])
-        if "default" in nxt:return int(nxt["default"])
-        if branch is not None:raise RuntimeError(f"no next target for branch {branch}")
+        return {"schema":TRANSACTION_SCHEMA,"steps":out,"start":int(v.get("start",0)),"control":control}
+    actions=v.get("actions")
+    if not isinstance(actions,list) or not actions or len(actions)>MAX_ACTIONS:raise ValueError("actions must be a non-empty bounded array")
+    return {"schema":REQUEST_SCHEMA,"steps":[{"action":normalize_action(a,i)} for i,a in enumerate(actions)],"control":control}
+def envelope(ok,code,**kw):return {"schema":SCHEMA,"ok":ok,"code":code,"requested":kw.get("requested",0),"completed":kw.get("completed",0),"results":kw.get("results",[]),"boundary":kw.get("boundary"),**({"detail":kw["detail"]} if kw.get("detail") else {}),**({"revision":kw["revision"]} if kw.get("revision") is not None else {}),**({"control":kw["control"]} if kw.get("control") is not None else {})}
+def next_index(step,current,wait_result,total):
+    n=step.get("next")
+    if isinstance(n,int):return n
+    if isinstance(n,dict):
+        b=(wait_result or {}).get("matched_branch")
+        if b in n:return int(n[b])
+        if "default" in n:return int(n["default"])
+        if b is not None:raise RuntimeError(f"no next target for branch {b}")
     return current+1
+def tool_modes(response):
+    out={};r=response.get("result") if isinstance(response,dict) else None
+    for t in (r.get("tools",[]) if isinstance(r,dict) else []):
+        if not isinstance(t,dict) or not isinstance(t.get("name"),str):continue
+        schema=t.get("inputSchema",t.get("input_schema",{}));props=schema.get("properties",{}) if isinstance(schema,dict) else {}
+        if isinstance(props,dict) and "delivery_mode" in props:out[t["name"]]=True
+    return out
 
-def run(driver:str,request:dict[str,Any],timeout:float,wlsock:Path)->tuple[dict[str,Any],int]:
-    steps=request["steps"];requested=len(steps)
-    try:
-        proc=subprocess.Popen([driver,"mcp"],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,text=True,encoding="utf-8",errors="replace",bufsize=1)
-    except OSError as exc:return envelope(False,"driver_unavailable",requested=requested,detail=str(exc)),50
+def run(driver,request,timeout,wlsock):
+    steps=request["steps"];requested=len(steps);control=priority.resolve(request.get("control",{}).get("foreground_confidence"),request.get("control",{}).get("explicit_mode"));overrides=[]
+    try:p=subprocess.Popen([driver,"mcp"],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,text=True,encoding="utf-8",errors="replace",bufsize=1)
+    except OSError as e:return envelope(False,"driver_unavailable",requested=requested,detail=str(e),control=control),50
     results=[];completed=0;last_revision=None
     try:
-        send(proc,{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":PROTOCOL,"capabilities":{},"clientInfo":{"name":"gwcu-action-span","version":"2.3.0"}}})
-        init=recv_for(proc,1,timeout)
-        if "error" in init or not isinstance(init.get("result"),dict):return envelope(False,"mcp_initialize_failed",requested=requested,detail=compact(init)),50
-        send(proc,{"jsonrpc":"2.0","method":"notifications/initialized"})
-        index=int(request.get("start",0));transition=0;request_id=2
+        send(p,{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":PROTOCOL,"capabilities":{},"clientInfo":{"name":"gwcu-action-span","version":"2.3.0"}}});init=recv_for(p,1,timeout)
+        if "error" in init:return envelope(False,"mcp_initialize_failed",requested=requested,detail=compact(init),control=control),50
+        send(p,{"jsonrpc":"2.0","method":"notifications/initialized"});send(p,{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}})
+        try:modes=tool_modes(recv_for(p,2,min(timeout,5)))
+        except Exception:modes={}
+        index=int(request.get("start",0));transition=0;request_id=3
         while 0<=index<requested:
             transition+=1
-            if transition>MAX_TRANSITIONS:return envelope(False,"boundary",requested=requested,completed=completed,results=results,boundary={"index":index,"reason":"transition_limit"}),30
-            step=steps[index];action=step["action"];baseline_revision=last_revision
+            if transition>MAX_TRANSITIONS:return envelope(False,"boundary",requested=requested,completed=completed,results=results,boundary={"index":index,"reason":"transition_limit"},control=control),30
+            step=steps[index];action=step["action"];baseline=last_revision
             if "await" in step:
                 try:
-                    status=worldline_call(wlsock,{"op":"status"},3.0)
-                    if status.get("ok"):baseline_revision=status.get("revision",baseline_revision)
-                except (OSError,TimeoutError,RuntimeError,json.JSONDecodeError) as exc:
-                    return envelope(False,"worldline_boundary",requested=requested,completed=completed,results=results,boundary={"index":index,"name":action["name"],"reason":"worldline_unavailable_before_action"},detail=str(exc),revision=last_revision),50
-            send(proc,{"jsonrpc":"2.0","id":request_id,"method":"tools/call","params":{"name":action["name"],"arguments":action["arguments"]}})
-            response=recv_for(proc,request_id,timeout);request_id+=1
-            result=normalize_result(response.get("result"));is_boundary,reason=explicit_boundary(response)
-            record={"index":index,"name":action["name"],"result":result};results.append(record)
-            if is_boundary:return envelope(False,"boundary",requested=requested,completed=completed,results=results,boundary={"index":index,"name":action["name"],"reason":reason},revision=last_revision),30
+                    s=worldline_call(wlsock,{"op":"status"},3);baseline=s.get("revision",baseline) if s.get("ok") else baseline
+                except Exception as e:return envelope(False,"worldline_boundary",requested=requested,completed=completed,results=results,boundary={"index":index,"reason":"worldline_unavailable_before_action"},detail=str(e),revision=last_revision,control=control),50
+            args=dict(action["arguments"]);supports=bool(modes.get(action["name"]));applied=None
+            if supports and "delivery_mode" not in args:args["delivery_mode"]=control["mode"];applied=control["mode"]
+            elif "delivery_mode" in args:applied=args["delivery_mode"]
+            send(p,{"jsonrpc":"2.0","id":request_id,"method":"tools/call","params":{"name":action["name"],"arguments":args}});response=recv_for(p,request_id,timeout);request_id+=1
+            fallback=False
+            if applied=="background" and supports and background_unavailable(response):
+                fallback=True;overrides.append({"index":index,"from":"background","to":"foreground","reason":"cua_background_unavailable"});args["delivery_mode"]="foreground"
+                send(p,{"jsonrpc":"2.0","id":request_id,"method":"tools/call","params":{"name":action["name"],"arguments":args}});response=recv_for(p,request_id,timeout);request_id+=1
+            result=normalize_result(response);bad,reason=boundary(response);record={"index":index,"name":action["name"],"result":result,"control":{"requested":control["mode"],"delivery_mode_supported":supports,"applied":args.get("delivery_mode") if supports else "driver_default","fallback":fallback}};results.append(record)
+            if bad:
+                control["runtime_overrides"]=overrides;return envelope(False,"boundary",requested=requested,completed=completed,results=results,boundary={"index":index,"name":action["name"],"reason":reason},revision=last_revision,control=control),30
             completed+=1;wait_result=None
             if "await" in step:
-                await_spec=dict(step["await"]);await_spec["op"]="wait"
-                if baseline_revision is not None:await_spec.setdefault("after_revision",baseline_revision)
-                wait_timeout=max(1.0,min(float(await_spec.get("timeout_ms",5000))/1000+2,122.0))
-                try:wait_result=worldline_call(wlsock,await_spec,wait_timeout)
-                except (OSError,TimeoutError,RuntimeError,json.JSONDecodeError) as exc:
-                    return envelope(False,"worldline_boundary",requested=requested,completed=completed,results=results,boundary={"index":index,"name":action["name"],"reason":"worldline_unavailable"},detail=str(exc),revision=last_revision),50
+                spec=dict(step["await"]);spec["op"]="wait"
+                if baseline is not None:spec.setdefault("after_revision",baseline)
+                try:wait_result=worldline_call(wlsock,spec,max(1,min(float(spec.get("timeout_ms",5000))/1000+2,122)))
+                except Exception as e:return envelope(False,"worldline_boundary",requested=requested,completed=completed,results=results,boundary={"index":index,"reason":"worldline_unavailable"},detail=str(e),revision=last_revision,control=control),50
                 record["worldline"]=wait_result;last_revision=wait_result.get("revision",last_revision)
-                if not wait_result.get("ok"):
-                    return envelope(False,"boundary",requested=requested,completed=completed,results=results,boundary={"index":index,"name":action["name"],"reason":f"worldline_{wait_result.get('code','failure')}","worldline":wait_result},revision=last_revision),30
+                if not wait_result.get("ok"):return envelope(False,"boundary",requested=requested,completed=completed,results=results,boundary={"index":index,"reason":f"worldline_{wait_result.get('code','failure')}"},revision=last_revision,control=control),30
             index=next_index(step,index,wait_result,requested)
-        return envelope(True,"completed",requested=requested,completed=completed,results=results,revision=last_revision),0
-    except (TimeoutError,RuntimeError,ValueError,json.JSONDecodeError) as exc:
-        return envelope(False,"transport_boundary",requested=requested,completed=completed,results=results,detail=str(exc),revision=last_revision),50
+        control["runtime_overrides"]=overrides;control["runtime_notice"]="Had to switch to foreground for this." if overrides else None
+        return envelope(True,"completed",requested=requested,completed=completed,results=results,revision=last_revision,control=control),0
+    except Exception as e:return envelope(False,"transport_boundary",requested=requested,completed=completed,results=results,detail=str(e),revision=last_revision,control=control),50
     finally:
-        if proc.poll() is None:
-            proc.terminate()
-            try:proc.wait(timeout=1)
-            except subprocess.TimeoutExpired:proc.kill();proc.wait(timeout=1)
-
-def main()->int:
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument("--driver");p.add_argument("--worldline-socket");p.add_argument("--timeout",type=float,default=15.0)
-    group=p.add_mutually_exclusive_group(required=True);group.add_argument("--actions-json");group.add_argument("--stdin",action="store_true");args=p.parse_args()
-    raw=sys.stdin.read() if args.stdin else args.actions_json
-    assert raw is not None
+        if p.poll() is None:
+            p.terminate()
+            try:p.wait(timeout=1)
+            except subprocess.TimeoutExpired:p.kill();p.wait(timeout=1)
+def main():
+    p=argparse.ArgumentParser();p.add_argument("--driver");p.add_argument("--worldline-socket");p.add_argument("--timeout",type=float,default=15);g=p.add_mutually_exclusive_group(required=True);g.add_argument("--actions-json");g.add_argument("--stdin",action="store_true");a=p.parse_args();raw=sys.stdin.read() if a.stdin else a.actions_json
     try:req=parse_request(raw)
-    except (ValueError,json.JSONDecodeError) as exc:print(compact(envelope(False,"invalid_request",detail=str(exc))));return 2
-    driver=resolve_driver(args.driver)
-    if not driver:print(compact(envelope(False,"driver_missing",requested=len(req["steps"]))));return 50
-    payload,rc=run(driver,req,max(1.0,min(args.timeout,120.0)),worldline_socket(args.worldline_socket));print(compact(payload));return rc
+    except Exception as e:print(compact(envelope(False,"invalid_request",detail=str(e))));return 2
+    d=resolve_driver(a.driver)
+    if not d:print(compact(envelope(False,"driver_missing",requested=len(req["steps"]))));return 50
+    out,rc=run(d,req,max(1,min(a.timeout,120)),worldline_socket(a.worldline_socket));print(compact(out));return rc
 if __name__=="__main__":raise SystemExit(main())
