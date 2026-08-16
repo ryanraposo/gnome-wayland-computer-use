@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# diagnose.sh — one compact verdict: project observation + upstream Cua health.
+# diagnose.sh — one compact verdict: observation + WORLDLINE + upstream Cua health.
 set -euo pipefail
 MACHINE=false
 for arg in "$@"; do
@@ -14,12 +14,13 @@ PYTHON="${GNOME_WAYLAND_SYSTEM_PYTHON:-/usr/bin/python3}"
 [ -x "$PYTHON" ] || PYTHON="$(command -v python3 2>/dev/null || true)"
 [ -n "$PYTHON" ] || { echo "python3 is required" >&2; exit 30; }
 HEALTH="$ROOT/scripts/cua-health.py"
+WORLDLINE="$ROOT/scripts/worldline.py"
 
 set +e
 OUTPUT=$(
-"$PYTHON" - "$HEALTH" <<'PY'
+"$PYTHON" - "$HEALTH" "$WORLDLINE" <<'PY'
 import json, os, pathlib, shutil, subprocess, sys
-health_script=sys.argv[1]
+health_script,worldline_script=sys.argv[1:3]
 
 def run(argv, timeout=8):
     try:
@@ -53,6 +54,12 @@ screen=portal("ScreenCast"); screenshot=portal("Screenshot")
 observer=active_unit("gnome-wayland-computer-use-observer.socket")
 observation_ok=all((pw,wp,gst_pipewire,gst_png,screen,observer))
 
+worldline_socket=active_unit("gnome-wayland-computer-use-worldline.socket")
+worldline_rc,worldline_out,worldline_err=run([sys.executable,worldline_script,"request","--json",'{"op":"status"}'],5)
+try: worldline=json.loads(worldline_out) if worldline_out else None
+except Exception: worldline={"ok":False,"code":"invalid_output","detail":worldline_out[:1024]}
+worldline_ok=worldline_socket and worldline_rc==0 and isinstance(worldline,dict) and bool(worldline.get("ok"))
+
 cua=shutil.which("cua-driver")
 if not cua:
     candidate=pathlib.Path.home()/".local/bin/cua-driver"
@@ -82,13 +89,15 @@ elif health_code=="failed":
 else:
     cua_status="degraded"
 
-ready=host_ok and observation_ok and cua_status=="ready"
+ready=host_ok and observation_ok and worldline_ok and cua_status=="ready"
 if ready:
     code="ready"; nxt=None
-elif cua_status=="reload_required" and observation_ok:
+elif cua_status=="reload_required" and observation_ok and worldline_ok:
     code="reload_required"; nxt={"action":"logout_login","reason":"activate_cua_gnome_helper"}
 elif not host_ok:
     code="wrong_session"; nxt={"action":"start_gnome_wayland_session"}
+elif not worldline_ok:
+    code="worldline_degraded"; nxt={"action":"restart_worldline"}
 elif not observation_ok:
     code="observation_degraded"; nxt={"action":"rerun_installer","scope":"observation"}
 else:
@@ -100,6 +109,7 @@ payload={
     "observation":{"status":"ready" if observation_ok else "degraded","pipewire":pw,"wireplumber":wp,
         "screencast_portal":screen,"screenshot_portal":screenshot,"gstreamer_pipewire":gst_pipewire,
         "gstreamer_png":gst_png,"observer_socket":observer},
+    "worldline":{"status":"ready" if worldline_ok else "degraded","socket":worldline_socket,"response":worldline,"stderr":worldline_err[:1024] if worldline_err else None},
     "cua":{"status":cua_status,"binary":cua,"health":health,"doctor_exit":doctor_rc,"doctor":doctor,
         "winrects_installed":winrects_installed,"winrects_active":winrects_active},
     "next":nxt,
@@ -122,6 +132,7 @@ print("  gnome-wayland-computer-use")
 print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 print(f"  Session:      {'READY' if d['host']['ok'] else 'DEGRADED'}  ({d['host']['session']} / {d['host']['desktop']})")
 print(f"  Observation:  {d['observation']['status'].upper()}")
+print(f"  WORLDLINE:    {d['worldline']['status'].upper()}")
 print(f"  Cua control:  {d['cua']['status'].upper()}")
 if d.get('next'): print(f"  Next:         {d['next']['action']}")
 print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
