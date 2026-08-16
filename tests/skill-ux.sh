@@ -16,7 +16,7 @@ cmp -s "$ROOT/SKILL.md" "$ROOT/runtimes/openai/SKILL.md" || fail "runtime skill 
 pass "runtime skills are identical and compact"
 
 for heading in \
-    'Core rule' 'Call budget' 'Execution ladder' 'Known target' \
+    'Core rule' 'Control priority' 'Call budget' 'Execution ladder' 'Known target' \
     'WORLDLINE postconditions' 'Whole screen' '`.gwcu`: durable truth, not runtime state' \
     'Failure and refusal policy' 'Completion proof'
 do
@@ -27,7 +27,20 @@ grep -q 'computer-use.sh" span --actions-json' "$ROOT/SKILL.md" || fail "span su
 grep -q 'worldline-capture.sh' "$ROOT/SKILL.md" || fail "WORLDLINE surface missing"
 grep -q 'Never answer a Cua refusal with raw pointer/keyboard injection' "$ROOT/SKILL.md" || fail "refusal boundary missing"
 grep -q 'No X11 or XWayland session is required' "$ROOT/SKILL.md" || fail "GNOME Wayland contract missing"
+grep -q 'toggles priority for background computer use' "$ROOT/SKILL.md" || fail "background command contract missing"
 pass "skill teaches Cua + WORLDLINE execution"
+
+TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
+SURFACE="$ROOT/scripts/computer-use.sh"
+XDG_STATE_HOME="$TMP/state" "$SURFACE" background status >"$TMP/default"
+grep -q 'Background computer use: OFF' "$TMP/default" || fail "background default is not obvious control"
+grep -q 'FASTEST / most deterministic' "$TMP/default" || fail "performance recommendation missing"
+XDG_STATE_HOME="$TMP/state" "$SURFACE" background >"$TMP/on"
+grep -q 'Background computer use: ON' "$TMP/on" || fail "bare background command did not toggle on"
+XDG_STATE_HOME="$TMP/state" "$SURFACE" background >"$TMP/off"
+grep -q 'Background computer use: OFF' "$TMP/off" || fail "bare background command did not toggle off"
+grep -q 'Prioritize background computer use when available? Obvious control is faster and more deterministic' "$ROOT/install.sh" || fail "installer background choice missing"
+pass "background priority is deterministic, toggled, and installer-visible"
 
 grep -q '^## Maintaining this repository$' "$ROOT/AGENTS.md" || fail "repository guide lost maintenance routing"
 grep -q 'Persistent machine/user truth never belongs in AGENTS.md' "$ROOT/AGENTS.md" || fail "AGENTS permits machine truth"
