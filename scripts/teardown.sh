@@ -167,9 +167,8 @@ for dir in \
     "$HERMES_HOME/skills/$NAME"
 do
     [ -d "$dir" ] || continue
-    if [ ! -f "$dir/.gnome-wayland-computer-use-managed" ] &&
-       [ "$dir" = "$HERMES_HOME/skills/computer-use" ]; then
-        info "Preserving user-managed Hermes skill: ${dir/$HOME/\~}"
+    if [ ! -f "$dir/.gnome-wayland-computer-use-managed" ]; then
+        info "Preserving user-managed skill: ${dir/$HOME/\~}"
         continue
     fi
     rm -rf "$dir"; ((removed++)) || true
@@ -200,7 +199,7 @@ if [ -f "$MANIFEST" ]; then
         fi
     done <"$MANIFEST"
     if [ -s "$remaining" ]; then mv "$remaining" "$MANIFEST"
-    else rm -f "$remaining" "$MANIEST"
+    else rm -f "$remaining" "$MANIFEST"
     fi
 fi
 
