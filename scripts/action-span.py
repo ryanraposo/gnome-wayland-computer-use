@@ -4,13 +4,24 @@ from __future__ import annotations
 import argparse,json,os,selectors,shutil,socket,subprocess,sys,time
 from pathlib import Path
 from typing import Any
-sys.path.insert(0,str(Path(__file__).parent))
-from importlib.machinery import SourceFileLoader
-priority=SourceFileLoader("gwcu_control_priority",str(Path(__file__).with_name("control-priority.py"))).load_module()
-
-SCHEMA="gwcu.action-span.v1";REQUEST_SCHEMA="gwcu.action-span.request.v1";TRANSACTION_SCHEMA="gwcu.transaction.v1";PROTOCOL="2024-11-05";MAX_ACTIONS=64;MAX_TRANSITIONS=256;MAX=1<<20
+SCHEMA="gwcu.action-span.v1";REQUEST_SCHEMA="gwcu.action-span.request.v1";TRANSACTION_SCHEMA="gwcu.transaction.v1";PROTOCOL="2024-11-05";MAX_ACTIONS=64;MAX_TRANSITIONS=256;MAX=1<<20;LOW=.40;HIGH=.60
 
 def compact(v:Any)->str:return json.dumps(v,separators=(",",":"),ensure_ascii=True)
+def standing_preference():
+    raw=os.getenv("GWCU_BACKGROUND_PRIORITY")
+    if raw is not None:return ("background" if raw.casefold() in {"on","yes","true","1","background"} else "foreground","environment")
+    p=Path(os.getenv("XDG_STATE_HOME",str(Path.home()/".local/state")))/"gnome-wayland-computer-use/background-priority"
+    try:raw=p.read_text().strip().casefold()
+    except OSError:raw="off"
+    return ("background" if raw in {"on","yes","true","1","background"} else "foreground","saved" if p.is_file() else "default")
+def resolve_control(c):
+    pref,source=standing_preference();score=c.get("foreground_confidence");explicit=c.get("explicit_mode")
+    if explicit in {"background","foreground"}:mode=explicit;reason="explicit_intent"
+    elif score is None or LOW<=score<=HIGH:mode=pref;reason="standing_preference"
+    elif score<LOW:mode="background";reason="intent"
+    else:mode="foreground";reason="intent"
+    conflict=mode!=pref
+    return {"schema":"gwcu.control-priority.v1","mode":mode,"reason":reason,"standing_preference":pref,"preference_source":source,"foreground_confidence":score,"deadband":[LOW,HIGH],"contradicts_preference":conflict,"notice":"Doing that now — switching to foreground. OK?" if conflict and mode=="foreground" else None,"extra_model_calls":0}
 def resolve_driver(x):
     if x:return x
     if os.getenv("CUA_DRIVER_BIN"):return os.environ["CUA_DRIVER_BIN"]
@@ -58,8 +69,7 @@ def boundary(response):
     if s and s.get("refused") is True:return True,"cua_refusal"
     return False,None
 def background_unavailable(response):
-    s=structured(response) or {};blob=compact(s).casefold()
-    return any(x in blob for x in ("background_unavailable","background unavailable","foreground_required","foreground required"))
+    blob=compact(structured(response) or {}).casefold();return any(x in blob for x in ("background_unavailable","background unavailable","foreground_required","foreground required"))
 def normalize_action(raw,i):
     n=raw.get("name");a=raw.get("arguments",{})
     if not isinstance(n,str) or not n.strip():raise ValueError(f"action {i} requires a name")
@@ -76,9 +86,8 @@ def parse_request(raw):
     v=json.loads(raw)
     if isinstance(v,list):v={"schema":REQUEST_SCHEMA,"actions":v}
     if not isinstance(v,dict) or v.get("schema") not in (None,REQUEST_SCHEMA,TRANSACTION_SCHEMA):raise ValueError("unsupported request schema")
-    control=normalize_control(v.get("control"))
-    if "steps" in v:
-        steps=v["steps"]
+    control=normalize_control(v.get("control"));steps=v.get("steps")
+    if steps is not None:
         if not isinstance(steps,list) or not steps or len(steps)>MAX_ACTIONS:raise ValueError("invalid steps")
         out=[]
         for i,s in enumerate(steps):
@@ -95,7 +104,11 @@ def parse_request(raw):
     actions=v.get("actions")
     if not isinstance(actions,list) or not actions or len(actions)>MAX_ACTIONS:raise ValueError("actions must be a non-empty bounded array")
     return {"schema":REQUEST_SCHEMA,"steps":[{"action":normalize_action(a,i)} for i,a in enumerate(actions)],"control":control}
-def envelope(ok,code,**kw):return {"schema":SCHEMA,"ok":ok,"code":code,"requested":kw.get("requested",0),"completed":kw.get("completed",0),"results":kw.get("results",[]),"boundary":kw.get("boundary"),**({"detail":kw["detail"]} if kw.get("detail") else {}),**({"revision":kw["revision"]} if kw.get("revision") is not None else {}),**({"control":kw["control"]} if kw.get("control") is not None else {})}
+def envelope(ok,code,**kw):
+    p={"schema":SCHEMA,"ok":ok,"code":code,"requested":kw.get("requested",0),"completed":kw.get("completed",0),"results":kw.get("results",[]),"boundary":kw.get("boundary")}
+    for k in ("detail","revision","control"):
+        if kw.get(k) is not None:p[k]=kw[k]
+    return p
 def next_index(step,current,wait_result,total):
     n=step.get("next")
     if isinstance(n,int):return n
@@ -112,9 +125,8 @@ def tool_modes(response):
         schema=t.get("inputSchema",t.get("input_schema",{}));props=schema.get("properties",{}) if isinstance(schema,dict) else {}
         if isinstance(props,dict) and "delivery_mode" in props:out[t["name"]]=True
     return out
-
 def run(driver,request,timeout,wlsock):
-    steps=request["steps"];requested=len(steps);control=priority.resolve(request.get("control",{}).get("foreground_confidence"),request.get("control",{}).get("explicit_mode"));overrides=[]
+    steps=request["steps"];requested=len(steps);control=resolve_control(request.get("control",{}));overrides=[]
     try:p=subprocess.Popen([driver,"mcp"],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,text=True,encoding="utf-8",errors="replace",bufsize=1)
     except OSError as e:return envelope(False,"driver_unavailable",requested=requested,detail=str(e),control=control),50
     results=[];completed=0;last_revision=None
