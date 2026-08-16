@@ -82,6 +82,12 @@ On GNOME Wayland, Cua uses the compositor-approved Remote Desktop portal to obta
 
 **No X11 or XWayland session is required.**
 
+## Control priority
+
+**Works with you, or in front of you.** `/computer-use background` toggles priority for background computer use; obvious control is the faster default. GWCU reconciles that standing preference with the intent Hermes already understands **without another model call**. Clear intent wins, 40–60% foreground-confidence ambiguity goes to your toggle, and Cua's live capabilities have final say. If a task clearly needs to come forward while background priority is on, Hermes simply says: *“Doing that now — switching to foreground. OK?”*
+
+The action-span runner reads Cua's live tool schemas and sets `delivery_mode` only where Cua actually supports it. If a background action is explicitly reported unavailable, the same local call can fall forward once and report the override. No shadow input backend, no speculative retry loop.
+
 ## What execution feels like
 
 ### Known target
@@ -99,6 +105,7 @@ ROOT="$HOME/.agents/skills/gnome-wayland-computer-use"
 
 "$ROOT/scripts/computer-use.sh" span --actions-json '{
   "schema":"gwcu.action-span.request.v1",
+  "control":{"foreground_confidence":0.82},
   "actions":[
     {"name":"click","arguments":{"x":640,"y":420}},
     {"name":"type_text","arguments":{"text":"hello"}},
@@ -196,10 +203,13 @@ curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh | 
 
 The installer qualifies Ubuntu 26.04 GNOME Wayland, repairs the portal/PipeWire/AT-SPI/Python GI foundation, installs or qualifies pinned Cua Driver, establishes RemoteDesktop consent, deploys the skill and optional Hermes integration, configures managed `.gwcu`, installs socket-activated WORLDLINE/observer services, and verifies Cua health.
 
+The installer asks whether to prioritize background computer use. Enter keeps the default: **obvious control (faster / most deterministic)**.
+
 The first explicit whole-screen capture may still require separate ScreenCast consent.
 
 ```bash
 /computer-use status
+/computer-use background [on|off|status]
 /computer-use consent
 /computer-use managed status
 /computer-use truths
@@ -221,6 +231,7 @@ Uninstall removes GWCU-owned integration and transient runtime state. Repo/works
 - Direct truth beats visual inference.
 - Predicates replace ritual re-observation.
 - Determined mechanics stay inside one local call.
+- Control-priority arbitration adds zero model calls.
 - `.gwcu` contains durable truth, never prompt prose.
 - A real conflict returns control to the model.
 
