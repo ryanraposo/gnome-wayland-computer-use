@@ -133,12 +133,12 @@ class AtspiSensor:
 class World:
     def __init__(self):
         self.lock=threading.RLock();self.changed=threading.Condition(self.lock)
-        self.revision=0;self.facts={};self.events=[];self.armed={};self.last=None;self.prev_visual=None;self.sensor=None;self.load()
+        self.revision=0;self.facts={};self.events=[];self.armed={};self.last=None;self.prev_visual=None;self.versions={};self.sensor=None;self.load()
     def load(self):
         try:d=json.loads(statefile().read_text())
         except Exception:return
-        self.revision=int(d.get("revision",0));self.facts=d.get("facts",{});self.events=d.get("events",[]);self.armed=d.get("armed",{});self.last=d.get("last_revision");self.prev_visual=d.get("prev_visual")
-    def save(self):save_json(statefile(),{"revision":self.revision,"facts":self.facts,"events":self.events,"armed":self.armed,"last_revision":self.last,"prev_visual":self.prev_visual})
+        self.revision=int(d.get("revision",0));self.facts=d.get("facts",{});self.events=d.get("events",[]);self.armed=d.get("armed",{});self.last=d.get("last_revision");self.prev_visual=d.get("prev_visual");self.versions=d.get("versions",{})
+    def save(self):save_json(statefile(),{"revision":self.revision,"facts":self.facts,"events":self.events,"armed":self.armed,"last_revision":self.last,"prev_visual":self.prev_visual,"versions":self.versions})
     def setfact(self,path:str,v:Any,source:str,rev:int,changed:set[str]):
         old=self.facts.get(path);entry={"value":v,"source":source,"revision":rev,"confidence":1.0}
         if value(old)!=v:changed.add(path)
@@ -167,7 +167,10 @@ class World:
                 if d:
                     self.setfact("visual.frame_hash",d,"pipewire",n,changed);self.setfact("visual.width",rr.get("width"),"pipewire",n,changed);self.setfact("visual.height",rr.get("height"),"pipewire",n,changed);self.prev_visual=d
             else:visual["uncertain"]=True
-        self.revision=n;expect=q.get("expect") if isinstance(q.get("expect"),list) else []
+        self.revision=n
+        for path in changed:self.versions.setdefault(path,{})["changed"]=n
+        for path in invalid:self.versions.setdefault(path,{})["invalidated"]=n
+        expect=q.get("expect") if isinstance(q.get("expect"),list) else []
         sat=[pid_of(p) for p in expect if isinstance(p,dict) and pred(p,self.facts,changed,invalid)]
         unsat=[pid_of(p) for p in expect if isinstance(p,dict) and not pred(p,self.facts,changed,invalid)]
         woken=[]
@@ -191,13 +194,27 @@ class World:
         with self.changed:
             self.armed[ident]={"predicates":ps,"mode":mode,"status":"waiting","armed_revision":self.revision};self.save()
             return {"schema":SCHEMA,"ok":True,"code":"armed","id":ident,"revision":self.revision}
-    def _match(self,predicates:list[dict[str,Any]],mode:str)->bool:
-        states=[pred(p,self.facts,set(),set()) for p in predicates]
+    def _path_touched_since(self,path:str,after:int,kind:str|None=None)->bool:
+        for candidate,clock in self.versions.items():
+            if candidate==path or candidate.startswith(path+".") or path.startswith(candidate+"."):
+                if kind is None:
+                    rev=max(int(clock.get("changed",0)),int(clock.get("invalidated",0)))
+                else:rev=int(clock.get(kind,0))
+                if rev>after:return True
+        return False
+    def _wait_pred(self,p:dict[str,Any],after:int)->bool:
+        op=p.get("op","eq");path=p.get("path")
+        if not isinstance(path,str) or not path:return False
+        if op=="changed":return self._path_touched_since(path,after,"changed")
+        if op=="invalid":return self._path_touched_since(path,after,"invalidated")
+        return pred(p,self.facts,set(),set())
+    def _match(self,predicates:list[dict[str,Any]],mode:str,after:int)->bool:
+        states=[self._wait_pred(p,after) for p in predicates]
         return bool(states) and (all(states) if mode=="all" else any(states))
-    def _branch(self,branches:list[dict[str,Any]])->str|None:
+    def _branch(self,branches:list[dict[str,Any]],after:int)->str|None:
         for branch in branches:
             ps=[p for p in branch.get("predicates",[]) if isinstance(p,dict)];mode=branch.get("mode","all")
-            if ps and mode in ("all","any") and self._match(ps,mode):return str(branch.get("id") or "")
+            if ps and mode in ("all","any") and self._match(ps,mode,after):return str(branch.get("id") or "")
         return None
     def wait(self,q:dict[str,Any]):
         ps=[p for p in q.get("predicates",[]) if isinstance(p,dict)];mode=q.get("mode","all")
@@ -208,14 +225,12 @@ class World:
         poll_ms=max(20,min(int(q.get("poll_ms",100)),1000))
         with self.changed:
             while True:
-                branch=self._branch(branches) if branches else None
-                ready=bool(branch) or (ps and self._match(ps,mode))
+                branch=self._branch(branches,after) if branches else None
+                ready=bool(branch) or (ps and self._match(ps,mode,after))
                 if ready:
-                    return {"schema":SCHEMA,"ok":True,"code":"ready","revision":self.revision,"after_revision":after,"matched_branch":branch,"predicates":[pid_of(p) for p in ps if pred(p,self.facts,set(),set())]}
-                if self.last and self.last.get("revision",0)>after and conflict_paths:
-                    touched=set(self.last.get("changed",[]))|set(self.last.get("invalidated",[]))
-                    conflicts=sorted(conflict_paths & touched)
-                    if conflicts:return {"schema":SCHEMA,"ok":False,"code":"conflict","revision":self.revision,"after_revision":after,"conflict_paths":conflicts}
+                    return {"schema":SCHEMA,"ok":True,"code":"ready","revision":self.revision,"after_revision":after,"matched_branch":branch,"predicates":[pid_of(p) for p in ps if self._wait_pred(p,after)]}
+                conflicts=sorted(path for path in conflict_paths if self._path_touched_since(path,after))
+                if conflicts:return {"schema":SCHEMA,"ok":False,"code":"conflict","revision":self.revision,"after_revision":after,"conflict_paths":conflicts}
                 remaining=deadline-time.monotonic()
                 if remaining<=0:return {"schema":SCHEMA,"ok":False,"code":"timeout","revision":self.revision,"after_revision":after}
                 if q.get("pids") or q.get("paths") or q.get("visual"):
@@ -273,6 +288,8 @@ def selftest()->int:
         assert w.wait({"predicates":[{"path":"ui.focus.name","op":"eq","value":"Save"}],"timeout_ms":5})["code"]=="ready"
         w.arm({"id":"tx","predicates":[{"path":"task.done","op":"eq","value":True}]});r=w.event({"source":"task","facts":{"task.done":True}});assert "tx" in r["woken"]
         assert w.wait({"branches":[{"id":"done","predicates":[{"path":"task.done","op":"eq","value":True}]}],"timeout_ms":5})["matched_branch"]=="done"
+        baseline=w.revision;w.event({"source":"user","facts":{"ui.focus.name":"Other"}});w.event({"source":"task","facts":{"task.noise":1}})
+        assert w.wait({"predicates":[{"path":"never","op":"exists"}],"conflict_paths":["ui.focus"],"after_revision":baseline,"timeout_ms":5})["code"]=="conflict"
         print(js({"schema":SCHEMA,"ok":True,"code":"self_test_ok"}));return 0
     finally:
         if old is None:os.environ.pop("XDG_RUNTIME_DIR",None)
