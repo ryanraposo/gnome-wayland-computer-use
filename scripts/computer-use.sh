@@ -10,6 +10,8 @@ ACTION_SPAN="$ROOT/scripts/action-span.py"
 WORLDLINE="$ROOT/scripts/worldline.py"
 PYTHON="${GNOME_WAYLAND_SYSTEM_PYTHON:-/usr/bin/python3}"
 [ -x "$PYTHON" ] || PYTHON="$(command -v python3)"
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/gnome-wayland-computer-use"
+BACKGROUND_PREF="$STATE_DIR/background-priority"
 
 usage() {
     cat <<'HELP'
@@ -17,6 +19,10 @@ usage() {
 
   /computer-use status
       Compact Cua, WORLDLINE, RemoteDesktop, observer and .gwcu status.
+
+  /computer-use background [on|off|status]
+      Toggles priority for background computer use.
+      Default OFF = obvious control priority (faster / most deterministic).
 
   /computer-use managed [on|off|status]
       Control repo/workspace-local .gwcu persistence.
@@ -48,6 +54,37 @@ print(json.dumps(d,indent=2,ensure_ascii=False))
 PY
 }
 
+background_value() {
+    local value="${GWCU_BACKGROUND_PRIORITY:-}"
+    if [ -z "$value" ] && [ -s "$BACKGROUND_PREF" ]; then IFS= read -r value <"$BACKGROUND_PREF" || value=""; fi
+    case "${value,,}" in on|yes|true|1|background) printf 'on\n';; *) printf 'off\n';; esac
+}
+
+write_background() {
+    local value="$1" tmp
+    mkdir -p "$STATE_DIR"; chmod 700 "$STATE_DIR" 2>/dev/null || true
+    tmp=$(mktemp "$STATE_DIR/.background-priority.XXXXXX")
+    printf '%s\n' "$value" >"$tmp"; chmod 600 "$tmp"; mv -f "$tmp" "$BACKGROUND_PREF"
+}
+
+show_background() {
+    local value source
+    value=$(background_value); source=default
+    [ -s "$BACKGROUND_PREF" ] && source=saved
+    [ -n "${GWCU_BACKGROUND_PRIORITY:-}" ] && source=environment
+    if [ "$value" = on ]; then
+        printf 'Background computer use: ON\n'
+        printf '  priority: background where Cua can preserve your foreground safely\n'
+        printf '  fallback: obvious control when background delivery is unavailable\n'
+        printf '  performance: convenience-first; may add routing/fallback overhead\n'
+    else
+        printf 'Background computer use: OFF\n'
+        printf '  priority: obvious control\n'
+        printf '  performance: FASTEST / most deterministic on GNOME Wayland\n'
+    fi
+    printf '  source: %s\n' "$source"
+}
+
 worldline_status() {
     local out rc=0
     set +e
@@ -63,9 +100,18 @@ command="${1:-help}"
 [ "$#" -eq 0 ] || shift
 case "$command" in
     span)
-        # Hard invariant: this is ONE model/tool boundary for the entire already-decided span.
-        # Cua remains the sole control authority; this wrapper adds no alternate input path.
         exec "$PYTHON" "$ACTION_SPAN" "$@"
+        ;;
+    background)
+        mode="${1:-toggle}"
+        case "${mode,,}" in
+            toggle) [ "$(background_value)" = on ] && write_background off || write_background on ;;
+            on|yes|true|1) write_background on ;;
+            off|no|false|0) write_background off ;;
+            status) ;;
+            *) printf 'background expects on|off|status (or no argument to toggle)\n' >&2; exit 2 ;;
+        esac
+        show_background
         ;;
     managed)
         mode="${1:-on}"
@@ -125,6 +171,7 @@ PY
         ;;
     status)
         managed=$("$PROFILE" managed status --machine)
+        background=$(background_value)
         set +e
         portal=$("$PORTAL" --status 2>/dev/null); portal_rc=$?
         health=$("$HEALTH" 2>/dev/null); health_rc=$?
@@ -133,18 +180,16 @@ PY
         [ -n "$portal" ] || portal='{"schema":"gwcu.portal-control.v1","ok":false,"code":"unavailable"}'
         [ -n "$health" ] || health='{"schema":"gwcu.cua-health.v1","ok":false,"code":"unavailable"}'
         [ -n "$worldline" ] || worldline='{"schema":"gwcu.worldline.v1","ok":false,"code":"unavailable"}'
-        "$PYTHON" - "$managed" "$portal" "$health" "$worldline" <<'PY'
+        "$PYTHON" - "$managed" "$portal" "$health" "$worldline" "$background" <<'PY'
 import json,sys
-m=json.loads(sys.argv[1]); p=json.loads(sys.argv[2]); h=json.loads(sys.argv[3]); w=json.loads(sys.argv[4])
+m=json.loads(sys.argv[1]); p=json.loads(sys.argv[2]); h=json.loads(sys.argv[3]); w=json.loads(sys.argv[4]); background=sys.argv[5]=='on'
 portal=p.get('portal',{}); token=portal.get('restore_token',{}); report=h.get('report') or {}; scope=m.get('scope') or {}
 state=w.get('state') if isinstance(w.get('state'),dict) else w
 print("Computer use")
 print(f"  Cua health: {report.get('overall') or h.get('code','unknown')}")
 print(f"  WORLDLINE: {w.get('code','ready') if w.get('ok') else w.get('code','unavailable')}")
-if isinstance(state,dict):
-    if state.get('revision') is not None: print(f"  WORLDLINE revision: {state.get('revision')}")
-    facts=state.get('facts')
-    if isinstance(facts,dict): print(f"  live facts: {len(facts)}")
+if isinstance(state,dict) and state.get('revision') is not None: print(f"  WORLDLINE revision: {state.get('revision')}")
+print(f"  control priority: {'background' if background else 'obvious (fastest)'}")
 print(f"  RemoteDesktop portal: {'available' if portal.get('available') else 'unavailable'}")
 print(f"  RemoteDesktop restore token: {'present' if token.get('present') else 'not established'}")
 print(f"  managed .gwcu: {'on' if m.get('managed_truths') else 'off'}")
