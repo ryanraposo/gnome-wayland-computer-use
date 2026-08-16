@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""WORLDLINE: revisioned desktop state + local postconditions for GWCU.
+"""WORLDLINE: revisioned desktop state + local contingent continuation for GWCU.
 
 WORLDLINE never injects input. Cua Driver remains the sole control authority.
 """
@@ -86,7 +86,8 @@ def oracles(pids:list[int]|None=None,paths:list[str]|None=None)->dict[str,tuple[
     for pid in pids or []:
         try:
             p=Path(f"/proc/{int(pid)}");out[f"process.{pid}.exists"]=(p.exists(),"procfs")
-            if p.exists():out[f"process.{pid}.exe"]=(os.readlink(p/"exe"),"procfs");out[f"process.{pid}.cwd"]=(os.readlink(p/"cwd"),"procfs")
+            if p.exists():
+                out[f"process.{pid}.exe"]=(os.readlink(p/"exe"),"procfs");out[f"process.{pid}.cwd"]=(os.readlink(p/"cwd"),"procfs")
         except (OSError,ValueError):pass
     for raw in paths or []:
         try:
@@ -114,19 +115,6 @@ class AtspiSensor:
                                 v=getattr(src,fn)()
                                 if v:facts[f"ui.last.{key}"]=int(v) if key=="pid" else v
                             except Exception:pass
-                        chain=[];cur=src
-                        for _ in range(5):
-                            try:cur=cur.get_parent()
-                            except Exception:break
-                            if cur is None:break
-                            item={}
-                            for key,fn in (("name","get_name"),("role","get_role_name")):
-                                try:
-                                    v=getattr(cur,fn)()
-                                    if v:item[key]=v
-                                except Exception:pass
-                            if item:chain.append(item)
-                        if chain:facts["ui.last.ancestors"]=chain
                     et=facts["ui.last.event"]
                     if et.startswith("focus:"):
                         for k in ("name","role","pid"):
@@ -144,15 +132,13 @@ class AtspiSensor:
 
 class World:
     def __init__(self):
-        self.lock=threading.RLock();self.revision=0;self.facts={};self.events=[];self.armed={};self.last=None;self.prev_visual=None;self.sensor=None;self.load()
+        self.lock=threading.RLock();self.changed=threading.Condition(self.lock)
+        self.revision=0;self.facts={};self.events=[];self.armed={};self.last=None;self.prev_visual=None;self.sensor=None;self.load()
     def load(self):
         try:d=json.loads(statefile().read_text())
         except Exception:return
         self.revision=int(d.get("revision",0));self.facts=d.get("facts",{});self.events=d.get("events",[]);self.armed=d.get("armed",{});self.last=d.get("last_revision");self.prev_visual=d.get("prev_visual")
     def save(self):save_json(statefile(),{"revision":self.revision,"facts":self.facts,"events":self.events,"armed":self.armed,"last_revision":self.last,"prev_visual":self.prev_visual})
-    def event(self,e:dict[str,Any]):
-        with self.lock:
-            self.events.append({"source":str(e.get("source") or "external"),"type":str(e.get("type") or "event"),"facts":e.get("facts") if isinstance(e.get("facts"),dict) else {},"invalidates":e.get("invalidates") if isinstance(e.get("invalidates"),list) else [],"monotonic_ns":time.monotonic_ns()});self.events=self.events[-2048:];self.save();return {"schema":SCHEMA,"ok":True,"code":"queued","queued":len(self.events)}
     def setfact(self,path:str,v:Any,source:str,rev:int,changed:set[str]):
         old=self.facts.get(path);entry={"value":v,"source":source,"revision":rev,"confidence":1.0}
         if value(old)!=v:changed.add(path)
@@ -161,39 +147,81 @@ class World:
         for k in list(self.facts):
             if k==path or k.startswith(path+"."):invalid.add(k);self.facts.pop(k,None)
         invalid.add(path)
-    def capture(self,q:dict[str,Any]):
-        with self.lock:
-            n=self.revision+1;changed:set[str]=set();invalid:set[str]=set();before=set(self.facts);events=self.events;self.events=[];sources={}
-            requested=q.get("invalidates") if isinstance(q.get("invalidates"),list) else []
-            for p in requested:
+    def _reduce(self,q:dict[str,Any]):
+        n=self.revision+1;changed:set[str]=set();invalid:set[str]=set();before=set(self.facts);events=self.events;self.events=[];sources={}
+        for p in q.get("invalidates",[]) if isinstance(q.get("invalidates"),list) else []:
+            if isinstance(p,str):self.invalidate(p,invalid)
+        for e in events:
+            sources[e["source"]]=sources.get(e["source"],0)+1
+            for p in e.get("invalidates",[]):
                 if isinstance(p,str):self.invalidate(p,invalid)
-            for e in events:
-                sources[e["source"]]=sources.get(e["source"],0)+1
-                for p in e.get("invalidates",[]):
-                    if isinstance(p,str):self.invalidate(p,invalid)
-                for p,v in e.get("facts",{}).items():
-                    if isinstance(p,str):self.setfact(p,v,e["source"],n,changed)
-            for p,(v,s) in oracles(q.get("pids") if isinstance(q.get("pids"),list) else [],q.get("paths") if isinstance(q.get("paths"),list) else []).items():self.setfact(p,v,s,n,changed)
-            visual={"requested":bool(q.get("visual")),"ok":False}
-            if q.get("visual"):
-                r=observer_capture(int(q.get("visual_timeout_ms",1500)));visual.update({"ok":bool(r.get("ok")),"code":r.get("code")})
-                rr=r.get("result") if isinstance(r.get("result"),dict) else r;path=rr.get("path") if isinstance(rr,dict) else None
-                if r.get("ok") and isinstance(path,str):
-                    d=digest(Path(path));visual.update({"hash":d,"width":rr.get("width"),"height":rr.get("height"),"changed":bool(d and d!=self.prev_visual)})
-                    if d:self.setfact("visual.frame_hash",d,"pipewire",n,changed);self.setfact("visual.width",rr.get("width"),"pipewire",n,changed);self.setfact("visual.height",rr.get("height"),"pipewire",n,changed);self.prev_visual=d
-                else:visual["uncertain"]=True
-            self.revision=n;expect=q.get("expect") if isinstance(q.get("expect"),list) else []
-            sat=[pid_of(p) for p in expect if isinstance(p,dict) and pred(p,self.facts,changed,invalid)];unsat=[pid_of(p) for p in expect if isinstance(p,dict) and not pred(p,self.facts,changed,invalid)]
-            woken=[]
-            for ident,tx in self.armed.items():
-                ps=[p for p in tx.get("predicates",[]) if isinstance(p,dict)];states=[pred(p,self.facts,changed,invalid) for p in ps];ready=bool(states) and (all(states) if tx.get("mode","all")=="all" else any(states))
-                if ready and tx.get("status")!="ready":tx["status"]="ready";tx["ready_revision"]=n;woken.append(ident)
-            conflicts=[{"type":"postcondition_unsatisfied","predicate":p} for p in unsat] if q.get("conflict_on_unsatisfied") else []
-            self.last={"schema":REV,"ok":not conflicts,"revision":n,"previous_revision":n-1,"trigger":str(q.get("trigger") or "manual"),"boundary":{"monotonic_ns":time.monotonic_ns(),"wall_time_ns":time.time_ns()},"events":{"count":len(events),"sources":sources},"changed":sorted(changed),"invalidated":sorted(invalid),"preserved":sorted(before-changed-invalid),"predicates_satisfied":sat,"predicates_unsatisfied":unsat,"woken":woken,"conflicts":conflicts,"uncertain":bool(visual.get("uncertain")),"visual":visual};self.save();return self.last
+            for p,v in e.get("facts",{}).items():
+                if isinstance(p,str):self.setfact(p,v,e["source"],n,changed)
+        for p,(v,s) in oracles(q.get("pids") if isinstance(q.get("pids"),list) else [],q.get("paths") if isinstance(q.get("paths"),list) else []).items():self.setfact(p,v,s,n,changed)
+        visual={"requested":bool(q.get("visual")),"ok":False}
+        if q.get("visual"):
+            r=observer_capture(int(q.get("visual_timeout_ms",1500)));visual.update({"ok":bool(r.get("ok")),"code":r.get("code")})
+            rr=r.get("result") if isinstance(r.get("result"),dict) else r;path=rr.get("path") if isinstance(rr,dict) else None
+            if r.get("ok") and isinstance(path,str):
+                d=digest(Path(path));visual.update({"hash":d,"width":rr.get("width"),"height":rr.get("height"),"changed":bool(d and d!=self.prev_visual)})
+                if d:
+                    self.setfact("visual.frame_hash",d,"pipewire",n,changed);self.setfact("visual.width",rr.get("width"),"pipewire",n,changed);self.setfact("visual.height",rr.get("height"),"pipewire",n,changed);self.prev_visual=d
+            else:visual["uncertain"]=True
+        self.revision=n;expect=q.get("expect") if isinstance(q.get("expect"),list) else []
+        sat=[pid_of(p) for p in expect if isinstance(p,dict) and pred(p,self.facts,changed,invalid)]
+        unsat=[pid_of(p) for p in expect if isinstance(p,dict) and not pred(p,self.facts,changed,invalid)]
+        woken=[]
+        for ident,tx in self.armed.items():
+            ps=[p for p in tx.get("predicates",[]) if isinstance(p,dict)];states=[pred(p,self.facts,changed,invalid) for p in ps]
+            ready=bool(states) and (all(states) if tx.get("mode","all")=="all" else any(states))
+            if ready and tx.get("status")!="ready":tx["status"]="ready";tx["ready_revision"]=n;woken.append(ident)
+        conflicts=[{"type":"postcondition_unsatisfied","predicate":p} for p in unsat] if q.get("conflict_on_unsatisfied") else []
+        self.last={"schema":REV,"ok":not conflicts,"revision":n,"previous_revision":n-1,"trigger":str(q.get("trigger") or "manual"),"boundary":{"monotonic_ns":time.monotonic_ns(),"wall_time_ns":time.time_ns()},"events":{"count":len(events),"sources":sources},"changed":sorted(changed),"invalidated":sorted(invalid),"preserved":sorted(before-changed-invalid),"predicates_satisfied":sat,"predicates_unsatisfied":unsat,"woken":woken,"conflicts":conflicts,"uncertain":bool(visual.get("uncertain")),"visual":visual}
+        self.save();self.changed.notify_all();return self.last
+    def event(self,e:dict[str,Any]):
+        with self.changed:
+            self.events.append({"source":str(e.get("source") or "external"),"type":str(e.get("type") or "event"),"facts":e.get("facts") if isinstance(e.get("facts"),dict) else {},"invalidates":e.get("invalidates") if isinstance(e.get("invalidates"),list) else [],"monotonic_ns":time.monotonic_ns()});self.events=self.events[-2048:]
+            r=self._reduce({"trigger":f"event:{e.get('source') or 'external'}"})
+            return {"schema":SCHEMA,"ok":True,"code":"applied","revision":r["revision"],"woken":r["woken"]}
+    def capture(self,q:dict[str,Any]):
+        with self.changed:return self._reduce(q)
     def arm(self,q:dict[str,Any]):
         ident=str(q.get("id") or "");ps=q.get("predicates");mode=q.get("mode","all")
-        if not ident or not isinstance(ps,list) or mode not in ("all","any"):raise ValueError("arm requires id, predicates and mode all|any")
-        with self.lock:self.armed[ident]={"predicates":ps,"mode":mode,"status":"waiting","armed_revision":self.revision};self.save();return {"schema":SCHEMA,"ok":True,"code":"armed","id":ident,"revision":self.revision}
+        if not ident or not isinstance(ps,list) or not ps or mode not in ("all","any"):raise ValueError("arm requires id, non-empty predicates and mode all|any")
+        with self.changed:
+            self.armed[ident]={"predicates":ps,"mode":mode,"status":"waiting","armed_revision":self.revision};self.save()
+            return {"schema":SCHEMA,"ok":True,"code":"armed","id":ident,"revision":self.revision}
+    def _match(self,predicates:list[dict[str,Any]],mode:str)->bool:
+        states=[pred(p,self.facts,set(),set()) for p in predicates]
+        return bool(states) and (all(states) if mode=="all" else any(states))
+    def _branch(self,branches:list[dict[str,Any]])->str|None:
+        for branch in branches:
+            ps=[p for p in branch.get("predicates",[]) if isinstance(p,dict)];mode=branch.get("mode","all")
+            if ps and mode in ("all","any") and self._match(ps,mode):return str(branch.get("id") or "")
+        return None
+    def wait(self,q:dict[str,Any]):
+        ps=[p for p in q.get("predicates",[]) if isinstance(p,dict)];mode=q.get("mode","all")
+        branches=[b for b in q.get("branches",[]) if isinstance(b,dict)]
+        if (not ps and not branches) or mode not in ("all","any"):raise ValueError("wait requires predicates or branches and mode all|any")
+        timeout_ms=max(1,min(int(q.get("timeout_ms",5000)),120000));deadline=time.monotonic()+timeout_ms/1000
+        after=int(q.get("after_revision",self.revision));conflict_paths={p for p in q.get("conflict_paths",[]) if isinstance(p,str)}
+        poll_ms=max(20,min(int(q.get("poll_ms",100)),1000))
+        with self.changed:
+            while True:
+                branch=self._branch(branches) if branches else None
+                ready=bool(branch) or (ps and self._match(ps,mode))
+                if ready:
+                    return {"schema":SCHEMA,"ok":True,"code":"ready","revision":self.revision,"after_revision":after,"matched_branch":branch,"predicates":[pid_of(p) for p in ps if pred(p,self.facts,set(),set())]}
+                if self.last and self.last.get("revision",0)>after and conflict_paths:
+                    touched=set(self.last.get("changed",[]))|set(self.last.get("invalidated",[]))
+                    conflicts=sorted(conflict_paths & touched)
+                    if conflicts:return {"schema":SCHEMA,"ok":False,"code":"conflict","revision":self.revision,"after_revision":after,"conflict_paths":conflicts}
+                remaining=deadline-time.monotonic()
+                if remaining<=0:return {"schema":SCHEMA,"ok":False,"code":"timeout","revision":self.revision,"after_revision":after}
+                if q.get("pids") or q.get("paths") or q.get("visual"):
+                    self.changed.wait(min(remaining,poll_ms/1000))
+                    if time.monotonic()<deadline:self._reduce({"trigger":"wait-poll","pids":q.get("pids",[]),"paths":q.get("paths",[]),"visual":bool(q.get("visual")),"visual_timeout_ms":q.get("visual_timeout_ms",500)})
+                else:self.changed.wait(remaining)
     def status(self):
         with self.lock:return {"schema":SCHEMA,"ok":True,"code":"ok","revision":self.revision,"facts":len(self.facts),"queued_events":len(self.events),"transactions_waiting":sum(x.get("status")=="waiting" for x in self.armed.values()),"last_revision":self.last,"socket":str(sock()),"observer_socket":str(observer()),"atspi":{"available":bool(self.sensor and self.sensor.available),"detail":self.sensor.detail if self.sensor else "not started"}}
     def handle(self,q):
@@ -202,23 +230,21 @@ class World:
         if op=="event":return self.event(q.get("event") if isinstance(q.get("event"),dict) else q)
         if op=="capture":return self.capture(q)
         if op=="arm":return self.arm(q)
+        if op=="wait":return self.wait(q)
         if op=="close":return {"schema":SCHEMA,"ok":True,"code":"closing"}
-        raise ValueError("op must be status|event|capture|arm|close")
+        raise ValueError("op must be status|event|capture|arm|wait|close")
 
 def listen()->socket.socket:
     try:n=int(os.getenv("LISTEN_FDS","0"));pid=int(os.getenv("LISTEN_PID","0"))
     except ValueError:n=pid=0
     if n>=1 and pid==os.getpid():return socket.fromfd(3,socket.AF_UNIX,socket.SOCK_STREAM)
-    mkdir(root());p=sock();p.unlink(missing_ok=True);s=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM);s.bind(str(p));os.chmod(p,stat.S_IRUSR|stat.S_IWUSR);s.listen(16);return s
+    mkdir(root());p=sock();p.unlink(missing_ok=True);s=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM);s.bind(str(p));os.chmod(p,stat.S_IRUSR|stat.S_IWUSR);s.listen(32);return s
 
 def serve()->int:
-    w=World();w.sensor=AtspiSensor(w);w.sensor.start();s=listen();s.settimeout(1);stop=False;last=time.monotonic();idle=max(30,min(int(os.getenv("GWCU_WORLDLINE_IDLE_SECONDS",IDLE)),3600))
-    def halt(*_):
-        nonlocal stop;stop=True
+    w=World();w.sensor=AtspiSensor(w);w.sensor.start();s=listen();s.settimeout(1);stop=threading.Event();last=[time.monotonic()];idle=max(30,min(int(os.getenv("GWCU_WORLDLINE_IDLE_SECONDS",IDLE)),3600))
+    def halt(*_):stop.set()
     signal.signal(signal.SIGTERM,halt);signal.signal(signal.SIGINT,halt)
-    while not stop and time.monotonic()-last<idle:
-        try:c,_=s.accept()
-        except socket.timeout:continue
+    def client(c:socket.socket):
         with c:
             try:
                 raw=bytearray()
@@ -228,19 +254,25 @@ def serve()->int:
                     raw.extend(b)
                 if len(raw)>MAX:raise ValueError("request_too_large")
                 q=json.loads(bytes(raw).split(b"\n",1)[0]);r=w.handle(q)
-                if q.get("op")=="close":stop=True
+                if q.get("op")=="close":stop.set()
             except Exception as e:r={"schema":SCHEMA,"ok":False,"code":"invalid_request","detail":str(e)}
             try:c.sendall((js(r)+"\n").encode())
             except OSError:pass
-            last=time.monotonic()
+            last[0]=time.monotonic()
+    while not stop.is_set() and time.monotonic()-last[0]<idle:
+        try:c,_=s.accept()
+        except socket.timeout:continue
+        threading.Thread(target=client,args=(c,),daemon=True).start()
     s.close();return 0
 
 def selftest()->int:
     import tempfile,shutil
     old=os.getenv("XDG_RUNTIME_DIR");tmp=tempfile.mkdtemp(prefix="gwcu-worldline-");os.environ["XDG_RUNTIME_DIR"]=tmp
     try:
-        w=World();w.event({"source":"atspi","facts":{"ui.focus.name":"Save"},"invalidates":["ui.dialog"]});r=w.capture({"trigger":"test","expect":[{"id":"focus-save","path":"ui.focus.name","op":"eq","value":"Save"}]});assert r["revision"]==1 and "ui.dialog" in r["invalidated"] and "focus-save" in r["predicates_satisfied"]
-        w.arm({"id":"tx","predicates":[{"path":"task.done","op":"eq","value":True}]});w.event({"source":"task","facts":{"task.done":True}});assert "tx" in w.capture({"trigger":"done"})["woken"]
+        w=World();r=w.event({"source":"atspi","facts":{"ui.focus.name":"Save"},"invalidates":["ui.dialog"]});assert r["revision"]==1
+        assert w.wait({"predicates":[{"path":"ui.focus.name","op":"eq","value":"Save"}],"timeout_ms":5})["code"]=="ready"
+        w.arm({"id":"tx","predicates":[{"path":"task.done","op":"eq","value":True}]});r=w.event({"source":"task","facts":{"task.done":True}});assert "tx" in r["woken"]
+        assert w.wait({"branches":[{"id":"done","predicates":[{"path":"task.done","op":"eq","value":True}]}],"timeout_ms":5})["matched_branch"]=="done"
         print(js({"schema":SCHEMA,"ok":True,"code":"self_test_ok"}));return 0
     finally:
         if old is None:os.environ.pop("XDG_RUNTIME_DIR",None)
@@ -251,7 +283,8 @@ def main()->int:
     p=argparse.ArgumentParser(description=__doc__);sp=p.add_subparsers(dest="cmd",required=True);sp.add_parser("serve");sp.add_parser("self-test");q=sp.add_parser("request");q.add_argument("--json",required=True);a=p.parse_args()
     if a.cmd=="serve":return serve()
     if a.cmd=="self-test":return selftest()
-    try:r=call(sock(),json.loads(a.json),5)
+    try:
+        req=json.loads(a.json);timeout=max(5,float(req.get("timeout_ms",0))/1000+2);r=call(sock(),req,timeout)
     except Exception as e:print(js({"schema":SCHEMA,"ok":False,"code":"worldline_unavailable","detail":str(e)}));return 50
     print(js(r));return 0 if r.get("ok") else 30
 if __name__=="__main__":raise SystemExit(main())
