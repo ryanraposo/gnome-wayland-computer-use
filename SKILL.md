@@ -65,6 +65,28 @@ model
 A model/tool round-trip is justified only when fresh state can actually change
 the next decision and the local runtime cannot establish it.
 
+## Control priority
+
+GWCU has one user-level control presentation preference:
+
+```text
+/computer-use background
+```
+
+It **toggles priority for background computer use**. `background on|off|status`
+is also available for deterministic scripting.
+
+- **OFF is the default:** prefer obvious control. This is the fastest and most
+  deterministic path on GNOME Wayland because Cua can use the compositor-approved
+  foreground interaction route directly.
+- **ON:** prefer background delivery when Cua can preserve the user's foreground
+  safely. Background is a priority, not a promise: Cua may fall forward when an
+  operation or target cannot honestly be driven in the background.
+
+Do not invent a second cursor, overlay, input backend, or hidden-control route to
+satisfy this preference. Cua owns dispatch and cursor presentation. The setting
+chooses the preferred Cua behavior; capability and correctness still win.
+
 ## Call budget
 
 | Situation | setup calls before useful work |
@@ -297,6 +319,7 @@ an unchanged screen or a stale durable fact.
 
 ```bash
 /computer-use status
+/computer-use background [on|off|status]
 /computer-use consent
 /computer-use managed on|off|status
 /computer-use truths
