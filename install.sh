@@ -45,6 +45,7 @@ Environment:
   GWCU_CUA_DRIVER_RS_VERSION=<version>  deliberate Cua pin override
   GWCU_TRUTHS=off                       disable managed .gwcu at runtime
   GWCU_SCOPE_ROOT=<path>                explicit truth scope
+  GWCU_BACKGROUND_PRIORITY=on|off       prefer background computer use at runtime
 HELP
     exit 0;;
   *) die "unknown option: $arg";; esac; done
@@ -122,9 +123,20 @@ if $HERMES; then
 fi
 ok "Installed action-span.py + WORLDLINE runtime + skill"
 
-info "[5/8] Configuring managed .gwcu preference and RemoteDesktop consent"
+info "[5/8] Configuring preferences and RemoteDesktop consent"
 PREF="$STATE/managed-truths"; if [ ! -s "$PREF" ]; then value=on; if ! $EXPLICIT_UNATTENDED && [ -r /dev/tty ]; then printf 'Enable managed .gwcu local truths? Git scopes add /.gwcu to .gitignore before storing machine/workspace facts [Y/n]: ' >/dev/tty; read -r reply </dev/tty || reply=""; [[ "$reply" =~ ^[nN] ]] && value=off; fi; printf '%s\n' "$value" >"$PREF"; chmod 600 "$PREF"; fi
 [ "${GWCU_TRUTHS:-}" = off ] && warn "GWCU_TRUTHS=off overrides managed truth at runtime"
+BACKGROUND_PREF="$STATE/background-priority"
+if [ ! -s "$BACKGROUND_PREF" ]; then
+  background=off
+  if ! $EXPLICIT_UNATTENDED && [ -r /dev/tty ]; then
+    printf 'Prioritize background computer use when available? Obvious control is faster and more deterministic [y/N]: ' >/dev/tty
+    read -r reply </dev/tty || reply=""
+    [[ "$reply" =~ ^[yY] ]] && background=on
+  fi
+  printf '%s\n' "$background" >"$BACKGROUND_PREF"; chmod 600 "$BACKGROUND_PREF"
+fi
+case "${GWCU_BACKGROUND_PRIORITY:-}" in on|yes|true|1) warn "GWCU_BACKGROUND_PRIORITY enables background priority at runtime";; off|no|false|0) warn "GWCU_BACKGROUND_PRIORITY disables background priority at runtime";; esac
 if ! $COMPAT; then
   set +e; PORTAL_STATUS=$("$PRIMARY/scripts/portal-control.py" --status 2>/dev/null); set -e
   TOKEN=$(python3 - "$PORTAL_STATUS" <<'PY'
@@ -140,11 +152,10 @@ PY
     "$PRIMARY/scripts/portal-control.py" --authorize --driver "$CUA" --timeout 90 >"$STATE/portal-control.json" || die "RemoteDesktop authorization failed"
   fi
 fi
-ok "Local truth preference + control consent prepared"
+ok "Preferences + control consent prepared"
 
 info "[6/8] Removing stale project control artifacts"
 LEGACY="$HOME/.config/systemd/user/gnome-wayland-computer-use.service"; if [ -f "$LEGACY" ]; then systemctl --user disable --now gnome-wayland-computer-use.service 2>/dev/null || true; rm -f "$LEGACY"; fi
-# No project-owned raw-input daemon/rule is installed. Exact old artifacts are retired by teardown.
 systemctl --user daemon-reload 2>/dev/null || true
 ok "Cua remains the only actuator"
 
