@@ -82,12 +82,6 @@ On GNOME Wayland, Cua uses the compositor-approved Remote Desktop portal to obta
 
 **No X11 or XWayland session is required.**
 
-## Control priority
-
-**Works with you, or in front of you.** `/computer-use background` toggles priority for background computer use; obvious control is the faster default. GWCU reconciles that standing preference with the intent Hermes already understands **without another model call**. Clear intent wins, 40–60% foreground-confidence ambiguity goes to your toggle, and Cua's live capabilities have final say. If a task clearly needs to come forward while background priority is on, Hermes simply says: *“Doing that now — switching to foreground. OK?”*
-
-The action-span runner reads Cua's live tool schemas and sets `delivery_mode` only where Cua actually supports it. If a background action is explicitly reported unavailable, the same local call can fall forward once and report the override. No shadow input backend, no speculative retry loop.
-
 ## What execution feels like
 
 ### Known target
@@ -105,7 +99,6 @@ ROOT="$HOME/.agents/skills/gnome-wayland-computer-use"
 
 "$ROOT/scripts/computer-use.sh" span --actions-json '{
   "schema":"gwcu.action-span.request.v1",
-  "control":{"foreground_confidence":0.82},
   "actions":[
     {"name":"click","arguments":{"x":640,"y":420}},
     {"name":"type_text","arguments":{"text":"hello"}},
@@ -142,7 +135,7 @@ One local call resolves stable launcher/PWA identity. With managed truth enabled
 "$ROOT/scripts/profile.sh" recover --machine
 ```
 
-One recovery call owns the local diagnostic fan-out.
+One recovery call owns the local diagnostic fan-out, including WORLDLINE health.
 
 ### Visual uncertainty
 
@@ -150,7 +143,7 @@ One recovery call owns the local diagnostic fan-out.
 "$ROOT/scripts/observe.sh" --machine --screen /tmp/screen.png
 ```
 
-The observer is socket-activated and keeps ScreenCast/PipeWire warm for a short task burst. WORLDLINE requests it only when semantic/direct evidence is insufficient.
+The observer is socket-activated and keeps ScreenCast/PipeWire warm for a short task burst. WORLDLINE requests it only when semantic/direct evidence is insufficient. Cold ScreenCast session/consent establishment has its own longer timeout; once the stream exists, fresh-frame latency keeps the short capture budget.
 
 ## MCP
 
@@ -193,7 +186,7 @@ GWCU_SCOPE_ROOT override
 → current directory
 ```
 
-For Git worktrees, managed mode writes `/.gwcu` to the root `.gitignore` **before** creating `.gwcu`. See [GWCU.md](GWCU.md).
+Git is an explicit installation dependency. For Git worktrees, managed mode writes `/.gwcu` to the root `.gitignore` **before** creating `.gwcu`. See [GWCU.md](GWCU.md).
 
 ## Installation
 
@@ -201,15 +194,12 @@ For Git worktrees, managed mode writes `/.gwcu` to the root `.gitignore` **befor
 curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh | bash
 ```
 
-The installer qualifies Ubuntu 26.04 GNOME Wayland, repairs the portal/PipeWire/AT-SPI/Python GI foundation, installs or qualifies pinned Cua Driver, establishes RemoteDesktop consent, deploys the skill and optional Hermes integration, configures managed `.gwcu`, installs socket-activated WORLDLINE/observer services, and verifies Cua health.
-
-The installer asks whether to prioritize background computer use. Enter keeps the default: **obvious control (faster / most deterministic)**.
+The installer qualifies Ubuntu 26.04 GNOME Wayland; repairs the portal/PipeWire/AT-SPI/Python GI/Git foundation; installs or qualifies pinned Cua Driver; records Cua ownership immediately; installs the Cua GNOME helper; retires exact legacy GWCU `ydotoold` and uinput artifacts during upgrades; establishes persistent RemoteDesktop consent; deploys the portable Agent Skill metadata plus optional Hermes integration; configures managed `.gwcu`; installs socket-activated WORLDLINE/observer services; and verifies Cua + WORLDLINE health.
 
 The first explicit whole-screen capture may still require separate ScreenCast consent.
 
 ```bash
 /computer-use status
-/computer-use background [on|off|status]
 /computer-use consent
 /computer-use managed status
 /computer-use truths
@@ -222,7 +212,7 @@ The first explicit whole-screen capture may still require separate ScreenCast co
 curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/uninstall.sh | bash
 ```
 
-Uninstall removes GWCU-owned integration and transient runtime state. Repo/workspace `.gwcu` files remain workspace content. Cua is preserved by default; use `--remove-cua` for GWCU-provisioned Cua or `--purge-cua` for an explicit full purge.
+The curl-pipe entry point only trusts an adjacent teardown when the uninstaller itself is a real file; stdin execution cannot resolve scripts from the caller's working directory. Teardown removes only skill/plugin directories carrying GWCU's managed marker, restores archived components safely, and preserves repo/workspace `.gwcu` files. Cua is preserved by default; `--remove-cua` uses durable provisioning ownership, while `--purge-cua` is an explicit full purge.
 
 ## Design rules
 
@@ -231,8 +221,8 @@ Uninstall removes GWCU-owned integration and transient runtime state. Repo/works
 - Direct truth beats visual inference.
 - Predicates replace ritual re-observation.
 - Determined mechanics stay inside one local call.
-- Control-priority arbitration adds zero model calls.
 - `.gwcu` contains durable truth, never prompt prose.
 - A real conflict returns control to the model.
+- Install and teardown mutate only state they can prove they own.
 
 See [DETERMINISM.md](DETERMINISM.md) for the constitution, [CAPABILITIES.md](CAPABILITIES.md) for runtime boundaries, and [PERF_NOTES.md](PERF_NOTES.md) for latency/call economics.
