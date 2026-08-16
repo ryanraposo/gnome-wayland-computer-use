@@ -84,7 +84,7 @@ def base_status(driver: str | None) -> dict:
     portal = portal_available()
     return {
         "schema": SCHEMA,
-        "ok": bool(driver) and portal,
+        "ok": bool(driver) and portal and token.is_file(),
         "code": "authorized" if driver and portal and token.is_file() else ("ready_for_consent" if driver and portal else "unavailable"),
         "portal": {
             "interface": "org.freedesktop.portal.RemoteDesktop",
@@ -198,6 +198,15 @@ def authorize(driver: str, timeout: float) -> tuple[dict, int]:
         })
         move = tool_result(recv_for(proc, 3, timeout), "move_cursor")
         status = base_status(driver)
+        if not status["portal"]["restore_token"]["present"]:
+            status.update(
+                ok=False,
+                code="persistent_authorization_missing",
+                handshake={"operation": "move_cursor", "scope": "desktop", "x": x, "y": y, "click": False, "key": False},
+                cua_result=structured(move) or None,
+                next={"action": "approve_remote_desktop_and_retry"},
+            )
+            return status, 30
         status.update(
             ok=True,
             code="authorized",
