@@ -32,6 +32,8 @@ jobs:
         run: bash ./tests/action-span.sh
       - name: WORLDLINE revision runtime
         run: bash ./tests/worldline.sh
+      - name: Lifecycle and security seams
+        run: bash ./tests/lifecycle-safety.sh
       - name: Determinism contract
         run: bash ./tests/determinism.sh
       - name: Regression suite
