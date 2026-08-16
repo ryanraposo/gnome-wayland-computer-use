@@ -28,6 +28,22 @@ case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) export PATH="$HOME/.local/bin:$P
 PATH
   done
 }
+write_cua_ownership(){
+  local provisioned="$1" version="$2" existing="$STATE/ownership.json" tmp
+  tmp=$(mktemp "$STATE/.ownership.XXXXXX")
+  python3 - "$existing" "$tmp" "$provisioned" "$version" <<'PY'
+import json,os,pathlib,sys
+src,out,prov,version=sys.argv[1:]
+try: d=json.load(open(src))
+except Exception: d={}
+d.setdefault("schema","gwcu.ownership.v3")
+u=d.setdefault("upstream",{}); c=u.setdefault("cua_driver",{})
+old=bool(c.get("provisioned") or c.get("owned"))
+c.update({"provisioned": old or prov=="true", "owned": old or prov=="true", "version":version})
+p=pathlib.Path(out);p.write_text(json.dumps(d,separators=(",",":"))+"\n");os.chmod(p,0o600)
+PY
+  mv -f "$tmp" "$existing"
+}
 
 COMPAT=false; EXPLICIT_UNATTENDED=false; HERMES_MODE=auto
 for arg in "$@"; do case "$arg" in
@@ -67,7 +83,7 @@ if ! $COMPAT; then
 fi
 
 info "[1/8] Qualifying Ubuntu portal/PipeWire/AT-SPI foundation"
-PKGS=(ca-certificates curl libglib2.0-bin pipewire pipewire-bin wireplumber xdg-desktop-portal xdg-desktop-portal-gnome python3 python3-dbus python3-gi python3-gst-1.0 gstreamer1.0-tools gstreamer1.0-pipewire gstreamer1.0-plugins-base gstreamer1.0-plugins-good gir1.2-gstreamer-1.0 gir1.2-gst-plugins-base-1.0 gir1.2-gdkpixbuf-2.0 gir1.2-atspi-2.0 at-spi2-core libei1 libxkbcommon0)
+PKGS=(ca-certificates curl git libglib2.0-bin pipewire pipewire-bin wireplumber xdg-desktop-portal xdg-desktop-portal-gnome python3 python3-dbus python3-gi python3-gst-1.0 gstreamer1.0-tools gstreamer1.0-pipewire gstreamer1.0-plugins-base gstreamer1.0-plugins-good gir1.2-gstreamer-1.0 gir1.2-gst-plugins-base-1.0 gir1.2-gdkpixbuf-2.0 gir1.2-atspi-2.0 at-spi2-core libei1 libxkbcommon0)
 missing=(); for p in "${PKGS[@]}"; do dpkg -s "$p" >/dev/null 2>&1 || missing+=("$p"); done
 if [ ${#missing[@]} -gt 0 ]; then $COMPAT && warn "compat mode: packages missing: ${missing[*]}" || { as_root apt-get update; as_root apt-get install -y "${missing[@]}"; }; fi
 if ! $COMPAT; then
@@ -94,6 +110,9 @@ else
   CUA=$(resolve_cua || true); [ -n "$CUA" ] || die "cua-driver missing after install"
 fi
 "$CUA" --version 2>/dev/null | grep -Fq "$CUA_DRIVER_RS_VERSION" || die "Expected Cua $CUA_DRIVER_RS_VERSION"
+# Persist upstream ownership immediately. Reinstalls OR the existing value, so a
+# later failure or rerun cannot forget that GWCU originally provisioned Cua.
+write_cua_ownership "$CUA_INSTALLED_BY_GWCU" "$CUA_DRIVER_RS_VERSION"
 
 info "[3/8] Installing Cua GNOME Wayland helper"
 CUA_HOME="${CUA_DRIVER_HOME:-$HOME/.cua-driver}"; HELPER="$CUA_HOME/packages/current/wayland-helper"; CUA_HELPER_INSTALLER="$HELPER/install.sh"
@@ -102,7 +121,7 @@ CUA_HOME="${CUA_DRIVER_HOME:-$HOME/.cua-driver}"; HELPER="$CUA_HOME/packages/cur
 RELOAD_REQUIRED=false; gnome-extensions info winrects@cua >/dev/null 2>&1 && gnome-extensions info winrects@cua 2>/dev/null | grep -qi 'State: ACTIVE' || RELOAD_REQUIRED=true
 
 info "[4/8] Installing GWCU runtime, skill and WORLDLINE"
-FILES=(VERSION README.md WORLDLINE.md GWCU.md DETERMINISM.md CAPABILITIES.md PERF_NOTES.md references/skill-ux-contract.md scripts/action-span.py scripts/app-identity.sh scripts/capture.sh scripts/check-update.sh scripts/computer-use.sh scripts/cua-health.py scripts/diagnose.sh scripts/observe.sh scripts/observer.py scripts/portal-control.py scripts/profile.sh scripts/teardown.sh scripts/truths.py scripts/worldline.py scripts/worldline-capture.sh systemd/user/gnome-wayland-computer-use-observer.socket systemd/user/gnome-wayland-computer-use-observer.service systemd/user/gnome-wayland-computer-use-worldline.socket systemd/user/gnome-wayland-computer-use-worldline.service)
+FILES=(VERSION README.md WORLDLINE.md GWCU.md DETERMINISM.md CAPABILITIES.md PERF_NOTES.md agents/openai.yaml references/skill-ux-contract.md scripts/action-span.py scripts/app-identity.sh scripts/capture.sh scripts/check-update.sh scripts/computer-use.sh scripts/cua-health.py scripts/diagnose.sh scripts/observe.sh scripts/observer.py scripts/portal-control.py scripts/profile.sh scripts/teardown.sh scripts/truths.py scripts/worldline.py scripts/worldline-capture.sh systemd/user/gnome-wayland-computer-use-observer.socket systemd/user/gnome-wayland-computer-use-observer.service systemd/user/gnome-wayland-computer-use-worldline.socket systemd/user/gnome-wayland-computer-use-worldline.service)
 rm -rf "$TMP/bundle"; mkdir -p "$TMP/bundle"
 for f in "${FILES[@]}"; do get_file "$f" "$TMP/bundle/$f"; done
 get_file SKILL.md "$TMP/bundle/SKILL.md"
@@ -154,10 +173,19 @@ PY
 fi
 ok "Preferences + control consent prepared"
 
-info "[6/8] Removing stale project control artifacts"
+info "[6/8] Retiring stale project control artifacts"
 LEGACY="$HOME/.config/systemd/user/gnome-wayland-computer-use.service"; if [ -f "$LEGACY" ]; then systemctl --user disable --now gnome-wayland-computer-use.service 2>/dev/null || true; rm -f "$LEGACY"; fi
+LEGACY_YDO="$HOME/.config/systemd/user/ydotoold.service"
+if [ -f "$LEGACY_YDO" ] && grep -q 'Description=ydotool uinput daemon' "$LEGACY_YDO"; then
+  systemctl --user disable --now ydotoold.service 2>/dev/null || true; rm -f "$LEGACY_YDO"
+fi
+LEGACY_RULE='/etc/udev/rules.d/80-gnome-wayland-computer-use.rules'
+LEGACY_RULE_VALUE='KERNEL=="uinput", GROUP="input", MODE="0660", TAG+="uaccess", OPTIONS+="static_node=uinput"'
+if [ -f "$LEGACY_RULE" ] && grep -Fxq "$LEGACY_RULE_VALUE" "$LEGACY_RULE"; then
+  $COMPAT && warn "compat mode: obsolete GWCU uinput rule remains at $LEGACY_RULE" || { as_root rm -f "$LEGACY_RULE"; as_root udevadm control --reload-rules 2>/dev/null || true; }
+fi
 systemctl --user daemon-reload 2>/dev/null || true
-ok "Cua remains the only actuator"
+ok "Legacy GWCU raw-input plane retired; Cua is the only actuator"
 
 info "[7/8] Enabling WORLDLINE + lazy ScreenCast observer"
 UNIT_DIR="$HOME/.config/systemd/user"; mkdir -p "$UNIT_DIR"
@@ -176,9 +204,18 @@ info "[8/8] Proving installed-state health"
 PREV_ACCESS=$(gsettings get org.gnome.desktop.interface toolkit-accessibility 2>/dev/null || printf unknown); ACCESS_CHANGED=false
 if [ "$PREV_ACCESS" = false ]; then gsettings set org.gnome.desktop.interface toolkit-accessibility true 2>/dev/null && ACCESS_CHANGED=true || true; fi
 mkdir -p "$STATE"
-python3 - "$STATE/ownership.json" "$PREV_ACCESS" "$ACCESS_CHANGED" "$CUA_INSTALLED_BY_GWCU" "$CUA_DRIVER_RS_VERSION" "$HERMES" <<'PY'
+# Merge final ownership facts; never reset durable Cua provenance recorded above.
+python3 - "$STATE/ownership.json" "$PREV_ACCESS" "$ACCESS_CHANGED" "$CUA_DRIVER_RS_VERSION" "$HERMES" <<'PY'
 import json,os,pathlib,sys
-p=pathlib.Path(sys.argv[1]);d={"schema":"gwcu.ownership.v3","toolkit_accessibility":{"previous":sys.argv[2],"changed":sys.argv[3]=="true"},"upstream":{"cua_driver":{"provisioned":sys.argv[4]=="true","owned":sys.argv[4]=="true","version":sys.argv[5]},"winrects":{"owned":False}},"user_units":{"observer_socket":True,"observer_service":True,"worldline_socket":True,"worldline_service":True},"hermes_plugin":{"managed":sys.argv[6]=="true","name":"gnome-wayland-computer-use"},"distro_foundation_owned":False};p.write_text(json.dumps(d,separators=(",",":"))+"\n");os.chmod(p,0o600)
+p=pathlib.Path(sys.argv[1])
+try:d=json.loads(p.read_text())
+except Exception:d={}
+d["schema"]="gwcu.ownership.v3"
+d["toolkit_accessibility"]={"previous":sys.argv[2],"changed":sys.argv[3]=="true"}
+u=d.setdefault("upstream",{}); c=u.setdefault("cua_driver",{}); c["version"]=sys.argv[4]; c["owned"]=bool(c.get("provisioned") or c.get("owned")); u.setdefault("winrects",{"owned":False})
+d["user_units"]={"observer_socket":True,"observer_service":True,"worldline_socket":True,"worldline_service":True}
+d["hermes_plugin"]={"managed":sys.argv[5]=="true","name":"gnome-wayland-computer-use"};d["distro_foundation_owned"]=False
+p.write_text(json.dumps(d,separators=(",",":"))+"\n");os.chmod(p,0o600)
 PY
 if ! $COMPAT; then
   DOCTOR_OUT="$STATE/cua-doctor.json"; DOCTOR_ERR="$STATE/cua-doctor.stderr"; rc=0; "$CUA" doctor --json >"$DOCTOR_OUT" 2>"$DOCTOR_ERR" || rc=$?
