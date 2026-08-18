@@ -208,9 +208,10 @@ PY
 pass "install-time RemoteDesktop bootstrap is pointer-only"
 
 plugin="$ROOT/runtimes/hermes/__init__.py"
-grep -q 'register_command' "$plugin" || fail "Hermes plugin does not register a native slash command"
-for word in status managed truths consent doctor; do grep -q "$word" "$plugin" || fail "Hermes command hint lost $word"; done
-pass "Hermes /computer-use exposes truth status natively"
+! grep -Fq 'ctx.register_command(' "$plugin" || fail "Hermes plugin shadows the native computer-use skill command"
+grep -Fq '/computer-use <task>' "$skill" || fail "skill-native task invocation is missing"
+for word in status background managed truths consent doctor help; do grep -Fq "\`$word\`" "$skill" || fail "reserved computer-use subcommand lost $word"; done
+pass "Hermes skill owns task and subcommand slash routing"
 
 grep -q 'known app/window | \*\*0\*\*' "$skill" || fail "skill lost zero-call known-target budget"
 grep -q 'repo/workspace .gwcu lookup' "$skill" || fail "skill does not consume .gwcu before identity discovery"
