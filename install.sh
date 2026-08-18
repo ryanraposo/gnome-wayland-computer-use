@@ -87,8 +87,9 @@ PKGS=(ca-certificates curl git libglib2.0-bin pipewire pipewire-bin wireplumber 
 missing=(); for p in "${PKGS[@]}"; do dpkg -s "$p" >/dev/null 2>&1 || missing+=("$p"); done
 if [ ${#missing[@]} -gt 0 ]; then $COMPAT && warn "compat mode: packages missing: ${missing[*]}" || { as_root apt-get update; as_root apt-get install -y "${missing[@]}"; }; fi
 if ! $COMPAT; then
-  pipewire --version 2>/dev/null | awk 'NR==1{print $NF}' | grep -Eq '^[0-9]' || die "PipeWire unavailable"
-  PW=$(pipewire --version 2>/dev/null | awk 'NR==1{print $NF}'); dpkg --compare-versions "$PW" ge 0.3.40 || die "PipeWire 0.3.40+ required"
+  PW=$(pipewire --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+  [ -n "$PW" ] || die "PipeWire unavailable"
+  dpkg --compare-versions "$PW" ge 0.3.40 || die "PipeWire 0.3.40+ required"
   portal_has RemoteDesktop || die "RemoteDesktop portal unavailable"
   portal_has ScreenCast || die "ScreenCast portal unavailable"
   portal_has Screenshot || die "Screenshot portal unavailable"
@@ -116,8 +117,10 @@ write_cua_ownership "$CUA_INSTALLED_BY_GWCU" "$CUA_DRIVER_RS_VERSION"
 
 info "[3/8] Installing Cua GNOME Wayland helper"
 CUA_HOME="${CUA_DRIVER_HOME:-$HOME/.cua-driver}"; HELPER="$CUA_HOME/packages/current/wayland-helper"; CUA_HELPER_INSTALLER="$HELPER/install.sh"
-[ -x "$CUA_HELPER_INSTALLER" ] || die "Cua packaged helper missing: packages/current/wayland-helper"
+[ -x "$CUA_HELPER_INSTALLER" ] || die "Cua packaged helper missing: packages/current/wayland-helper/install.sh"
 "$CUA_HELPER_INSTALLER" || die "Cua GNOME helper installation failed"
+# Enable the WinRects extension so GNOME loads it immediately
+gnome-extensions enable winrects@cua 2>/dev/null || true
 RELOAD_REQUIRED=false; gnome-extensions info winrects@cua >/dev/null 2>&1 && gnome-extensions info winrects@cua 2>/dev/null | grep -qi 'State: ACTIVE' || RELOAD_REQUIRED=true
 
 info "[4/8] Installing GWCU runtime, skill and WORLDLINE"
