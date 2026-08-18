@@ -204,4 +204,4 @@ Do not add a screenshot merely to feel certain. Report real failures and unresol
 /computer-use doctor
 ```
 
-The architecture source of truth is `WORLDLINE.md`; durable truth is specified in `GWCU.md`; hard behavioral rules are in `DETERMINISM.md`.
+Human-facing architecture, lifecycle and operator documentation lives in `README.md`.
