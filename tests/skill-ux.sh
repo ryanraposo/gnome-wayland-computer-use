@@ -16,12 +16,21 @@ cmp -s "$ROOT/SKILL.md" "$ROOT/runtimes/openai/SKILL.md" || fail "runtime skill 
 pass "runtime skills are identical and compact"
 
 for heading in \
-    'Core rule' 'Control priority' 'Call budget' 'Execution ladder' 'Known target' \
+    'Invocation contract' 'Core rule' 'Control priority' 'Call budget' 'Execution ladder' 'Known target' \
     'WORLDLINE postconditions' 'Whole screen' '`.gwcu`: durable truth, not runtime state' \
     'Failure and refusal policy' 'Completion proof'
 do
     grep -Fqi "## $heading" "$ROOT/SKILL.md" || fail "skill lost: $heading"
 done
+grep -Fq '/computer-use <task>' "$ROOT/SKILL.md" || fail "task-form slash invocation missing"
+grep -Fq 'Everything else is a task.' "$ROOT/SKILL.md" || fail "task/subcommand dispatch rule missing"
+grep -Fq 'status`, `background`, `managed`, `truths`, `consent`, `doctor`, and `help' "$ROOT/SKILL.md" || fail "reserved subcommand set drifted"
+if grep -Fq 'ctx.register_command(' "$ROOT/runtimes/hermes/__init__.py"; then
+    fail "Hermes plugin shadows the native computer-use skill command"
+fi
+grep -Fq 'installed skill owns it' "$ROOT/runtimes/hermes/__init__.py" || fail "Hermes compatibility shim contract missing"
+pass "/computer-use accepts both tasks and reserved subcommands"
+
 grep -q 'MUST cross the model/tool boundary exactly once' "$ROOT/SKILL.md" || fail "one-call invariant softened"
 grep -q 'computer-use.sh" span --actions-json' "$ROOT/SKILL.md" || fail "span surface missing"
 grep -q 'worldline-capture.sh' "$ROOT/SKILL.md" || fail "WORLDLINE surface missing"
