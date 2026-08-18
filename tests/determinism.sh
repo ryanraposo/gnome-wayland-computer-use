@@ -20,7 +20,10 @@ grep -qi 'Observation is an interrupt' "$ROOT/README.md" || fail "README lost WO
 grep -qi 'valid until invalidated' "$ROOT/README.md" || fail "README lost invalidation rule"
 grep -qi 'postcondition' "$ROOT/README.md" || fail "README lost predicate rule"
 grep -qi 'WORLDLINE is transient' "$ROOT/README.md" || fail "README lost state lifetime boundary"
-pass "README carries state lifetimes and postconditions"
+grep -Fq '0x0' "$ROOT/README.md" || fail "README lost the little guy"
+[ "$(grep -Fc 'Agents have variable success using Linux.' "$ROOT/README.md")" -eq 1 ] || fail "README must use the single little-guy-era description exactly once"
+! grep -Fq 'Computer use for Ubuntu 26.04 GNOME Wayland that keeps already-known reality out of the model loop.' "$ROOT/README.md" || fail "README still carries the discarded first description"
+pass "README carries state lifetimes, little-guy identity and one description"
 
 for retired in WORLDLINE.md GWCU.md DETERMINISM.md CAPABILITIES.md PERF_NOTES.md references/skill-ux-contract.md; do
     [ ! -e "$ROOT/$retired" ] || fail "parallel documentation still exists: $retired"
