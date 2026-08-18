@@ -1,38 +1,20 @@
 #!/usr/bin/env bash
-# Natural Hermes integration tests: drive the /computer-use plugin through
-# Hermes' own plugin registry against a sandboxed HERMES_HOME, and prove that
-# a stale duplicate plugin no longer shadows the project's command.
+# Hermes integration checks: the installed skill owns /computer-use; the plugin
+# exists only as an upgrade/retirement shim and must never shadow task text.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 fail(){ printf 'not ok - %s\n' "$1" >&2; exit 1; }
 pass(){ printf 'ok - %s\n' "$1"; }
 
-HERMES_PY=""
-for c in "$HOME/.hermes/hermes-agent/venv/bin/python" "$HOME/.hermes/hermes-agent/venv/bin/python3"; do
-    [ -x "$c" ] && HERMES_PY="$c" && break
-done
-if [ -z "$HERMES_PY" ]; then
-    printf 'ok - Hermes runtime not present; skipping hermes-native integration tests\n'
-    exit 0
-fi
-AGENT_DIR="$(cd "$(dirname "$HERMES_PY")/../.." && pwd)"
-[ -d "$AGENT_DIR/hermes_cli" ] || fail "hermes_cli package missing at $AGENT_DIR"
-
-# Build the same payload install.sh ships: root docs + scripts + systemd units.
 build_bundle() {
     local dst=$1
     rm -rf "$dst"; mkdir -p "$dst"
-    for f in VERSION README.md WORLDLINE.md GWCU.md DETERMINISM.md CAPABILITIES.md PERF_NOTES.md SKILL.md; do
-        [ -f "$ROOT/$f" ] && cp "$ROOT/$f" "$dst/$f"
-    done
-    for d in scripts systemd agents references; do
-        [ -d "$ROOT/$d" ] && cp -a "$ROOT/$d" "$dst/"
-    done
+    for f in VERSION README.md SKILL.md; do cp "$ROOT/$f" "$dst/$f"; done
+    for d in scripts systemd agents; do [ -d "$ROOT/$d" ] && cp -a "$ROOT/$d" "$dst/"; done
     chmod +x "$dst/scripts"/*.sh "$dst/scripts"/*.py
 }
 
-# Layout a sandboxed HERMES_HOME the way install.sh does for the Hermes branch.
 make_home() {
     local home=$1 plugin_dir
     mkdir -p "$home/plugins" "$home/skills"
@@ -49,62 +31,57 @@ plugins:
 YAML
 }
 
-# Run one Python snippet through Hermes' plugin registry in a sandboxed home.
-run_hermes() {
-    local home=$1 code=$2
-    HERMES_HOME="$home" XDG_STATE_HOME="$TMP/state" PYTHONPATH="$AGENT_DIR" \
-        "$HERMES_PY" -c "$code"
-}
-
-REGISTER_CODE='import json
-from hermes_cli.plugins import get_plugin_commands, get_plugin_command_handler
-cmds = get_plugin_commands()
-info = cmds.get("computer-use", {})
-print(json.dumps({"keys": sorted(cmds), "owner": info.get("plugin"), "desc": info.get("description")}))
-h = get_plugin_command_handler("computer-use")
-print("HELP_HAS_BACKGROUND", "background [on|off|status]" in (h("help") or ""))
-print("BG", (h("background status") or "").splitlines()[0])
-'
+# Source-level invariants always run, even on CI without Hermes installed.
+! grep -Fq 'ctx.register_command(' "$ROOT/runtimes/hermes/__init__.py" || fail "compatibility plugin shadows native /computer-use"
+grep -Fq '/computer-use <task>' "$ROOT/SKILL.md" || fail "skill-native task invocation missing"
+grep -Fq 'Everything else is a task.' "$ROOT/SKILL.md" || fail "skill task/subcommand dispatch rule missing"
+pass "installed skill owns /computer-use task routing"
 
 HOME_A="$TMP/hermes-a"
 make_home "$HOME_A"
-OUT=$(run_hermes "$HOME_A" "$REGISTER_CODE")
-printf '%s\n' "$OUT"
-echo "$OUT" | python3 -c '
-import json,sys
-data = {}
-for line in sys.stdin:
-    if line.startswith("{"):
-        data = json.loads(line)
-    elif line.startswith("HELP_HAS_BACKGROUND"):
-        data["help_bg"] = line.strip().split(" ",1)[1]
-    elif line.startswith("BG "):
-        data["bg"] = line.strip().split(" ",1)[1]
-assert data.get("keys") == ["computer-use"], data
-assert data.get("owner") == "gnome-wayland-computer-use", data
-assert data.get("help_bg") == "True", data
-assert data.get("bg") == "Background computer use: OFF", data
-' || fail "registered /computer-use does not dispatch the project backend"
-pass "/computer-use registers and dispatches through Hermes' plugin registry"
+[ -f "$HOME_A/skills/computer-use/SKILL.md" ] || fail "Hermes skill bundle missing"
+[ -f "$HOME_A/skills/computer-use/README.md" ] || fail "single installed README missing"
+for retired in WORLDLINE.md GWCU.md DETERMINISM.md CAPABILITIES.md PERF_NOTES.md references; do [ ! -e "$HOME_A/skills/computer-use/$retired" ] || fail "retired docs leaked into bundle: $retired"; done
+pass "Hermes bundle carries runtime contract plus one README"
 
-# A stale duplicate plugin with the same plugin.yaml name but a directory that
-# sorts AFTER the canonical one shadows /computer-use. The installer's
-# retire_duplicate_plugins must remove it so the project's command wins.
-STALE_CODE='from hermes_cli.plugins import get_plugin_command_handler
-print((get_plugin_command_handler("computer-use")("") or ""))'
+HERMES_PY=""
+for c in "$HOME/.hermes/hermes-agent/venv/bin/python" "$HOME/.hermes/hermes-agent/venv/bin/python3"; do
+    [ -x "$c" ] && HERMES_PY="$c" && break
+done
+if [ -z "$HERMES_PY" ]; then
+    printf 'ok - Hermes runtime not present; skipping registry integration checks\n'
+    exit 0
+fi
+AGENT_DIR="$(cd "$(dirname "$HERMES_PY")/../.." && pwd)"
+[ -d "$AGENT_DIR/hermes_cli" ] || fail "hermes_cli package missing at $AGENT_DIR"
+
+run_hermes() {
+    local home=$1 code=$2
+    HERMES_HOME="$home" XDG_STATE_HOME="$TMP/state" PYTHONPATH="$AGENT_DIR" "$HERMES_PY" -c "$code"
+}
+
+# The compatibility plugin must contribute no /computer-use command. This leaves
+# Hermes' native skill slash-command path free to load the computer-use skill.
+REGISTRY_CODE='from hermes_cli.plugins import get_plugin_commands
+cmds = get_plugin_commands()
+print("PLUGIN_HAS_COMPUTER_USE", "computer-use" in cmds)
+'
+OUT=$(run_hermes "$HOME_A" "$REGISTRY_CODE")
+printf '%s\n' "$OUT" | grep -Fq 'PLUGIN_HAS_COMPUTER_USE False' || fail "compatibility plugin still owns /computer-use"
+pass "Hermes plugin registry leaves /computer-use to the skill"
+
+# A stale older GWCU plugin can shadow the native skill path. Prove the upgrade
+# retirement seam removes exactly that duplicate command owner.
 HOME_B="$TMP/hermes-b"
 make_home "$HOME_B"
 mkdir -p "$HOME_B/plugins/zz-stale-computer-use"
 cp "$ROOT/runtimes/hermes/plugin.yaml" "$HOME_B/plugins/zz-stale-computer-use/plugin.yaml"
-printf '%s\n' '"""stale pre-replacement plugin."""' \
-    'def _run(raw_args): return "STALE /computer-use: not replaced"' \
+printf '%s\n' 'def _run(raw_args): return "STALE"' \
     'def register(ctx): ctx.register_command("computer-use", _run, description="stale", args_hint="")' \
     >"$HOME_B/plugins/zz-stale-computer-use/__init__.py"
-OUT=$(run_hermes "$HOME_B" "$STALE_CODE")
-printf '%s\n' "$OUT" | grep -Fq 'STALE /computer-use: not replaced' || fail "test setup: stale duplicate did not shadow /computer-use"
-pass "stale duplicate plugin shadows /computer-use before retirement"
+OUT=$(run_hermes "$HOME_B" "$REGISTRY_CODE")
+printf '%s\n' "$OUT" | grep -Fq 'PLUGIN_HAS_COMPUTER_USE True' || fail "test setup: stale plugin did not shadow native skill path"
 
-# Replicate install.sh's retire_duplicate_plugins contract against the sandbox.
 retire_duplicate_plugins() {
     local canonical=$1 dir name yaml
     for yaml in "$HOME_B/plugins"/*/plugin.yaml; do
@@ -116,28 +93,14 @@ retire_duplicate_plugins() {
     done
 }
 retire_duplicate_plugins "$HOME_B/plugins/gnome-wayland-computer-use"
-[ ! -e "$HOME_B/plugins/zz-stale-computer-use" ] || fail "stale duplicate plugin was not retired"
-OUT=$(run_hermes "$HOME_B" "$STALE_CODE")
-printf '%s\n' "$OUT" | grep -Fq '/computer-use commands' || fail "project /computer-use did not win after retirement"
-printf '%s\n' "$OUT" | grep -Fq 'STALE /computer-use' && fail "stale command survived retirement"
-pass "retiring duplicate plugins replaces /computer-use with the project command"
+OUT=$(run_hermes "$HOME_B" "$REGISTRY_CODE")
+printf '%s\n' "$OUT" | grep -Fq 'PLUGIN_HAS_COMPUTER_USE False' || fail "stale plugin still shadows native skill path after retirement"
+pass "duplicate retirement restores skill-native /computer-use ownership"
 
-# A missing Hermes skill copy must fall back to the agent skill backend.
-AGENT_HOME="$TMP/hermes-home-agent"
-HOME_C="$TMP/hermes-c"
-make_home "$HOME_C"
-rm -rf "$HOME_C/skills/computer-use"
-mkdir -p "$AGENT_HOME/.agents/skills/gnome-wayland-computer-use"
-build_bundle "$AGENT_HOME/.agents/skills/gnome-wayland-computer-use"
-OUT=$(HOME="$AGENT_HOME" HERMES_HOME="$HOME_C" XDG_STATE_HOME="$TMP/state" PYTHONPATH="$AGENT_DIR" \
-    "$HERMES_PY" -c "$STALE_CODE")
-printf '%s\n' "$OUT" | grep -Fq '/computer-use commands' || fail "backend fallback to agent skill copy failed"
-pass "Hermes backend falls back to the agent skill copy when the Hermes skill is missing"
-
-# The installer and teardown must carry the duplicate-plugin retirement seam.
+# Installer/teardown must preserve the upgrade seam.
 grep -Fq 'retire_duplicate_plugins' "$ROOT/install.sh" || fail "installer does not retire duplicate plugins"
 grep -Fq '"$HERMES_HOME/plugins"/*/plugin.yaml' "$ROOT/install.sh" || fail "installer cannot scan plugin copies"
 grep -Fq '"$HERMES_HOME/plugins"/*/plugin.yaml' "$ROOT/scripts/teardown.sh" || fail "teardown cannot find plugin copies"
-grep -Fq 'hermes plugins enable "$NAME"' "$ROOT/install.sh" || fail "installer does not enable the plugin"
+grep -Fq 'hermes plugins enable "$NAME"' "$ROOT/install.sh" || fail "installer does not enable compatibility plugin"
 grep -Fq 'archived and restored by teardown' "$ROOT/install.sh" || fail "installer does not surface teardown-ability"
-pass "installer/teardown keep /computer-use replacement seams"
+pass "installer/teardown keep clean /computer-use ownership seams"
