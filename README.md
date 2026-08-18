@@ -164,14 +164,17 @@ The installer:
 
 - qualifies Ubuntu 26.04 GNOME Wayland;
 - repairs Git, portal, PipeWire, AT-SPI and Python GI dependencies;
+- repairs pre-2.3 public `main` installs **before** starting the new Cua/portal generation;
 - installs or reuses pinned Cua Driver `0.19.3`;
 - installs Cua's GNOME helper;
 - establishes persistent RemoteDesktop consent with a pointer-only bootstrap;
 - installs the Agent Skill plus optional Hermes integration;
 - configures `.gwcu` and background-control preferences;
 - enables socket-activated WORLDLINE and the lazy visual observer;
-- retires exact legacy GWCU `ydotoold` / uinput artifacts;
+- removes the old GWCU Cua service, ydotool daemon/uinput rule, desktop-capture extension, Hermes SOUL routing and legacy skill alias when their project ownership is provable;
 - verifies Cua and WORLDLINE health before claiming success.
+
+The published 2.2 installer did not record ownership for pre-existing Cua, the `ydotool` package, or `input`-group membership. Upgrades therefore preserve those ambiguous host-owned pieces instead of guessing and breaking unrelated tools.
 
 The first whole-screen observation can still require separate ScreenCast consent.
 
@@ -182,6 +185,8 @@ Run the installer as the logged-in desktop user, not by wrapping it in `sudo`. I
 ```bash
 curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/uninstall.sh | bash
 ```
+
+The public uninstaller fetches the current cleanup implementation rather than trusting an older installed teardown, so a 2.2-era installation can be removed cleanly after the project advances.
 
 Teardown removes only GWCU-owned integration and transient runtime state. Repo/workspace `.gwcu` content survives. Cua is preserved by default; `--remove-cua` removes only a GWCU-provisioned Cua installation, while `--purge-cua` is the explicit full purge.
 
