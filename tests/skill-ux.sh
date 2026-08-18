@@ -37,7 +37,8 @@ grep -q 'worldline-capture.sh' "$ROOT/SKILL.md" || fail "WORLDLINE surface missi
 grep -q 'Never answer a Cua refusal with raw pointer/keyboard injection' "$ROOT/SKILL.md" || fail "refusal boundary missing"
 grep -q 'No X11 or XWayland session is required' "$ROOT/SKILL.md" || fail "GNOME Wayland contract missing"
 grep -q 'toggles priority for background computer use' "$ROOT/SKILL.md" || fail "background command contract missing"
-pass "skill teaches Cua + WORLDLINE execution"
+grep -q 'documentation lives in `README.md`' "$ROOT/SKILL.md" || fail "skill points at retired docs"
+pass "skill teaches one Cua + WORLDLINE execution contract"
 
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 SURFACE="$ROOT/scripts/computer-use.sh"
@@ -53,9 +54,8 @@ pass "background priority is deterministic, toggled, and installer-visible"
 
 grep -q '^## Maintaining this repository$' "$ROOT/AGENTS.md" || fail "repository guide lost maintenance routing"
 grep -q 'Persistent machine/user truth never belongs in AGENTS.md' "$ROOT/AGENTS.md" || fail "AGENTS permits machine truth"
-test -f "$ROOT/references/skill-ux-contract.md" || fail "skill UX contract missing"
-grep -q 'references/skill-ux-contract.md' "$ROOT/install.sh" || fail "installer does not ship skill UX contract"
-pass "repository/runtime authority remains separated"
+grep -q 'README.md.*only human-facing documentation file' "$ROOT/AGENTS.md" || fail "repository docs authority is unclear"
+pass "repository/runtime/README authority remains separated"
 
 version=$(tr -d '[:space:]' <"$ROOT/VERSION")
 grep -q "^version: ${version}$" "$ROOT/SKILL.md" || fail "skill version mismatch"
