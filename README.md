@@ -1,104 +1,92 @@
 # gnome-wayland-computer-use
 
-**An OS model for computer use on Ubuntu 26.04 GNOME Wayland.**
+**Computer use for Ubuntu 26.04 GNOME Wayland that keeps already-known reality out of the model loop.**
 
-GWCU turns computer use into execution over a known machine. The model supplies intent and handles genuine decisions; local machinery carries everything already determined.
+GWCU sits around [Cua Driver](https://github.com/trycua/cua) and gives an agent a small OS model instead of a screenshot ritual.
 
-> **Information over deliberation. Model calls at decision boundaries.**
->
 > **Cua controls. WORLDLINE knows. `.gwcu` remembers.**
-
-- **Cua Driver** is the sole desktop control authority.
-- **WORLDLINE** maintains transient, revisioned machine state and postconditions.
-- **`.gwcu`** preserves durable repo/workspace truth across sessions.
-- **ScreenCast/PipeWire** is an escalation sensor, not the observation loop.
-
-```text
-                intent / contingent plan
-                         │
-                         ▼
-                   ┌───────────┐
-                   │ WORLDLINE │──── conflict ────→ model
-                   └─────┬─────┘
-              expected   │
-                         ▼
-                  Cua action span
-                         │
-                         ▼
-              GNOME RemoteDesktop
-                   EIS / libei
-                         │
-                         ▼
-                      desktop
-                    ┌────┴────┐
-                    ▼         ▼
-                 AT-SPI    visual sensor
-              direct truth  when needed
-                    └────┬────┘
-                         ▼
-                 next WORLDLINE
-                     revision
-```
-
-**Observation is an interrupt, not a ritual RPC.**
-
-## The inversion
-
-Ordinary computer-use loops repeatedly pay the model to discover that expected things happened:
-
-```text
-observe → model → click → observe → model → type → observe → model → …
-```
-
-GWCU preserves information until evidence invalidates it:
 
 ```text
 model decides
-→ Cua executes the determined span
-→ WORLDLINE observes machine evidence
-→ expected postcondition true
+→ Cua acts
+→ WORLDLINE revises what changed
+→ expected postcondition becomes true
 → continue locally
-→ model only when the next decision changed
+→ model re-enters only when reality creates a new decision
 ```
 
-A click does not erase the known machine. WORLDLINE revises affected facts, preserves unrelated ones, and can establish outcomes from AT-SPI, process/filesystem state, settings, network/task events, or visual evidence when pixels are genuinely required.
+**Observation is an interrupt, not a ritual RPC.** Facts are valid until invalidated.
+
+## What it is
+
+GWCU has one control plane and three kinds of knowledge:
+
+| Layer | Job |
+|---|---|
+| **Cua Driver** | The only desktop actuator. Semantic actions, pixels, pointer, keyboard, verification. |
+| **WORLDLINE** | Transient revisioned state, invalidation, predicates, waits, branches and conflicts. |
+| **`.gwcu`** | Durable repo/workspace truth worth reusing in another session. |
+| **observer** | Optional ScreenCast/PipeWire visual evidence when direct truth is insufficient. |
+
+On GNOME Wayland, Cua uses `org.freedesktop.portal.RemoteDesktop` → EIS/libei for local compositor-approved input. GNOME may label that permission **Remote Desktop** or **remote control**. GWCU installs no RDP/VNC server and no raw-input daemon.
+
+**No X11 or XWayland session is required.**
+
+## Use it
+
+With Hermes, the installed skill owns the native slash command:
+
+```text
+/computer-use open YouTube and play something
+/computer-use rename this file and put it in Downloads
+/computer-use send the message I drafted
+```
+
+Everything after `/computer-use` is a normal task except these reserved operator subcommands:
+
+```text
+/computer-use status
+/computer-use background [on|off|status]
+/computer-use managed [on|off|status]
+/computer-use truths
+/computer-use consent
+/computer-use doctor
+/computer-use help
+```
+
+`/computer-use background` toggles background-control priority. OFF is the default because obvious foreground control is the fastest and most deterministic path. ON prefers background delivery where Cua actually supports it; Cua capability/runtime truth still has final say.
+
+## Why WORLDLINE exists
+
+Ordinary GUI automation repeatedly pays the model to rediscover expected outcomes:
+
+```text
+observe → model → click → observe → model → type → observe → model
+```
+
+GWCU preserves information until an event invalidates it:
 
 ```text
 click Save
 → document.dirty == false
 → predicate satisfied
 → continue
-
-No screenshot. No model turn.
 ```
 
-WORLDLINE is not an agent and not a competing computer-use implementation. It is the continuity layer between model decisions and Cua execution. See [WORLDLINE.md](WORLDLINE.md).
+WORLDLINE is transient. It can ingest authoritative facts from AT-SPI, filesystem/process state, D-Bus, settings, network/task watchers and, only when needed, visual evidence. A revision invalidates affected dependencies while unrelated facts survive.
 
-## Authority
+WORLDLINE never injects input. A real conflict or undeclared branch returns control to the model.
 
-Cua Driver owns semantic/pixel targeting, geometry, activation, pointer and keyboard delivery, verification, effects and structured refusals. GWCU never bypasses Cua with `ydotool`, `/dev/uinput`, guessed focus, or a second control daemon.
+## Determined work stays local
 
-On GNOME Wayland, Cua uses the compositor-approved Remote Desktop portal to obtain its EIS/libei input session. GNOME may label this permission **Remote Desktop** or **remote control**; GWCU does not install a remote-login service.
-
-**No X11 or XWayland session is required.**
-
-## What execution feels like
-
-### Known target
-
-```text
-known target
-→ one already-decided Cua span
-→ WORLDLINE waits on postconditions
-→ continue locally
-→ model at the next real decision boundary
-```
+If two or more Cua actions are already determined by the same evidence, they cross the model/tool boundary once:
 
 ```bash
 ROOT="$HOME/.agents/skills/gnome-wayland-computer-use"
 
 "$ROOT/scripts/computer-use.sh" span --actions-json '{
   "schema":"gwcu.action-span.request.v1",
+  "control":{"foreground_confidence":0.82},
   "actions":[
     {"name":"click","arguments":{"x":640,"y":420}},
     {"name":"type_text","arguments":{"text":"hello"}},
@@ -107,64 +95,32 @@ ROOT="$HOME/.agents/skills/gnome-wayland-computer-use"
 }'
 ```
 
-Two or more consecutive Cua actions determined by the same evidence cross the model/tool boundary once.
+The runner keeps one Cua MCP session open. It splits only when fresh state changes the next decision, identity becomes stale, a branch is undeclared, Cua fails/refuses, or the user must choose.
 
-### Wait on reality
-
-```bash
-"$ROOT/scripts/worldline-capture.sh" \
-  --trigger action:save \
-  --expect-json '[
-    {"path":"settings.color_scheme","op":"eq","value":"prefer-dark"}
-  ]'
-```
-
-Task-specific watchers can push authoritative events into WORLDLINE, so a transaction can wait on `task.download.foo_zip == true` instead of staring at a browser.
-
-### Unknown app or PWA
+Useful local surfaces:
 
 ```bash
+# Wait for a postcondition / capture a WORLDLINE revision
+"$ROOT/scripts/worldline-capture.sh" --trigger action:save \
+  --expect-json '[{"path":"task.document.saved","op":"eq","value":true}]'
+
+# Resolve an uncertain installed app / PWA once
 "$ROOT/scripts/profile.sh" route --machine "ChatGPT"
-```
 
-One local call resolves stable launcher/PWA identity. With managed truth enabled, reusable identity can be written to `.gwcu`, avoiding future rediscovery.
-
-### Host contradiction
-
-```bash
+# Compose refresh + diagnosis after a host contradiction
 "$ROOT/scripts/profile.sh" recover --machine
-```
 
-One recovery call owns the local diagnostic fan-out, including WORLDLINE health.
-
-### Visual uncertainty
-
-```bash
+# Escalate to the visible screen only when needed
 "$ROOT/scripts/observe.sh" --machine --screen /tmp/screen.png
 ```
 
-The observer is socket-activated and keeps ScreenCast/PipeWire warm for a short task burst. WORLDLINE requests it only when semantic/direct evidence is insufficient. Cold ScreenCast session/consent establishment has its own longer timeout; once the stream exists, fresh-frame latency keeps the short capture budget.
+Direct truth beats visual inference. No fixed sleep or screenshot belongs between actions that are already decided.
 
-## MCP
+## `.gwcu`
 
-GWCU maps cleanly onto MCP without making MCP part of the control plane.
+`.gwcu` stores low-churn local truth such as app identity, capability conclusions, calibration and user-authored preferences.
 
-A thin MCP adapter can expose coarse deterministic operations such as **execute a Cua span**, **capture/wait on a WORLDLINE revision**, **route a target**, **recover the host**, and **request visual evidence**. WORLDLINE state can be exposed as read-only resources where useful. The model should see meaningful operations and compact results, not every internal sensor event.
-
-```text
-MCP / agent runtime     invocation boundary
-GWCU                    OS model + deterministic composition
-Cua Driver              desktop authority
-GNOME                    machine
-```
-
-The local scripts remain the canonical mechanics. MCP is an interoperable front door, not a second implementation.
-
-## `.gwcu`: durable truth
-
-WORLDLINE state is transient. `.gwcu` is durable.
-
-`.gwcu` stores low-churn facts such as stable app identity, capability conclusions, calibration and user-authored preferences. It never stores screenshots, task history, transient focus, documents, credentials or WORLDLINE revisions.
+It never stores screenshots, documents, credentials, task history, transient focus/geometry, foreground-confidence guesses or WORLDLINE revisions.
 
 ```json
 {
@@ -186,27 +142,30 @@ GWCU_SCOPE_ROOT override
 → current directory
 ```
 
-Git is an explicit installation dependency. For Git worktrees, managed mode writes `/.gwcu` to the root `.gitignore` **before** creating `.gwcu`. See [GWCU.md](GWCU.md).
+For Git worktrees, managed mode writes `/.gwcu` to the root `.gitignore` before creating the truth file. Live Cua/WORLDLINE evidence wins over cached truth on contradiction.
 
-## Installation
+## Install
 
 ```bash
 curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh | bash
 ```
 
-The installer qualifies Ubuntu 26.04 GNOME Wayland; repairs the portal/PipeWire/AT-SPI/Python GI/Git foundation; installs or qualifies pinned Cua Driver; records Cua ownership immediately; installs the Cua GNOME helper; retires exact legacy GWCU `ydotoold` and uinput artifacts during upgrades; establishes persistent RemoteDesktop consent; deploys the portable Agent Skill metadata plus optional Hermes integration; configures managed `.gwcu`; installs socket-activated WORLDLINE/observer services; and verifies Cua + WORLDLINE health.
+The installer:
 
-When Hermes is present the installer asks before wiring the `/computer-use` integration and asks managed-truth and background-priority preferences. The `computer-use` skill is always replaced with the GWCU skill (the previous copy is archived and restored by teardown); stale duplicate Hermes plugins are retired so the project's `/computer-use` is the one that runs. The installer finishes by printing the uninstall and teardown commands.
+- qualifies Ubuntu 26.04 GNOME Wayland;
+- repairs Git, portal, PipeWire, AT-SPI and Python GI dependencies;
+- installs or reuses pinned Cua Driver `0.19.3`;
+- installs Cua's GNOME helper;
+- establishes persistent RemoteDesktop consent with a pointer-only bootstrap;
+- installs the Agent Skill plus optional Hermes integration;
+- configures `.gwcu` and background-control preferences;
+- enables socket-activated WORLDLINE and the lazy visual observer;
+- retires exact legacy GWCU `ydotoold` / uinput artifacts;
+- verifies Cua and WORLDLINE health before claiming success.
 
-The first explicit whole-screen capture may still require separate ScreenCast consent.
+The first whole-screen observation can still require separate ScreenCast consent.
 
-```bash
-/computer-use status
-/computer-use consent
-/computer-use managed status
-/computer-use truths
-/computer-use doctor
-```
+Run the installer as the logged-in desktop user, not by wrapping it in `sudo`. It uses narrow privilege boundaries when needed.
 
 ## Uninstall
 
@@ -214,17 +173,31 @@ The first explicit whole-screen capture may still require separate ScreenCast co
 curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/uninstall.sh | bash
 ```
 
-The curl-pipe entry point only trusts an adjacent teardown when the uninstaller itself is a real file; stdin execution cannot resolve scripts from the caller's working directory. Teardown removes only skill/plugin directories carrying GWCU's managed marker — including every GWCU-owned Hermes plugin copy so a stale duplicate cannot keep `/computer-use` registered — restores archived components safely, and preserves repo/workspace `.gwcu` files. Cua is preserved by default; `--remove-cua` uses durable provisioning ownership, while `--purge-cua` is an explicit full purge.
+Teardown removes only GWCU-owned integration and transient runtime state. Repo/workspace `.gwcu` content survives. Cua is preserved by default; `--remove-cua` removes only a GWCU-provisioned Cua installation, while `--purge-cua` is the explicit full purge.
 
-## Design rules
+## Invariants
 
-- Cua changes the desktop.
-- WORLDLINE explains what changed and what remains valid.
-- Direct truth beats visual inference.
-- Predicates replace ritual re-observation.
-- Determined mechanics stay inside one local call.
-- `.gwcu` contains durable truth, never prompt prose.
-- A real conflict returns control to the model.
-- Install and teardown mutate only state they can prove they own.
+- **Cua is the only actuator.** No `ydotool`, `/dev/uinput`, guessed focus, project RDP/VNC server or second control daemon.
+- **WORLDLINE is read-only knowledge machinery.** Events and predicates do not gain input authority.
+- **Facts are valid until invalidated.** Revisions preserve unrelated knowledge.
+- **Postconditions replace ritual observation.** Model calls happen at decision boundaries.
+- **`.gwcu` is durable only.** Runtime state stays transient.
+- **Direct truth beats pixels.** Visual evidence is escalation, not ceremony.
+- **Install and teardown mutate only state they can prove they own.**
 
-See [DETERMINISM.md](DETERMINISM.md) for the constitution, [CAPABILITIES.md](CAPABILITIES.md) for runtime boundaries, and [PERF_NOTES.md](PERF_NOTES.md) for latency/call economics.
+## Project map
+
+```text
+SKILL.md                 runtime behavior contract
+AGENTS.md                repository / installation instructions for agents
+scripts/action-span.py   one-session Cua spans + control arbitration
+scripts/worldline.py     revision store, predicates, waits, conflicts
+scripts/profile.sh       app routing, truth composition, recovery
+scripts/truths.py        .gwcu scope and persistence
+scripts/observer.py      warm ScreenCast/PipeWire visual sensor
+scripts/computer-use.sh  operator subcommands + internal composition surface
+install.sh               qualified install / upgrade path
+uninstall.sh             safe removal entry point
+```
+
+Human-facing project documentation lives here, in this README. Runtime contracts stay with the runtime (`SKILL.md`); repository instructions stay with the repository (`AGENTS.md`).
