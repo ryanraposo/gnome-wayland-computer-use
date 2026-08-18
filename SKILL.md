@@ -21,6 +21,24 @@ Use **Cua Driver as the control authority**. WORLDLINE owns transient revisioned
 
 Cua owns semantic/pixel actions, target state, geometry, activation, input delivery, cursor behavior, effects, escalation and structured refusals. WORLDLINE never injects input.
 
+## Invocation contract
+
+`/computer-use <task>` is the primary user-facing entry point. Hermes loads this installed skill and attaches everything after `/computer-use` as the user's instruction. Treat that text exactly like a normal computer-use request; do not parse the first word as an operator command unless it is one of the reserved subcommands below.
+
+Reserved subcommands are `status`, `background`, `managed`, `truths`, `consent`, `doctor`, and `help`. For those forms, invoke the installed operator surface once and return its result:
+
+```text
+/computer-use status
+/computer-use background [on|off|status]
+/computer-use managed [on|off|status]
+/computer-use truths
+/computer-use consent
+/computer-use doctor
+/computer-use help
+```
+
+Everything else is a task. For example, `/computer-use open YouTube and play something` means perform that task with this skill loaded; it is not an unknown `open` subcommand.
+
 ## GNOME portal contract
 
 GNOME Wayland is the intended session. **No X11 or XWayland session is required.** Cua uses GNOME's `org.freedesktop.portal.RemoteDesktop` API for a local EIS/libei pointer/keyboard session. GNOME may label this permission "Remote Desktop". GWCU installs no RDP/VNC server or raw-input daemon. Whole-screen observation is separately consented through ScreenCast/PipeWire.
@@ -177,6 +195,7 @@ Do not add a screenshot merely to feel certain. Report real failures and unresol
 ## Operator surfaces
 
 ```bash
+/computer-use <task>
 /computer-use status
 /computer-use background [on|off|status]
 /computer-use consent
