@@ -1,8 +1,18 @@
+```text
+                         ▄  ▄▄  ▄▄▄▄
+                            ▄▀ 0x0 ▀▄
+                             █  ───  █
+                             █  ███  █
+                              ▀▀   ▀▀
+```
+
 # gnome-wayland-computer-use
 
-**Computer use for Ubuntu 26.04 GNOME Wayland that keeps already-known reality out of the model loop.**
+[Install](#install) · [Capabilities](#what-it-is) · [Performance](#why-worldline-exists) · [How it works](#use-it) · [Uninstall](#uninstall)
 
-GWCU sits around [Cua Driver](https://github.com/trycua/cua) and gives an agent a small OS model instead of a screenshot ritual.
+---
+
+Agents have variable success using Linux. This project makes computer use dependable on the most popular Linux desktop out there, **Ubuntu 26.**
 
 > **Cua controls. WORLDLINE knows. `.gwcu` remembers.**
 
