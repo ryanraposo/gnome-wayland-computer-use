@@ -3,113 +3,105 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="description" content="Computer use for Ubuntu 26.04 GNOME Wayland. Cua controls. WORLDLINE knows. .gwcu remembers.">
-<meta name="theme-color" content="#ffffff">
+<meta name="description" content="Dependable computer use for Ubuntu 26.04 GNOME Wayland.">
+<meta name="theme-color" content="#0d1016">
 <title>gnome-wayland-computer-use</title>
 <style>
-:root{--ink:#111;--muted:#666;--faint:#9a9a9a;--line:#dedede;--soft:#f7f7f5;--soft2:#fbfbfa;--max:760px}
+:root{color-scheme:dark;--bg:#0d1016;--panel:#1d1f24;--panel2:#141820;--ink:#f4f5f7;--muted:#b8bec8;--faint:#7f8793;--line:#303641;--accent:#2f88ff;--max:980px}
 *{box-sizing:border-box}
 html{scroll-behavior:smooth}
-body{margin:0;background:#fff;color:var(--ink);font:14px/1.62 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;-webkit-font-smoothing:antialiased}
-a{color:inherit;text-underline-offset:3px}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;-webkit-font-smoothing:antialiased}
+a{color:var(--accent);text-underline-offset:4px;text-decoration-thickness:1px}
 button{font:inherit}
-.wrap{width:min(var(--max),calc(100% - 36px));margin:auto}
-header{padding:34px 0 18px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);gap:18px}
-.wordmark{font-weight:700;letter-spacing:-.02em}.meta{color:var(--faint);font-size:11px;text-align:right}
-.hero{padding:66px 0 42px;text-align:center}
-.little-guy{display:inline-block;white-space:pre;text-align:left;font-size:14px;line-height:1.12;margin:0 auto 24px;transform-origin:50% 100%;transition:transform .18s ease;user-select:none}
-.little-guy:hover{transform:rotate(-2deg) translateY(-2px)}
-h1{font-size:clamp(29px,6vw,48px);line-height:1.08;letter-spacing:-.055em;margin:0 auto 18px;max-width:720px;font-weight:750}
-.lede{max-width:630px;margin:0 auto;color:var(--muted);font-size:15px;line-height:1.7}
-.motto{display:inline-block;margin-top:22px;padding:6px 10px;border:1px solid var(--line);border-radius:999px;color:#444;background:var(--soft2);font-size:11px}
-.actions{display:flex;justify-content:center;gap:9px;flex-wrap:wrap;margin-top:25px}
-.btn{display:inline-flex;align-items:center;justify-content:center;min-height:38px;padding:8px 13px;border:1px solid #bbb;border-radius:7px;text-decoration:none;background:#fff;cursor:pointer;transition:.12s ease}
-.btn:hover{border-color:#777;background:var(--soft)}.btn.primary{background:var(--ink);color:#fff;border-color:var(--ink)}.btn.primary:hover{background:#2b2b2b}
-section{padding:38px 0;border-top:1px solid var(--line)}
-.eyebrow{color:var(--faint);font-size:10px;letter-spacing:.13em;text-transform:uppercase;margin-bottom:8px}
-h2{margin:0 0 10px;font-size:20px;letter-spacing:-.035em;line-height:1.25}
-.sub{margin:0 0 20px;color:var(--muted);max-width:660px}
-.flow{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:stretch}
-.flow-card{border:1px solid var(--line);border-radius:8px;background:var(--soft2);padding:15px}.flow-arrow{align-self:center;color:var(--faint)}
-.flow-card strong{display:block;font-size:12px;margin-bottom:8px}.flow-card pre{margin:0;padding:0;border:0;background:transparent;color:#555;font-size:11px;line-height:1.55}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.card{padding:15px;border:1px solid var(--line);border-radius:8px;background:#fff}.card strong{display:block;font-size:12px;margin-bottom:5px}.card p{margin:0;color:var(--muted);font-size:12px}
-.command{border:1px solid var(--line);border-radius:9px;background:var(--soft);padding:15px 16px;margin-top:15px;display:flex;gap:12px;align-items:center}.command code{flex:1;overflow:auto;white-space:nowrap;scrollbar-width:none;font-size:12px}.command code::-webkit-scrollbar{display:none}
-.copy{flex:0 0 auto;width:32px;height:30px;border:1px solid #bbb;border-radius:6px;background:#fff;color:#555;cursor:pointer;display:grid;place-items:center}.copy:hover{color:#000;border-color:#888}
-.stack{border-left:1px solid var(--line);margin:18px 0 0 8px;padding-left:18px}.stack-row{position:relative;padding:5px 0 14px}.stack-row:before{content:"";position:absolute;left:-22px;top:10px;width:7px;height:7px;border:1px solid #888;border-radius:50%;background:#fff}.stack-row strong{font-size:12px}.stack-row span{display:block;color:var(--muted);font-size:12px;margin-top:2px}
-.slash{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px}.slash pre{margin:0;border:1px solid var(--line);border-radius:8px;background:var(--soft2);padding:14px;font-size:11px;line-height:1.65;white-space:pre-wrap}
-.note{margin-top:16px;border-left:2px solid var(--ink);padding:8px 0 8px 14px;color:var(--muted);font-size:12px}
-footer{padding:34px 0 48px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:flex-end;gap:20px;color:var(--faint);font-size:11px}.footer-links{display:flex;gap:14px}.footer-links a{color:#333;text-decoration:none}.footer-links a:hover{text-decoration:underline}
-.tiny-guy{white-space:pre;line-height:1.05;color:#777;font-size:9px;text-align:right}
-@media(max-width:620px){header{align-items:flex-start}.meta{max-width:180px}.hero{padding-top:48px}.flow{grid-template-columns:1fr}.flow-arrow{transform:rotate(90deg);justify-self:center}.grid,.slash{grid-template-columns:1fr}footer{align-items:flex-start}.tiny-guy{display:none}}
+.wrap{width:min(var(--max),calc(100% - 44px));margin:auto;padding:14px 0 54px}
+.hero{padding-top:0;text-align:center}
+.mascot-card{min-height:300px;border-radius:18px;background:var(--panel);display:grid;place-items:center;margin:0 0 70px;box-shadow:0 1px 0 rgba(255,255,255,.02) inset}
+.little-guy{white-space:pre;text-align:left;font-size:21px;line-height:1.25;margin:0;color:#fff;transform-origin:50% 100%;transition:transform .16s ease;user-select:none}
+.little-guy:hover{transform:translateY(-3px) rotate(-1deg)}
+h1{font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:clamp(42px,7.5vw,72px);line-height:1.15;letter-spacing:-.035em;margin:0 auto 36px;max-width:940px;font-weight:700;overflow-wrap:anywhere}
+.hero-rule{height:2px;background:var(--line);border:0;margin:0 0 42px}
+.jump{display:flex;justify-content:center;align-items:center;gap:9px 13px;flex-wrap:wrap;font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:clamp(17px,2.8vw,22px);line-height:1.6;margin:0 auto 70px;max-width:900px}
+.jump .dot{color:#f4f5f7}
+.major-rule{height:9px;background:#3a414d;border:0;margin:0 0 65px}
+.description{font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:clamp(22px,3.5vw,31px);line-height:1.6;letter-spacing:-.012em;text-align:left;margin:0 0 70px;color:#f0f1f3}
+.description strong{font-weight:750;color:#fff}
+section{padding:48px 0;border-top:1px solid var(--line)}
+.eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:.14em;color:var(--faint);margin-bottom:9px}
+h2{font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:clamp(27px,4vw,38px);line-height:1.2;letter-spacing:-.025em;margin:0 0 22px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.card{border:1px solid var(--line);background:var(--panel2);border-radius:10px;padding:18px}.card strong{display:block;color:#fff;margin-bottom:6px}.card span{color:var(--muted);font-size:14px}
+.flow{display:grid;grid-template-columns:1fr 1fr;gap:12px}.flow pre,.slash pre{margin:0;border:1px solid var(--line);border-radius:10px;background:var(--panel2);padding:18px;white-space:pre-wrap;font-size:14px;line-height:1.65;color:#d9dde4}
+.slash{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:20px}
+.command{border:1px solid var(--line);border-radius:10px;background:var(--panel2);padding:17px 18px;display:flex;align-items:center;gap:14px;margin-top:18px}.command code{flex:1;overflow:auto;white-space:nowrap;scrollbar-width:none;font-size:13px}.command code::-webkit-scrollbar{display:none}
+.copy{flex:0 0 auto;width:34px;height:32px;display:grid;place-items:center;border:1px solid #4a5260;border-radius:6px;background:#20252d;color:#d8dce2;cursor:pointer}.copy:hover{border-color:#6c7686;color:#fff}
+.note{border-left:3px solid #59616f;padding:7px 0 7px 15px;margin-top:22px;color:var(--muted);font-size:14px}
+footer{padding:42px 0 0;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:flex-end;gap:24px;color:var(--faint);font-size:12px}.footer-links{display:flex;gap:15px;flex-wrap:wrap}.footer-links a{color:#aeb5c0}.tiny-guy{white-space:pre;line-height:1.05;color:#777f8b;font-size:10px;text-align:right}
+@media(max-width:680px){.wrap{width:min(100% - 28px,var(--max));padding-top:10px}.mascot-card{min-height:240px;margin-bottom:48px}.little-guy{font-size:17px}h1{margin-bottom:28px}.hero-rule{margin-bottom:30px}.jump{margin-bottom:48px}.major-rule{margin-bottom:46px}.description{margin-bottom:50px}.grid,.flow,.slash{grid-template-columns:1fr}footer{align-items:flex-start}.tiny-guy{display:none}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.little-guy{transition:none}.little-guy:hover{transform:none}}
 </style>
 </head>
 <body>
 <div class="wrap">
-<header>
-  <div class="wordmark">gnome-wayland-computer-use</div>
-  <div class="meta">Ubuntu 26.04 · GNOME Wayland · Cua Driver</div>
-</header>
-
 <main>
-<section class="hero" style="border-top:0">
-<pre class="little-guy" aria-label="GWCU little guy">▄ ▄▄ ▄▄▄▄
+<section class="hero" style="border-top:0;padding-top:0">
+  <div class="mascot-card">
+<pre class="little-guy" aria-label="GWCU little guy">▄  ▄▄  ▄▄▄▄
    ▄▀ 0x0 ▀▄
     █  ───  █
     █  ███  █
      ▀▀   ▀▀</pre>
-<h1>Computer use that remembers what just happened.</h1>
-<p class="lede">GWCU gives agents a small OS model for GNOME Wayland. Cua controls the desktop. WORLDLINE keeps live state coherent. <code>.gwcu</code> remembers the durable bits for later.</p>
-<div class="motto">information over deliberation · model calls at decision boundaries</div>
-<div class="actions">
-  <a class="btn primary" href="#install">install</a>
-  <a class="btn" href="https://github.com/ryanraposo/gnome-wayland-computer-use#readme">readme</a>
-  <a class="btn" href="https://github.com/ryanraposo/gnome-wayland-computer-use">github</a>
-</div>
+  </div>
+
+  <h1>gnome-wayland-computer-use</h1>
+  <hr class="hero-rule">
+
+  <nav class="jump" aria-label="Page sections">
+    <a href="#install">Install</a><span class="dot">·</span>
+    <a href="#capabilities">Capabilities</a><span class="dot">·</span>
+    <a href="#performance">Performance</a><span class="dot">·</span>
+    <a href="#how-it-works">How it works</a><span class="dot">·</span>
+    <a href="#diagnose">Diagnose</a><span class="dot">·</span>
+    <a href="#uninstall">Uninstall</a>
+  </nav>
+
+  <hr class="major-rule">
+
+  <p class="description">Agents have variable success using Linux. This project makes computer use dependable on the most popular Linux desktop out there, <strong>Ubuntu 26.</strong></p>
 </section>
 
-<section>
-<div class="eyebrow">the idea</div>
-<h2>Observation is an interrupt, not a ritual.</h2>
-<p class="sub">Most UI transitions do not need another model turn. Facts stay valid until something actually invalidates them; expected outcomes can wake the next deterministic step locally.</p>
-<div class="flow">
-  <div class="flow-card">
-    <strong>ordinary loop</strong>
-    <pre>observe → model
-click
-observe → model
-type
-observe → model</pre>
+<section id="capabilities">
+  <div class="eyebrow">capabilities</div>
+  <h2>One machine. One control authority.</h2>
+  <div class="grid">
+    <div class="card"><strong>Cua Driver</strong><span>The only desktop actuator: semantic actions, pixels, pointer, keyboard and verification.</span></div>
+    <div class="card"><strong>WORLDLINE</strong><span>Transient revisions, invalidation, predicates, waits, branches and conflicts.</span></div>
+    <div class="card"><strong>.gwcu</strong><span>Durable repo/workspace truth worth reusing in another session.</span></div>
+    <div class="card"><strong>Visual observer</strong><span>ScreenCast/PipeWire evidence only when direct machine truth is insufficient.</span></div>
   </div>
-  <div class="flow-arrow">→</div>
-  <div class="flow-card">
-    <strong>GWCU</strong>
-    <pre>model decides
-Cua acts
+</section>
+
+<section id="performance">
+  <div class="eyebrow">performance</div>
+  <h2>Observation is an interrupt, not a ritual.</h2>
+  <div class="flow">
+<pre>ordinary computer use
+
+observe → model → click
+observe → model → type
+observe → model → verify</pre>
+<pre>GWCU
+
+model decides → Cua acts
 WORLDLINE revises
 predicate becomes true
 continue locally</pre>
   </div>
-</div>
 </section>
 
-<section>
-<div class="eyebrow">one machine, one authority</div>
-<h2>Cua changes things. WORLDLINE knows things.</h2>
-<div class="stack">
-  <div class="stack-row"><strong>model</strong><span>intent, judgement, genuine decisions</span></div>
-  <div class="stack-row"><strong>WORLDLINE</strong><span>transient revisions, invalidation, predicates, waits, conflicts</span></div>
-  <div class="stack-row"><strong>Cua Driver</strong><span>the only pointer / keyboard / semantic desktop authority</span></div>
-  <div class="stack-row"><strong>GNOME Wayland</strong><span>RemoteDesktop → EIS/libei, AT-SPI, optional ScreenCast/PipeWire evidence</span></div>
-</div>
-<div class="note">No project RDP/VNC server. No <code>ydotool</code>. No <code>/dev/uinput</code> fallback. No second actuator hiding under the floorboards.</div>
-</section>
-
-<section>
-<div class="eyebrow">slash it</div>
-<h2>One command surface.</h2>
-<p class="sub">Use <code>/computer-use</code> like a normal instruction, or ask the same surface for operator state.</p>
-<div class="slash">
+<section id="how-it-works">
+  <div class="eyebrow">how it works</div>
+  <h2>Slash it, then talk normally.</h2>
+  <div class="slash">
 <pre>/computer-use open YouTube
 and play something
 
@@ -121,42 +113,45 @@ and move it to Downloads</pre>
 /computer-use truths
 /computer-use consent
 /computer-use doctor</pre>
-</div>
-</section>
-
-<section>
-<div class="eyebrow">why it is fast</div>
-<h2>Keep determined mechanics local.</h2>
-<div class="grid">
-  <div class="card"><strong>action spans</strong><p>Already-decided Cua actions share one MCP session instead of bouncing through the model.</p></div>
-  <div class="card"><strong>postconditions</strong><p>Wait for the fact that matters instead of repeatedly asking a screenshot what happened.</p></div>
-  <div class="card"><strong>direct truth first</strong><p>AT-SPI, filesystem, process, D-Bus and settings evidence beat pixels when they can answer cleanly.</p></div>
-  <div class="card"><strong>durable truth</strong><p><code>.gwcu</code> remembers stable app identity, capabilities, calibration and preferences across sessions.</p></div>
-</div>
+  </div>
+  <div class="note">Cua changes the desktop. WORLDLINE knows what changed. <code>.gwcu</code> remembers durable truth. No project RDP/VNC server, <code>ydotool</code>, <code>/dev/uinput</code> fallback, or second actuator.</div>
 </section>
 
 <section id="install">
-<div class="eyebrow">install</div>
-<h2>One installer. Then use the computer.</h2>
-<p class="sub">The installer qualifies Ubuntu 26.04 GNOME Wayland, prepares Cua and its GNOME helper, establishes compositor-approved control consent, installs the Agent Skill, and enables WORLDLINE plus the lazy visual observer.</p>
-<div class="command">
-  <code id="install-command">curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh | bash</code>
-  <button class="copy" id="copy" type="button" aria-label="Copy install command" title="Copy install command" onclick="copyInstall()">
-    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="10" height="12" rx="1"/><path d="M5 1h6a1 1 0 0 1 1 1v2"/></svg>
-  </button>
-</div>
-<div class="note">Run it as your logged-in desktop user. GNOME may show a “Remote Desktop” permission prompt for local EIS/libei control. Whole-screen observation has its own ScreenCast consent boundary.</div>
+  <div class="eyebrow">install</div>
+  <h2>One installer for the full stack.</h2>
+  <div class="command">
+    <code id="install-command">curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh | bash</code>
+    <button class="copy" id="copy" type="button" aria-label="Copy install command" title="Copy install command" onclick="copyInstall()">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="10" height="12" rx="1"/><path d="M5 1h6a1 1 0 0 1 1 1v2"/></svg>
+    </button>
+  </div>
+  <div class="note">Run as the logged-in desktop user. GNOME may show a “Remote Desktop” prompt for local EIS/libei control. Whole-screen observation has its own ScreenCast consent boundary.</div>
+</section>
+
+<section id="diagnose">
+  <div class="eyebrow">diagnose</div>
+  <h2>Ask the same surface what is wrong.</h2>
+<pre style="margin:0;border:1px solid var(--line);border-radius:10px;background:var(--panel2);padding:18px;color:#d9dde4">/computer-use status
+/computer-use doctor
+/computer-use consent</pre>
+</section>
+
+<section id="uninstall">
+  <div class="eyebrow">uninstall</div>
+  <h2>Leave cleanly.</h2>
+  <div class="command">
+    <code>curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/uninstall.sh | bash</code>
+  </div>
+  <div class="note">Teardown removes GWCU-owned integration and transient runtime state while preserving repo/workspace <code>.gwcu</code>. Cua is preserved by default.</div>
 </section>
 </main>
 
 <footer>
-  <div>
-    <div class="footer-links">
-      <a href="https://github.com/ryanraposo/gnome-wayland-computer-use#readme">readme</a>
-      <a href="https://github.com/ryanraposo/gnome-wayland-computer-use">source</a>
-      <a href="https://github.com/ryanraposo">ryanraposo</a>
-    </div>
-    <div style="margin-top:7px">Cua controls · WORLDLINE knows · .gwcu remembers</div>
+  <div class="footer-links">
+    <a href="https://github.com/ryanraposo/gnome-wayland-computer-use#readme">README</a>
+    <a href="https://github.com/ryanraposo/gnome-wayland-computer-use">GitHub</a>
+    <a href="https://github.com/ryanraposo">ryanraposo</a>
   </div>
 <pre class="tiny-guy" aria-hidden="true">▄ ▄▄ ▄▄▄▄
  ▄▀ 0x0 ▀▄

@@ -29,10 +29,15 @@ pass "README is the only human-facing project documentation"
 
 site="$ROOT/index.html"
 grep -Fq '0x0' "$site" || fail "landing page lost the little guy"
-grep -Fq 'Computer use that remembers what just happened.' "$site" || fail "landing page lost clear product statement"
+grep -Fq '<h1>gnome-wayland-computer-use</h1>' "$site" || fail "landing page lost original-style title"
+[ "$(grep -Fc 'class="description"' "$site")" -eq 1 ] || fail "landing page must contain one primary description element"
+[ "$(grep -Fc 'Agents have variable success using Linux.' "$site")" -eq 1 ] || fail "landing page must use the lower original description exactly once"
+! grep -Fq 'Computer use that remembers what just happened.' "$site" || fail "landing page still carries the discarded first description"
 grep -Fq '/computer-use open YouTube' "$site" || fail "landing page lost task-form slash UX"
 grep -Fq 'curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh | bash' "$site" || fail "landing page install command drifted"
 grep -Fq 'prefers-reduced-motion' "$site" || fail "landing page lost reduced-motion handling"
+grep -Fq 'background:var(--bg)' "$site" || fail "landing page lost dark little-guy visual language"
+grep -Fq 'mascot-card' "$site" || fail "landing page lost mascot panel"
 for retired in WORLDLINE.md GWCU.md DETERMINISM.md CAPABILITIES.md PERF_NOTES.md; do ! grep -Fq "$retired" "$site" || fail "landing page links retired doc: $retired"; done
 pass "little-guy landing page stays current, accessible and README-only"
 
