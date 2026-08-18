@@ -120,6 +120,15 @@ PY
 fi
 ok "Ubuntu native foundation qualified"
 
+# Public main <=2.2 installed its own Cua service, ydotool/uinput plane,
+# desktop-capture extension and Hermes routing. Retire those before touching the
+# new Cua/portal path so two generations never run concurrently during upgrade.
+MIGRATOR="$TMP/migrate-main.sh"
+get_file scripts/migrate-main.sh "$MIGRATOR"; chmod +x "$MIGRATOR"
+migration_args=(--repair --state "$STATE")
+$COMPAT && migration_args+=(--compat)
+"$MIGRATOR" "${migration_args[@]}" || die "Could not repair an older published GWCU installation"
+
 info "[2/8] Installing / qualifying pinned Cua Driver $CUA_DRIVER_RS_VERSION"
 ensure_managed_path; CUA=$(resolve_cua || true); CUA_INSTALLED_BY_GWCU=false
 if [ -n "$CUA" ] && "$CUA" --version 2>/dev/null | grep -Fq "$CUA_DRIVER_RS_VERSION"; then
@@ -143,7 +152,7 @@ gnome-extensions enable winrects@cua 2>/dev/null || true
 RELOAD_REQUIRED=false; gnome-extensions info winrects@cua >/dev/null 2>&1 && gnome-extensions info winrects@cua 2>/dev/null | grep -qi 'State: ACTIVE' || RELOAD_REQUIRED=true
 
 info "[4/8] Installing GWCU runtime, skill and WORLDLINE"
-FILES=(VERSION README.md agents/openai.yaml scripts/action-span.py scripts/app-identity.sh scripts/capture.sh scripts/check-update.sh scripts/computer-use.sh scripts/cua-health.py scripts/diagnose.sh scripts/mcp_client.py scripts/observe.sh scripts/observer.py scripts/portal-control.py scripts/profile.sh scripts/teardown.sh scripts/truths.py scripts/worldline.py scripts/worldline-capture.sh systemd/user/gnome-wayland-computer-use-observer.socket systemd/user/gnome-wayland-computer-use-observer.service systemd/user/gnome-wayland-computer-use-worldline.socket systemd/user/gnome-wayland-computer-use-worldline.service)
+FILES=(VERSION README.md agents/openai.yaml scripts/action-span.py scripts/app-identity.sh scripts/capture.sh scripts/check-update.sh scripts/computer-use.sh scripts/cua-health.py scripts/diagnose.sh scripts/mcp_client.py scripts/migrate-main.sh scripts/observe.sh scripts/observer.py scripts/portal-control.py scripts/profile.sh scripts/teardown.sh scripts/truths.py scripts/worldline.py scripts/worldline-capture.sh systemd/user/gnome-wayland-computer-use-observer.socket systemd/user/gnome-wayland-computer-use-observer.service systemd/user/gnome-wayland-computer-use-worldline.socket systemd/user/gnome-wayland-computer-use-worldline.service)
 rm -rf "$TMP/bundle"; mkdir -p "$TMP/bundle"
 for f in "${FILES[@]}"; do get_file "$f" "$TMP/bundle/$f"; done
 get_file SKILL.md "$TMP/bundle/SKILL.md"
@@ -225,19 +234,12 @@ PY
 fi
 ok "Preferences + control consent prepared"
 
-info "[6/8] Retiring stale project control artifacts"
-LEGACY="$HOME/.config/systemd/user/gnome-wayland-computer-use.service"; if [ -f "$LEGACY" ]; then systemctl --user disable --now gnome-wayland-computer-use.service 2>/dev/null || true; rm -f "$LEGACY"; fi
-LEGACY_YDO="$HOME/.config/systemd/user/ydotoold.service"
-if [ -f "$LEGACY_YDO" ] && grep -q 'Description=ydotool uinput daemon' "$LEGACY_YDO"; then
-  systemctl --user disable --now ydotoold.service 2>/dev/null || true; rm -f "$LEGACY_YDO"
-fi
-LEGACY_RULE='/etc/udev/rules.d/80-gnome-wayland-computer-use.rules'
-LEGACY_RULE_VALUE='KERNEL=="uinput", GROUP="input", MODE="0660", TAG+="uaccess", OPTIONS+="static_node=uinput"'
-if [ -f "$LEGACY_RULE" ] && grep -Fxq "$LEGACY_RULE_VALUE" "$LEGACY_RULE"; then
-  $COMPAT && warn "compat mode: obsolete GWCU uinput rule remains at $LEGACY_RULE" || { as_root rm -f "$LEGACY_RULE"; as_root udevadm control --reload-rules 2>/dev/null || true; }
-fi
+info "[6/8] Verifying published-main repair and single control plane"
+verify_args=(--verify --state "$STATE")
+$COMPAT && verify_args+=(--compat)
+"$MIGRATOR" "${verify_args[@]}" || die "An older published GWCU control artifact still conflicts with the new runtime"
 systemctl --user daemon-reload 2>/dev/null || true
-ok "Legacy GWCU raw-input plane retired; Cua is the only actuator"
+ok "Legacy published-main control plane retired; Cua is the only actuator"
 
 info "[7/8] Enabling WORLDLINE + lazy ScreenCast observer"
 UNIT_DIR="$HOME/.config/systemd/user"; mkdir -p "$UNIT_DIR"
