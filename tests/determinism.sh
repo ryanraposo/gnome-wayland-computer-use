@@ -27,6 +27,15 @@ for retired in WORLDLINE.md GWCU.md DETERMINISM.md CAPABILITIES.md PERF_NOTES.md
 done
 pass "README is the only human-facing project documentation"
 
+site="$ROOT/index.html"
+grep -Fq '0x0' "$site" || fail "landing page lost the little guy"
+grep -Fq 'Computer use that remembers what just happened.' "$site" || fail "landing page lost clear product statement"
+grep -Fq '/computer-use open YouTube' "$site" || fail "landing page lost task-form slash UX"
+grep -Fq 'curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh | bash' "$site" || fail "landing page install command drifted"
+grep -Fq 'prefers-reduced-motion' "$site" || fail "landing page lost reduced-motion handling"
+for retired in WORLDLINE.md GWCU.md DETERMINISM.md CAPABILITIES.md PERF_NOTES.md; do ! grep -Fq "$retired" "$site" || fail "landing page links retired doc: $retired"; done
+pass "little-guy landing page stays current, accessible and README-only"
+
 ! grep -Eq 'ydotool|/dev/uinput' "$ROOT/scripts/worldline.py" || fail "WORLDLINE owns input"
 ! grep -Eq 'ExecStart=.*cua-driver.*serve' "$ROOT/install.sh" || fail "installer creates a Cua daemon"
 grep -q 'Cua Driver as the control authority' "$ROOT/SKILL.md" || fail "skill lost single actuator"
