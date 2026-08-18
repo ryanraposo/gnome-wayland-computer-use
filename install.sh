@@ -23,7 +23,8 @@ worldline_request(){
   local i rdir sock
   rdir="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/$NAME"
   sock="$rdir/worldline.sock"
-  for i in 1 2 3 4 5 6 7 8; do
+  sleep 3
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
     if [ -S "$sock" ] && "$PYTHON" "$PRIMARY/scripts/worldline.py" request --json '{"op":"status"}' >/dev/null 2>&1; then return 0; fi
     if [ -S "$sock" ]; then sleep 1; continue; fi
     systemctl --user stop gnome-wayland-computer-use-worldline.service >/dev/null 2>&1 || true
