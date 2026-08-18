@@ -20,7 +20,7 @@ def _backend() -> Path:
     for path in candidates:
         if path.is_file():
             return path
-    return candidates[0]
+    return candidates[-1]
 
 
 def _run(raw_args: str) -> str:

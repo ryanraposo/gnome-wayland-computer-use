@@ -15,6 +15,24 @@ warn(){ printf '\033[33m[WARN]\033[0m %s\n' "$*"; }
 die(){ printf '\033[31m[ERROR]\033[0m %s\n' "$*" >&2; exit 1; }
 as_root(){ if command -v pkexec >/dev/null; then pkexec "$@"; elif command -v sudo >/dev/null; then sudo "$@"; else die "pkexec or sudo is required"; fi; }
 get_file(){ local r=$1 d=$2; mkdir -p "$(dirname "$d")"; if [ -n "$SELF" ] && [ -f "$SELF/$r" ]; then cp "$SELF/$r" "$d"; else curl -fsSL --retry 3 --retry-delay 1 -o "$d" "$BASE_URL/$r" || die "download failed: $r"; fi; }
+# worldline_request: prove the WORLDLINE socket serves status. The unit can be
+# left with a stale pathname (active but file missing) and the first
+# socket-activated request races service startup, so re-arm the socket and retry.
+worldline_request(){
+  local i rdir sock
+  rdir="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/$NAME"
+  sock="$rdir/worldline.sock"
+  for i in 1 2 3 4 5 6 7 8; do
+    if [ -S "$sock" ] && /usr/bin/python3 "$PRIMARY/scripts/worldline.py" request --json '{"op":"status"}' >/dev/null 2>&1; then return 0; fi
+    if [ -S "$sock" ]; then sleep 1; continue; fi
+    systemctl --user stop gnome-wayland-computer-use-worldline.service >/dev/null 2>&1 || true
+    systemctl --user stop gnome-wayland-computer-use-worldline.socket >/dev/null 2>&1 || true
+    systemctl --user reset-failed gnome-wayland-computer-use-worldline.service gnome-wayland-computer-use-worldline.socket >/dev/null 2>&1 || true
+    systemctl --user start gnome-wayland-computer-use-worldline.socket >/dev/null 2>&1 || true
+    sleep 1
+  done
+  return 1
+}
 portal_has(){ gdbus introspect --session --dest org.freedesktop.portal.Desktop --object-path /org/freedesktop/portal/desktop 2>/dev/null | grep -q "interface org.freedesktop.portal.$1"; }
 resolve_cua(){ command -v cua-driver 2>/dev/null || { [ -x "$HOME/.local/bin/cua-driver" ] && printf '%s\n' "$HOME/.local/bin/cua-driver"; }; }
 ensure_managed_path(){
@@ -130,17 +148,47 @@ for f in "${FILES[@]}"; do get_file "$f" "$TMP/bundle/$f"; done
 get_file SKILL.md "$TMP/bundle/SKILL.md"
 for f in "$TMP/bundle/scripts"/*.sh "$TMP/bundle/scripts"/*.py; do chmod +x "$f"; done
 BACKUPS="$HERMES_HOME/backups/$NAME"; MANIFEST="$BACKUPS/manifest.tsv"
+plugin_name_of(){ awk -F': *' '/^name:[[:space:]]*/{gsub(/^[[:space:]]+|[[:space:]]+$|["'\'']/,"",$2); print $2; exit}' "$1"; }
+manifest_backup(){
+  local dst=$1 backup
+  mkdir -p "$BACKUPS"; backup="$BACKUPS/$(date +%s%N)-$(basename "$dst")"; mv "$dst" "$backup"; printf '%s\t%s\n' "$dst" "$backup" >>"$MANIFEST"
+}
 install_dir(){
-  local src=$1 dst=$2 backup
+  local src=$1 dst=$2
   if [ -e "$dst" ] && [ ! -f "$dst/.gnome-wayland-computer-use-managed" ]; then
-    mkdir -p "$BACKUPS"; backup="$BACKUPS/$(date +%s%N)-$(basename "$dst")"; mv "$dst" "$backup"; printf '%s\t%s\n' "$dst" "$backup" >>"$MANIFEST"
+    manifest_backup "$dst"
   fi
   rm -rf "$dst"; mkdir -p "$(dirname "$dst")"; cp -a "$src" "$dst"; : >"$dst/.gnome-wayland-computer-use-managed"
 }
+# A stale Hermes plugin copy (same plugin.yaml name, different directory) still
+# registers /computer-use and can shadow the freshly installed one depending on
+# plugin scan order. Retire only what GWCU provably owns; archive the rest so
+# teardown can restore it.
+retire_duplicate_plugins(){
+  local canonical=$1 dir name yaml
+  [ -d "$HERMES_HOME/plugins" ] || return 0
+  for yaml in "$HERMES_HOME/plugins"/*/plugin.yaml; do
+    [ -f "$yaml" ] || continue
+    name=$(plugin_name_of "$yaml"); [ "$name" = "$NAME" ] || continue
+    dir=$(dirname "$yaml"); [ "$dir" != "$canonical" ] || continue
+    if [ -f "$dir/.gnome-wayland-computer-use-managed" ]; then
+      rm -rf "$dir"; ok "Retired stale duplicate Hermes plugin ${dir/$HOME/\~}"
+    else
+      warn "Archiving unmanaged duplicate Hermes plugin ${dir/$HOME/\~}; restored on uninstall"
+      manifest_backup "$dir"
+    fi
+  done
+}
 install_dir "$TMP/bundle" "$PRIMARY"
 if $HERMES; then
-  HSKILL="$HERMES_HOME/skills/computer-use"; install_dir "$TMP/bundle" "$HSKILL"
+  HSKILL="$HERMES_HOME/skills/computer-use"
+  # The installed skill MUST be the GWCU skill or /computer-use does not work.
+  if [ -e "$HSKILL" ] && [ ! -f "$HSKILL/.gnome-wayland-computer-use-managed" ]; then
+    warn "Replacing existing computer-use skill at ${HSKILL/$HOME/\~}; it is archived and restored by teardown"
+  fi
+  install_dir "$TMP/bundle" "$HSKILL"
   PLUGIN="$HERMES_HOME/plugins/$NAME"; mkdir -p "$TMP/plugin"; get_file runtimes/hermes/plugin.yaml "$TMP/plugin/plugin.yaml"; get_file runtimes/hermes/__init__.py "$TMP/plugin/__init__.py"; install_dir "$TMP/plugin" "$PLUGIN"
+  retire_duplicate_plugins "$PLUGIN"
   hermes plugins enable "$NAME" >/dev/null 2>&1 || warn "Hermes plugin installed; enable it manually if needed"
 fi
 ok "Installed action-span.py + WORLDLINE runtime + skill"
@@ -228,9 +276,12 @@ if ! $COMPAT; then
   fi
   [ "$rc" -eq 0 ] || { cat "$DOCTOR_ERR" >&2 || true; die "cua-driver doctor failed"; }
   "$PRIMARY/scripts/cua-health.py" --driver "$CUA" >"$STATE/cua-health.json" || die "Cua health_report failed"
-  /usr/bin/python3 "$PRIMARY/scripts/worldline.py" request --json '{"op":"status"}' >/dev/null || die "WORLDLINE socket not responding"
+  worldline_request || die "WORLDLINE socket not responding"
 fi
 ok "Installed state healthy"
 
 printf '\n'
 if $RELOAD_REQUIRED; then printf 'READY EXCEPT GNOME HELPER RELOAD\nReload/sign out once so GNOME loads winrects@cua.\n'; elif $COMPAT; then printf 'INSTALLED FOR NEXT UBUNTU GNOME SESSION\n'; else printf 'READY. Cua controls; WORLDLINE watches; .gwcu remembers.\n'; fi
+printf '\nUninstall: curl -fsSL %s/uninstall.sh | bash\n' "$BASE_URL"
+printf 'Teardown:  %s/scripts/teardown.sh --help\n' "$PRIMARY"
+printf '           Cua preserved by default; --remove-cua removes only GWCU-provisioned Cua\n'

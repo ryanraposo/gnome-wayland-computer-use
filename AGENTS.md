@@ -173,6 +173,7 @@ bash tests/truth-scope.sh
 bash tests/action-span.sh
 bash tests/worldline.sh
 bash tests/determinism.sh
+bash tests/hermes.sh
 bash tests/run.sh
 ```
 

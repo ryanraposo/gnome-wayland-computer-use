@@ -196,6 +196,8 @@ curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh | 
 
 The installer qualifies Ubuntu 26.04 GNOME Wayland; repairs the portal/PipeWire/AT-SPI/Python GI/Git foundation; installs or qualifies pinned Cua Driver; records Cua ownership immediately; installs the Cua GNOME helper; retires exact legacy GWCU `ydotoold` and uinput artifacts during upgrades; establishes persistent RemoteDesktop consent; deploys the portable Agent Skill metadata plus optional Hermes integration; configures managed `.gwcu`; installs socket-activated WORLDLINE/observer services; and verifies Cua + WORLDLINE health.
 
+When Hermes is present the installer asks before wiring the `/computer-use` integration and asks managed-truth and background-priority preferences. The `computer-use` skill is always replaced with the GWCU skill (the previous copy is archived and restored by teardown); stale duplicate Hermes plugins are retired so the project's `/computer-use` is the one that runs. The installer finishes by printing the uninstall and teardown commands.
+
 The first explicit whole-screen capture may still require separate ScreenCast consent.
 
 ```bash
@@ -212,7 +214,7 @@ The first explicit whole-screen capture may still require separate ScreenCast co
 curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/uninstall.sh | bash
 ```
 
-The curl-pipe entry point only trusts an adjacent teardown when the uninstaller itself is a real file; stdin execution cannot resolve scripts from the caller's working directory. Teardown removes only skill/plugin directories carrying GWCU's managed marker, restores archived components safely, and preserves repo/workspace `.gwcu` files. Cua is preserved by default; `--remove-cua` uses durable provisioning ownership, while `--purge-cua` is an explicit full purge.
+The curl-pipe entry point only trusts an adjacent teardown when the uninstaller itself is a real file; stdin execution cannot resolve scripts from the caller's working directory. Teardown removes only skill/plugin directories carrying GWCU's managed marker — including every GWCU-owned Hermes plugin copy so a stale duplicate cannot keep `/computer-use` registered — restores archived components safely, and preserves repo/workspace `.gwcu` files. Cua is preserved by default; `--remove-cua` uses durable provisioning ownership, while `--purge-cua` is an explicit full purge.
 
 ## Design rules
 

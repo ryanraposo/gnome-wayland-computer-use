@@ -150,16 +150,21 @@ if [ -f "$STATE/video-group-added" ]; then
     rm -f "$STATE/video-group-added"
 fi
 
-HERMES_PLUGIN="$HERMES_HOME/plugins/$NAME"
-if [ -d "$HERMES_PLUGIN" ]; then
-    if [ -f "$HERMES_PLUGIN/.gnome-wayland-computer-use-managed" ]; then
-        command -v hermes >/dev/null 2>&1 &&
-            hermes plugins disable "$NAME" >/dev/null 2>&1 || true
-        rm -rf "$HERMES_PLUGIN"; ((removed++)) || true
+# Remove every GWCU-owned Hermes plugin copy. A stale duplicate (same
+# plugin.yaml name, different directory) would otherwise keep /computer-use
+# registered after teardown.
+plugin_name_of(){ awk -F': *' '/^name:[[:space:]]*/{gsub(/^[[:space:]]+|[[:space:]]+$|["'\'']/,"",$2); print $2; exit}' "$1"; }
+for yaml in "$HERMES_HOME/plugins"/*/plugin.yaml; do
+    [ -f "$yaml" ] || continue
+    name=$(plugin_name_of "$yaml"); [ "$name" = "$NAME" ] || continue
+    dir=$(dirname "$yaml")
+    if [ -f "$dir/.gnome-wayland-computer-use-managed" ]; then
+        command -v hermes >/dev/null 2>&1 && hermes plugins disable "$NAME" >/dev/null 2>&1 || true
+        rm -rf "$dir"; ((removed++)) || true
     else
-        info "Preserving user-managed Hermes plugin: ${HERMES_PLUGIN/$HOME/\~}"
+        info "Preserving user-managed Hermes plugin: ${dir/$HOME/\~}"
     fi
-fi
+done
 
 for dir in \
     "$HOME/.agents/skills/$NAME" \
