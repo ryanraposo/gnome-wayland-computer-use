@@ -31,12 +31,13 @@ pass "Ubuntu portal/accessibility foundation is explicit"
 grep -q 'scripts/action-span.py' "$installer" || fail "action-span not shipped"
 grep -q 'scripts/worldline.py' "$installer" || fail "WORLDLINE daemon not shipped"
 grep -q 'scripts/worldline-capture.sh' "$installer" || fail "WORLDLINE capture not shipped"
-grep -q 'WORLDLINE.md' "$installer" || fail "WORLDLINE docs not shipped"
+grep -q 'README.md' "$installer" || fail "README not shipped"
+for retired in WORLDLINE.md GWCU.md DETERMINISM.md CAPABILITIES.md PERF_NOTES.md references/skill-ux-contract.md; do ! grep -Fq "$retired" "$installer" || fail "installer still ships retired docs: $retired"; done
 grep -q 'enable --now gnome-wayland-computer-use-worldline.socket' "$installer" || fail "WORLDLINE socket not enabled"
 grep -q 'enable --now gnome-wayland-computer-use-observer.socket' "$installer" || fail "observer socket not enabled"
 grep -q 'worldline.py" self-test' "$installer" || fail "WORLDLINE self-test missing"
 grep -q 'observer.py" self-test' "$installer" || fail "observer self-test missing"
-pass "WORLDLINE and visual sensor lifecycle ship together"
+pass "WORLDLINE and visual sensor lifecycle ship with one README"
 
 grep -q 'Enable managed .gwcu local truths?' "$installer" || fail "managed truth prompt missing"
 grep -q '/dev/tty' "$installer" || fail "curl-pipe prompt cannot reach terminal"
@@ -104,10 +105,11 @@ XDG_RUNTIME_DIR="$TMP/runtime" python3 "$ROOT/scripts/observer.py" self-test >/d
 XDG_RUNTIME_DIR="$TMP/world" python3 "$worldline" self-test >/dev/null || fail "WORLDLINE self-test"
 pass "diagnostics and read-only runtimes self-test"
 
-for f in SKILL.md runtimes/openai/SKILL.md README.md DETERMINISM.md CAPABILITIES.md WORLDLINE.md; do grep -qi 'Cua' "$ROOT/$f" || fail "$f lost Cua"; grep -qi 'WORLDLINE' "$ROOT/$f" || fail "$f lost WORLDLINE"; done
-for f in SKILL.md runtimes/openai/SKILL.md README.md DETERMINISM.md; do grep -qi 'No X11' "$ROOT/$f" || fail "$f lost GNOME Wayland qualification"; grep -qi 'Remote Desktop' "$ROOT/$f" || fail "$f lost consent model"; done
+for f in SKILL.md runtimes/openai/SKILL.md README.md; do grep -qi 'Cua' "$ROOT/$f" || fail "$f lost Cua"; grep -qi 'WORLDLINE' "$ROOT/$f" || fail "$f lost WORLDLINE"; done
+for f in SKILL.md runtimes/openai/SKILL.md README.md; do grep -qi 'No X11' "$ROOT/$f" || fail "$f lost GNOME Wayland qualification"; grep -qi 'Remote Desktop' "$ROOT/$f" || fail "$f lost consent model"; done
 grep -qi 'Observation is an interrupt' "$ROOT/README.md" || fail "README lost core inversion"
-grep -qi 'valid until invalidated' "$ROOT/WORLDLINE.md" || fail "WORLDLINE invalidation model missing"
-pass "public project surfaces describe one architecture"
+grep -qi 'valid until invalidated' "$ROOT/README.md" || fail "README lost invalidation model"
+for retired in WORLDLINE.md GWCU.md DETERMINISM.md CAPABILITIES.md PERF_NOTES.md references/skill-ux-contract.md; do [ ! -e "$ROOT/$retired" ] || fail "retired project doc remains: $retired"; done
+pass "README is the sole public project documentation surface"
 
 printf 'ok - regression suite complete (%d checks)\n' "$passed"
