@@ -8,6 +8,7 @@ stored truth.
 from __future__ import annotations
 
 import argparse
+import itertools
 import json
 import os
 from pathlib import Path
@@ -21,10 +22,16 @@ SCHEMA = "gwcu.truths.v1"
 MAX_APPS = 64
 GENERATED_SECTIONS = ("observed", "capabilities", "calibration", "apps")
 ALL_SECTIONS = (*GENERATED_SECTIONS[:-1], "preferences")
+_TMP_COUNTER = itertools.count()
 
 
 def compact(value: Any) -> str:
     return json.dumps(value, separators=(",", ":"), sort_keys=True, ensure_ascii=True)
+
+
+def tmp_path(path: Path) -> Path:
+    """Process- and thread-unique temp path so concurrent writers never collide."""
+    return path.with_name(f".{path.name}.{os.getpid()}.{next(_TMP_COUNTER)}.tmp")
 
 
 def emit(ok: bool, code: str, *, rc: int = 0, **extra: Any) -> int:
@@ -136,13 +143,20 @@ def atomic_write(path: Path, data: dict[str, Any]) -> None:
     if path.is_symlink():
         raise ValueError("symlink_refused")
     mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else 0o600
-    tmp = path.with_name(path.name + ".tmp")
+    tmp = tmp_path(path)
     if tmp.exists() or tmp.is_symlink():
         tmp.unlink()
-    text = json.dumps(data, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
-    tmp.write_text(text, encoding="utf-8")
-    os.chmod(tmp, mode)
-    os.replace(tmp, path)
+    try:
+        text = json.dumps(data, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+        tmp.write_text(text, encoding="utf-8")
+        os.chmod(tmp, mode)
+        os.replace(tmp, path)
+    finally:
+        if tmp.exists():
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
 
 
 def ensure_gitignore(root: Path) -> tuple[bool, str]:
@@ -165,7 +179,7 @@ def ensure_gitignore(root: Path) -> tuple[bool, str]:
     new += block
     try:
         mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else 0o644
-        tmp = path.with_name(path.name + ".gwcu.tmp")
+        tmp = tmp_path(path)
         if tmp.exists() or tmp.is_symlink():
             tmp.unlink()
         tmp.write_text(new, encoding="utf-8")
@@ -320,7 +334,10 @@ def command_merge(args: argparse.Namespace) -> int:
     data[args.section].update(incoming)
     changed = created or before != data[args.section]
     if changed:
-        atomic_write(path, data)
+        try:
+            atomic_write(path, data)
+        except ValueError as exc:
+            return emit(False, str(exc), rc=10, root=str(root), path=str(path), changed=False)
     return emit(True, "merged" if changed else "unchanged", root=str(root), path=str(path), git=is_git,
                 source=source, gitignore=ignore_code, changed=changed, section=args.section)
 

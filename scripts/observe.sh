@@ -5,7 +5,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 OBSERVER="${GWCU_OBSERVER_BIN:-$SCRIPT_DIR/observer.py}"
 DIRECT_CAPTURE="${GWCU_DIRECT_CAPTURE_BIN:-$SCRIPT_DIR/capture.sh}"
-PYTHON="${GNOME_WAYLAND_SYSTEM_PYTHON:-/usr/bin/python3}"
+PYTHON="${GWCU_SYSTEM_PYTHON:-${GNOME_WAYLAND_SYSTEM_PYTHON:-/usr/bin/python3}}"
 [ -x "$PYTHON" ] || PYTHON="$(command -v python3 2>/dev/null || true)"
 
 MACHINE=false
@@ -115,13 +115,19 @@ broker_capture() {
     printf '%s' "$raw"; return "$rc"
 }
 
-broker_raw=""; broker_rc=0
-broker_raw=$(broker_capture) || broker_rc=$?
-if [ "$broker_rc" -eq 30 ] && command -v systemctl >/dev/null 2>&1; then
+broker_raw=""; broker_rc=30
+if command -v systemctl >/dev/null 2>&1; then
     systemctl --user start gnome-wayland-computer-use-observer.socket >/dev/null 2>&1 || true
-    sleep 0.02
-    broker_rc=0; broker_raw=$(broker_capture) || broker_rc=$?
 fi
+attempt=0
+while [ "$broker_rc" -eq 30 ] && [ "$attempt" -lt 3 ]; do
+    attempt=$((attempt + 1))
+    broker_raw=$(broker_capture) || broker_rc=$?
+    if [ "$broker_rc" -eq 30 ] && [ "$attempt" -lt 3 ]; then
+        # Socket activation races service startup; retry instead of one fixed sleep.
+        sleep 0.02
+    fi
+done
 
 if [ "$broker_rc" -eq 0 ] && copy_broker_frame "$broker_raw"; then
     $MACHINE && emit_machine_success "screencast-broker" "$broker_raw" || report_human "screencast-broker"

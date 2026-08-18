@@ -6,31 +6,14 @@ import argparse
 import json
 import os
 import pathlib
-import selectors
 import shutil
 import subprocess
 import sys
-import time
+
+from mcp_client import compact, recv_for, resolve_driver, send
 
 SCHEMA = "gwcu.portal-control.v1"
 PROTOCOL = "2024-11-05"
-
-
-def compact(value) -> str:
-    return json.dumps(value, separators=(",", ":"), ensure_ascii=False)
-
-
-def resolve_driver(explicit: str | None) -> str | None:
-    if explicit:
-        return explicit
-    env = os.environ.get("CUA_DRIVER_BIN")
-    if env:
-        return env
-    found = shutil.which("cua-driver")
-    if found:
-        return found
-    candidate = pathlib.Path.home() / ".local/bin/cua-driver"
-    return str(candidate) if candidate.is_file() and os.access(candidate, os.X_OK) else None
 
 
 def token_path() -> pathlib.Path:
@@ -98,32 +81,6 @@ def base_status(driver: str | None) -> dict:
         "integration": integration_checks(),
         "next": None if token.is_file() else {"action": "authorize_remote_desktop"},
     }
-
-
-def send(proc: subprocess.Popen[str], payload: dict) -> None:
-    assert proc.stdin is not None
-    proc.stdin.write(compact(payload) + "\n")
-    proc.stdin.flush()
-
-
-def recv_for(proc: subprocess.Popen[str], request_id: int, timeout: float) -> dict:
-    assert proc.stdout is not None
-    selector = selectors.DefaultSelector()
-    selector.register(proc.stdout, selectors.EVENT_READ)
-    deadline = time.monotonic() + timeout
-    try:
-        while True:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0 or not selector.select(remaining):
-                raise TimeoutError(f"timed out waiting for MCP response id={request_id}")
-            line = proc.stdout.readline()
-            if not line:
-                raise RuntimeError("cua-driver MCP exited before responding")
-            msg = json.loads(line)
-            if msg.get("id") == request_id:
-                return msg
-    finally:
-        selector.close()
 
 
 def tool_result(response: dict, name: str) -> dict:

@@ -40,7 +40,7 @@ def gi():
 
 class Cast:
     def __init__(self):
-        self.bus=self.portal=self.session=self.pipeline=None;self.pwfd=None;self.cond=threading.Condition();self.sample=None;self.frame_ns=0;self.version=0;self.generation=0
+        self.bus=self.portal=self.session=self.pipeline=None;self.pwfd=None;self.cond=threading.Condition();self.sample=None;self.frame_ns=0;self.version=0;self.generation=0;self.lock=threading.RLock()
     @property
     def active(self):return self.pipeline is not None
     def proxy(self):
@@ -118,13 +118,15 @@ class Cast:
         finally:buf.unmap(m)
         b=GLib.Bytes.new(data);pix=GdkPixbuf.Pixbuf.new_from_bytes(b,GdkPixbuf.Colorspace.RGB,False,8,int(vi.width),int(vi.height),int(vi.stride[0]));private_dir(path.parent);tmp=path.with_name(f".{path.name}.{os.getpid()}.tmp");pix.savev(str(tmp),"png",[],[]);os.chmod(tmp,0o600);os.replace(tmp,path);return int(vi.width),int(vi.height)
     def capture(self,fresh="next",timeout_ms=1500,session_timeout_ms=40000):
-        t0=time.monotonic_ns();self.ensure(session_timeout_ms/1000);after=time.monotonic_ns();deadline=time.monotonic()+max(.05,timeout_ms/1000)
-        with self.cond:
-            while self.sample is None or (fresh=="next" and self.frame_ns<=after):
-                left=deadline-time.monotonic()
-                if left<=0:raise E("frame_timeout")
-                self.cond.wait(left)
-            sample=self.sample;frame=self.frame_ns
+        t0=time.monotonic_ns()
+        with self.lock:
+            self.ensure(session_timeout_ms/1000);after=time.monotonic_ns();deadline=time.monotonic()+max(.05,timeout_ms/1000)
+            with self.cond:
+                while self.sample is None or (fresh=="next" and self.frame_ns<=after):
+                    left=deadline-time.monotonic()
+                    if left<=0:raise E("frame_timeout")
+                    self.cond.wait(left)
+                sample=self.sample;frame=self.frame_ns
         d=runtime_dir()/"frames";p=d/f"frame-{time.monotonic_ns()}.png";e0=time.monotonic_ns();w,h=self.encode(sample,p);end=time.monotonic_ns()
         try:
             fs=sorted(d.glob("frame-*.png"),key=lambda x:x.stat().st_mtime)
@@ -132,16 +134,17 @@ class Cast:
         except OSError:pass
         return env(True,"ok",{"scope":"visible-screen","method":"screencast-broker","path":str(p),"width":w,"height":h,"freshness_ms":max(0,int((end-frame)/1e6)),"stream_generation":self.generation},timing_ms={"total":int((end-t0)/1e6),"wait_and_session":int((e0-t0)/1e6),"encode":int((end-e0)/1e6)})
     def stop(self):
-        if self.pipeline is not None:
-            try:self.pipeline.set_state(Gst.State.NULL)
-            except Exception:pass
-        self.pipeline=None;self.sample=None;self.frame_ns=0
-        if self.pwfd is not None:
-            try:os.close(self.pwfd)
-            except OSError:pass
-        self.pwfd=None
-        if self.session:self.close_obj(self.session,"org.freedesktop.portal.Session")
-        self.session=None
+        with self.lock:
+            if self.pipeline is not None:
+                try:self.pipeline.set_state(Gst.State.NULL)
+                except Exception:pass
+            self.pipeline=None;self.sample=None;self.frame_ns=0
+            if self.pwfd is not None:
+                try:os.close(self.pwfd)
+                except OSError:pass
+            self.pwfd=None
+            if self.session:self.close_obj(self.session,"org.freedesktop.portal.Session")
+            self.session=None
     def status(self):return env(True,"ok",{"state":"streaming" if self.active else "idle","session_active":self.active,"portal_version":self.version if self.portal else None,"stream_generation":self.generation})
 
 def listener():
@@ -165,28 +168,33 @@ def handle(cast,q):
     raise E("invalid_operation",2,False)
 
 def serve():
-    s=listener();s.settimeout(1);cast=Cast();idle=min(max(int(os.environ.get("GWCU_OBSERVER_IDLE_SECONDS",DEFAULT_IDLE)),10),1800);last=time.monotonic();stop=False
+    s=listener();s.settimeout(1);cast=Cast();idle=min(max(int(os.environ.get("GWCU_OBSERVER_IDLE_SECONDS",DEFAULT_IDLE)),10),1800);last=time.monotonic();stop=False;active=0;active_lock=threading.Lock()
     def halt(*_):
         nonlocal stop;stop=True
     signal.signal(signal.SIGTERM,halt);signal.signal(signal.SIGINT,halt)
+    def serve_client(c):
+        nonlocal last, active
+        with active_lock:active+=1
+        last=time.monotonic()
+        try:
+            raw=b""
+            while b"\n" not in raw and len(raw)<=MAX_REQUEST:
+                x=c.recv(4096)
+                if not x:break
+                raw+=x
+            if len(raw)>MAX_REQUEST:raise E("request_too_large",2,False)
+            r=handle(cast,json.loads(raw.split(b"\n",1)[0].decode()))
+        except E as ex:r=env(False,ex.code,retryable=ex.retryable,terminal=ex.terminal,detail=ex.detail);r["_exit"]=ex.exit_code
+        except Exception as ex:r=env(False,"internal_error",retryable=False,terminal=False,detail=str(ex));r["_exit"]=50
+        try:c.sendall((json.dumps(r,separators=(",",":"))+"\n").encode())
+        except (BrokenPipeError,ConnectionResetError,OSError):pass
+        finally:c.close()
+        with active_lock:active-=1
     try:
-        while not stop and time.monotonic()-last < (idle if cast.active else 5):
+        while not stop and (time.monotonic()-last < (idle if cast.active else 5) or active):
             try:c,_=s.accept()
             except socket.timeout:continue
-            with c:
-                last=time.monotonic()
-                try:
-                    raw=b""
-                    while b"\n" not in raw and len(raw)<=MAX_REQUEST:
-                        x=c.recv(4096)
-                        if not x:break
-                        raw+=x
-                    if len(raw)>MAX_REQUEST:raise E("request_too_large",2,False)
-                    r=handle(cast,json.loads(raw.split(b"\n",1)[0].decode()))
-                except E as ex:r=env(False,ex.code,retryable=ex.retryable,terminal=ex.terminal,detail=ex.detail);r["_exit"]=ex.exit_code
-                except Exception as ex:r=env(False,"internal_error",retryable=False,terminal=False,detail=str(ex));r["_exit"]=50
-                try:c.sendall((json.dumps(r,separators=(",",":"))+"\n").encode())
-                except (BrokenPipeError,ConnectionResetError,OSError):pass
+            threading.Thread(target=serve_client,args=(c,),daemon=True).start()
     finally:cast.stop();s.close()
     return 0
 

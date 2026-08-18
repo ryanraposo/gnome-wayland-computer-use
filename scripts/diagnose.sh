@@ -10,7 +10,7 @@ for arg in "$@"; do
     esac
 done
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-PYTHON="${GNOME_WAYLAND_SYSTEM_PYTHON:-/usr/bin/python3}"
+PYTHON="${GWCU_SYSTEM_PYTHON:-${GNOME_WAYLAND_SYSTEM_PYTHON:-/usr/bin/python3}}"
 [ -x "$PYTHON" ] || PYTHON="$(command -v python3 2>/dev/null || true)"
 [ -n "$PYTHON" ] || { echo "python3 is required" >&2; exit 30; }
 HEALTH="$ROOT/scripts/cua-health.py"

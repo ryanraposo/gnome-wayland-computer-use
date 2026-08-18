@@ -11,8 +11,8 @@ for arg in "$@"; do
  esac
 done
 $RESOLVE && [ -z "$QUERY" ] && { echo "error: --resolve requires a query" >&2; exit 2; }
-PYTHON="${GNOME_WAYLAND_SYSTEM_PYTHON:-/usr/bin/python3}"; [ -x "$PYTHON" ] || PYTHON="$(command -v python3 2>/dev/null || true)"; [ -n "$PYTHON" ] || exit 30
-CACHE_DIR="${XDG_RUNTIME_DIR:-/tmp}/gnome-wayland-computer-use"; CACHE_FILE="$CACHE_DIR/app-identities.json"; CACHE_SECONDS="${GNOME_WAYLAND_APP_IDENTITY_CACHE_SECONDS:-300}"
+PYTHON="${GWCU_SYSTEM_PYTHON:-${GNOME_WAYLAND_SYSTEM_PYTHON:-/usr/bin/python3}}"; [ -x "$PYTHON" ] || PYTHON="$(command -v python3 2>/dev/null || true)"; [ -n "$PYTHON" ] || exit 30
+CACHE_DIR="${XDG_RUNTIME_DIR:-/tmp}/gnome-wayland-computer-use"; CACHE_FILE="$CACHE_DIR/app-identities.json"; CACHE_SECONDS="${GWCU_APP_IDENTITY_CACHE_SECONDS:-${GNOME_WAYLAND_APP_IDENTITY_CACHE_SECONDS:-300}}"
 mkdir -p "$CACHE_DIR"; chmod 700 "$CACHE_DIR" 2>/dev/null || true
 exec "$PYTHON" - "$CACHE_FILE" "$CACHE_SECONDS" "$REFRESH" "$RESOLVE" "$MACHINE" "$QUERY" <<'PY'
 import configparser,json,os,pathlib,re,shlex,sys,time
@@ -25,9 +25,10 @@ def flag(a,n):
   if t.startswith(n+'='):return t.split('=',1)[1]
   if t==n and i+1<len(a):return a[i+1]
 def engine(a):
- j='\n'.join(str(x).casefold() for x in a)
+ toks=[str(x) for x in a];probes=[pathlib.Path(x).name.casefold() for x in toks]+[x.casefold() for x in toks]
  for needle,name in [('google-chrome','chrome'),('chromium','chromium'),('brave','brave'),('microsoft-edge','edge'),('firefox','firefox'),('electron','electron')]:
-  if needle in j:return name
+  for probe in probes:
+   if needle in probe:return name
 def classify(p):
  c=configparser.ConfigParser(interpolation=None,strict=False); c.optionxform=str
  try:

@@ -6,6 +6,7 @@ NAME="gnome-wayland-computer-use"
 VERSION="2.3.0"
 BASE_URL="${GWCU_BASE_URL:-https://ryanraposo.github.io/gnome-wayland-computer-use}"
 CUA_DRIVER_RS_VERSION="${GWCU_CUA_DRIVER_RS_VERSION:-0.19.3}" # deliberately pinned
+PYTHON="${GWCU_SYSTEM_PYTHON:-/usr/bin/python3}"
 SELF=""; [ -f "${BASH_SOURCE[0]:-}" ] && SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 
@@ -23,7 +24,7 @@ worldline_request(){
   rdir="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/$NAME"
   sock="$rdir/worldline.sock"
   for i in 1 2 3 4 5 6 7 8; do
-    if [ -S "$sock" ] && /usr/bin/python3 "$PRIMARY/scripts/worldline.py" request --json '{"op":"status"}' >/dev/null 2>&1; then return 0; fi
+    if [ -S "$sock" ] && "$PYTHON" "$PRIMARY/scripts/worldline.py" request --json '{"op":"status"}' >/dev/null 2>&1; then return 0; fi
     if [ -S "$sock" ]; then sleep 1; continue; fi
     systemctl --user stop gnome-wayland-computer-use-worldline.service >/dev/null 2>&1 || true
     systemctl --user stop gnome-wayland-computer-use-worldline.socket >/dev/null 2>&1 || true
@@ -49,7 +50,7 @@ PATH
 write_cua_ownership(){
   local provisioned="$1" version="$2" existing="$STATE/ownership.json" tmp
   tmp=$(mktemp "$STATE/.ownership.XXXXXX")
-  python3 - "$existing" "$tmp" "$provisioned" "$version" <<'PY'
+  "$PYTHON" - "$existing" "$tmp" "$provisioned" "$version" <<'PY'
 import json,os,pathlib,sys
 src,out,prov,version=sys.argv[1:]
 try: d=json.load(open(src))
@@ -111,7 +112,7 @@ if ! $COMPAT; then
   portal_has RemoteDesktop || die "RemoteDesktop portal unavailable"
   portal_has ScreenCast || die "ScreenCast portal unavailable"
   portal_has Screenshot || die "Screenshot portal unavailable"
-  /usr/bin/python3 - <<'PY' || die "Python GI/AT-SPI/GStreamer bindings unavailable"
+  "$PYTHON" - <<'PY' || die "Python GI/AT-SPI/GStreamer bindings unavailable"
 import gi
 for n,v in (("Gio","2.0"),("Gst","1.0"),("GstVideo","1.0"),("GdkPixbuf","2.0"),("Atspi","2.0")): gi.require_version(n,v)
 from gi.repository import Gio,Gst,GstVideo,GdkPixbuf,Atspi
@@ -142,7 +143,7 @@ gnome-extensions enable winrects@cua 2>/dev/null || true
 RELOAD_REQUIRED=false; gnome-extensions info winrects@cua >/dev/null 2>&1 && gnome-extensions info winrects@cua 2>/dev/null | grep -qi 'State: ACTIVE' || RELOAD_REQUIRED=true
 
 info "[4/8] Installing GWCU runtime, skill and WORLDLINE"
-FILES=(VERSION README.md WORLDLINE.md GWCU.md DETERMINISM.md CAPABILITIES.md PERF_NOTES.md agents/openai.yaml references/skill-ux-contract.md scripts/action-span.py scripts/app-identity.sh scripts/capture.sh scripts/check-update.sh scripts/computer-use.sh scripts/cua-health.py scripts/diagnose.sh scripts/observe.sh scripts/observer.py scripts/portal-control.py scripts/profile.sh scripts/teardown.sh scripts/truths.py scripts/worldline.py scripts/worldline-capture.sh systemd/user/gnome-wayland-computer-use-observer.socket systemd/user/gnome-wayland-computer-use-observer.service systemd/user/gnome-wayland-computer-use-worldline.socket systemd/user/gnome-wayland-computer-use-worldline.service)
+FILES=(VERSION README.md WORLDLINE.md GWCU.md DETERMINISM.md CAPABILITIES.md PERF_NOTES.md agents/openai.yaml references/skill-ux-contract.md scripts/action-span.py scripts/app-identity.sh scripts/capture.sh scripts/check-update.sh scripts/computer-use.sh scripts/cua-health.py scripts/diagnose.sh scripts/mcp_client.py scripts/observe.sh scripts/observer.py scripts/portal-control.py scripts/profile.sh scripts/teardown.sh scripts/truths.py scripts/worldline.py scripts/worldline-capture.sh systemd/user/gnome-wayland-computer-use-observer.socket systemd/user/gnome-wayland-computer-use-observer.service systemd/user/gnome-wayland-computer-use-worldline.socket systemd/user/gnome-wayland-computer-use-worldline.service)
 rm -rf "$TMP/bundle"; mkdir -p "$TMP/bundle"
 for f in "${FILES[@]}"; do get_file "$f" "$TMP/bundle/$f"; done
 get_file SKILL.md "$TMP/bundle/SKILL.md"
@@ -209,7 +210,7 @@ fi
 case "${GWCU_BACKGROUND_PRIORITY:-}" in on|yes|true|1) warn "GWCU_BACKGROUND_PRIORITY enables background priority at runtime";; off|no|false|0) warn "GWCU_BACKGROUND_PRIORITY disables background priority at runtime";; esac
 if ! $COMPAT; then
   set +e; PORTAL_STATUS=$("$PRIMARY/scripts/portal-control.py" --status 2>/dev/null); set -e
-  TOKEN=$(python3 - "$PORTAL_STATUS" <<'PY'
+  TOKEN=$("$PYTHON" - "$PORTAL_STATUS" <<'PY'
 import json,sys
 try: print("yes" if json.loads(sys.argv[1]).get("portal",{}).get("restore_token",{}).get("present") else "no")
 except Exception: print("no")
@@ -247,8 +248,8 @@ if ! $COMPAT; then
   systemctl --user enable --now gnome-wayland-computer-use-observer.socket || die "observer socket failed"
   systemctl --user enable --now gnome-wayland-computer-use-worldline.socket || die "WORLDLINE socket failed"
 fi
-/usr/bin/python3 "$PRIMARY/scripts/observer.py" self-test >/dev/null || die "observer.py self-test failed"
-/usr/bin/python3 "$PRIMARY/scripts/worldline.py" self-test >/dev/null || die "worldline.py self-test failed"
+"$PYTHON" "$PRIMARY/scripts/observer.py" self-test >/dev/null || die "observer.py self-test failed"
+"$PYTHON" "$PRIMARY/scripts/worldline.py" self-test >/dev/null || die "worldline.py self-test failed"
 ok "WORLDLINE revision daemon + private ScreenCast observer ready"
 
 info "[8/8] Proving installed-state health"
@@ -256,7 +257,7 @@ PREV_ACCESS=$(gsettings get org.gnome.desktop.interface toolkit-accessibility 2>
 if [ "$PREV_ACCESS" = false ]; then gsettings set org.gnome.desktop.interface toolkit-accessibility true 2>/dev/null && ACCESS_CHANGED=true || true; fi
 mkdir -p "$STATE"
 # Merge final ownership facts; never reset durable Cua provenance recorded above.
-python3 - "$STATE/ownership.json" "$PREV_ACCESS" "$ACCESS_CHANGED" "$CUA_DRIVER_RS_VERSION" "$HERMES" <<'PY'
+"$PYTHON" - "$STATE/ownership.json" "$PREV_ACCESS" "$ACCESS_CHANGED" "$CUA_DRIVER_RS_VERSION" "$HERMES" "$COMPAT" <<'PY'
 import json,os,pathlib,sys
 p=pathlib.Path(sys.argv[1])
 try:d=json.loads(p.read_text())
@@ -264,7 +265,8 @@ except Exception:d={}
 d["schema"]="gwcu.ownership.v3"
 d["toolkit_accessibility"]={"previous":sys.argv[2],"changed":sys.argv[3]=="true"}
 u=d.setdefault("upstream",{}); c=u.setdefault("cua_driver",{}); c["version"]=sys.argv[4]; c["owned"]=bool(c.get("provisioned") or c.get("owned")); u.setdefault("winrects",{"owned":False})
-d["user_units"]={"observer_socket":True,"observer_service":True,"worldline_socket":True,"worldline_service":True}
+enabled=sys.argv[6]!="true"
+d["user_units"]={"observer_socket":enabled,"observer_service":enabled,"worldline_socket":enabled,"worldline_service":enabled}
 d["hermes_plugin"]={"managed":sys.argv[5]=="true","name":"gnome-wayland-computer-use"};d["distro_foundation_owned"]=False
 p.write_text(json.dumps(d,separators=(",",":"))+"\n");os.chmod(p,0o600)
 PY

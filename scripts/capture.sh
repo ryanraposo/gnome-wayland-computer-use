@@ -25,7 +25,7 @@ OUT="${OUT:-${XDG_RUNTIME_DIR:-/tmp}/gnome-wayland-screen-$(date +%s).png}"
 mkdir -p "$(dirname "$OUT")"
 TMP=$(mktemp "$(dirname "$OUT")/.capture.XXXXXX.png")
 trap 'rm -f "$TMP"' EXIT
-PYTHON="${GNOME_WAYLAND_SYSTEM_PYTHON:-/usr/bin/python3}"
+PYTHON="${GWCU_SYSTEM_PYTHON:-${GNOME_WAYLAND_SYSTEM_PYTHON:-/usr/bin/python3}}"
 [ -x "$PYTHON" ] || PYTHON="$(command -v python3 2>/dev/null || true)"
 [ -n "$PYTHON" ] || { echo "capture_method=failed reason=python3_missing" >&2; exit 40; }
 
@@ -101,7 +101,7 @@ set -e
 if [ "$RC" -eq 20 ]; then echo "capture_method=portal-denied" >&2; exit 20; fi
 if [ "$RC" -ne 0 ] || [ ! -s "$TMP" ]; then echo "capture_method=failed" >&2; exit 40; fi
 mv -f "$TMP" "$OUT"; trap - EXIT
-if [ "$REQUESTED_SCOPE" = desktop ]; then printf 'capture_scope=visible-screen requested=desktop\n' >&2; fi
+if [ "$REQUESTED_SCOPE" = desktop ]; then printf 'capture_scope=visible-screen requested=desktop\n' >&2; printf 'warning: XDG Screenshot portal provides the visible screen only; --desktop degrades to visible-screen capture\n' >&2; fi
 if $TIMING; then
     now=$(date +%s%3N 2>/dev/null || printf 0)
     if [[ "$START_MS" =~ ^[0-9]+$ ]] && [[ "$now" =~ ^[0-9]+$ ]] && [ "$now" -ge "$START_MS" ]; then

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Execute a Cua/WORLDLINE transaction behind one model/tool boundary."""
 from __future__ import annotations
-import argparse,json,os,selectors,shutil,socket,subprocess,sys,time
+import argparse,json,os,socket,subprocess,sys
 from pathlib import Path
 from typing import Any
+from mcp_client import recv_for, resolve_driver, send
 SCHEMA="gwcu.action-span.v1";REQUEST_SCHEMA="gwcu.action-span.request.v1";TRANSACTION_SCHEMA="gwcu.transaction.v1";PROTOCOL="2024-11-05";MAX_ACTIONS=64;MAX_TRANSITIONS=256;MAX=1<<20;LOW=.40;HIGH=.60
 
 def compact(v:Any)->str:return json.dumps(v,separators=(",",":"),ensure_ascii=True)
@@ -22,11 +23,6 @@ def resolve_control(c):
     else:mode="foreground";reason="intent"
     conflict=mode!=pref
     return {"schema":"gwcu.control-priority.v1","mode":mode,"reason":reason,"standing_preference":pref,"preference_source":source,"foreground_confidence":score,"deadband":[LOW,HIGH],"contradicts_preference":conflict,"notice":"Doing that now — switching to foreground. OK?" if conflict and mode=="foreground" else None,"extra_model_calls":0}
-def resolve_driver(x):
-    if x:return x
-    if os.getenv("CUA_DRIVER_BIN"):return os.environ["CUA_DRIVER_BIN"]
-    if shutil.which("cua-driver"):return shutil.which("cua-driver")
-    p=Path.home()/".local/bin/cua-driver";return str(p) if p.is_file() and os.access(p,os.X_OK) else None
 def worldline_socket(x):return Path(x) if x else Path(os.getenv("XDG_RUNTIME_DIR",f"/run/user/{os.getuid()}"))/"gnome-wayland-computer-use/worldline.sock"
 def worldline_call(path,payload,timeout):
     s=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM);s.settimeout(timeout)
@@ -39,18 +35,6 @@ def worldline_call(path,payload,timeout):
     finally:s.close()
     if not b:raise RuntimeError("WORLDLINE closed without response")
     return json.loads(bytes(b).split(b"\n",1)[0])
-def send(p,q):p.stdin.write(compact(q)+"\n");p.stdin.flush()
-def recv_for(p,i,t):
-    sel=selectors.DefaultSelector();sel.register(p.stdout,selectors.EVENT_READ);end=time.monotonic()+t
-    try:
-        while True:
-            left=end-time.monotonic()
-            if left<=0 or not sel.select(left):raise TimeoutError(f"timed out waiting for MCP response id={i}")
-            line=p.stdout.readline()
-            if not line:raise RuntimeError("cua-driver MCP exited before responding")
-            m=json.loads(line)
-            if m.get("id")==i:return m
-    finally:sel.close()
 def structured(response):
     r=response.get("result") if isinstance(response,dict) else None
     if not isinstance(r,dict):return None
@@ -82,6 +66,16 @@ def normalize_control(v):
     if c is not None and (not isinstance(c,(int,float)) or isinstance(c,bool) or not 0<=float(c)<=1):raise ValueError("foreground_confidence must be 0..1")
     if e not in (None,"background","foreground"):raise ValueError("explicit_mode must be background|foreground")
     return {"foreground_confidence":None if c is None else float(c),"explicit_mode":e}
+def start_index(value,size):
+    if value is None:return 0
+    if not isinstance(value,int) or isinstance(value,bool) or not 0<=value<size:
+        raise ValueError(f"start must be an integer in 0..{size-1}")
+    return value
+def valid_target(t,size):
+    if isinstance(t,int) and not isinstance(t,bool):return 0<=t<size
+    if isinstance(t,dict):
+        return all(isinstance(v,int) and not isinstance(v,bool) and 0<=v<size for v in t.values())
+    return False
 def parse_request(raw):
     v=json.loads(raw)
     if isinstance(v,list):v={"schema":REQUEST_SCHEMA,"actions":v}
@@ -98,12 +92,15 @@ def parse_request(raw):
             if "await" in s:
                 if not isinstance(s["await"],dict):raise ValueError(f"step {i} await must be an object")
                 item["await"]=s["await"]
-            if "next" in s:item["next"]=s["next"]
+            if "next" in s:
+                if not valid_target(s["next"],len(steps)):raise ValueError(f"step {i} next targets must be indices in 0..{len(steps)-1}")
+                item["next"]=s["next"]
             out.append(item)
-        return {"schema":TRANSACTION_SCHEMA,"steps":out,"start":int(v.get("start",0)),"control":control}
+        return {"schema":TRANSACTION_SCHEMA,"steps":out,"start":start_index(v.get("start"),len(out)),"control":control}
     actions=v.get("actions")
     if not isinstance(actions,list) or not actions or len(actions)>MAX_ACTIONS:raise ValueError("actions must be a non-empty bounded array")
-    return {"schema":REQUEST_SCHEMA,"steps":[{"action":normalize_action(a,i)} for i,a in enumerate(actions)],"control":control}
+    out=[{"action":normalize_action(a,i)} for i,a in enumerate(actions)]
+    return {"schema":REQUEST_SCHEMA,"steps":out,"start":start_index(v.get("start"),len(out)),"control":control}
 def envelope(ok,code,**kw):
     p={"schema":SCHEMA,"ok":ok,"code":code,"requested":kw.get("requested",0),"completed":kw.get("completed",0),"results":kw.get("results",[]),"boundary":kw.get("boundary")}
     for k in ("detail","revision","control"):
@@ -111,13 +108,16 @@ def envelope(ok,code,**kw):
     return p
 def next_index(step,current,wait_result,total):
     n=step.get("next")
-    if isinstance(n,int):return n
-    if isinstance(n,dict):
+    if isinstance(n,int):target=n
+    elif isinstance(n,dict):
         b=(wait_result or {}).get("matched_branch")
-        if b in n:return int(n[b])
-        if "default" in n:return int(n["default"])
-        if b is not None:raise RuntimeError(f"no next target for branch {b}")
-    return current+1
+        if b in n:target=int(n[b])
+        elif "default" in n:target=int(n["default"])
+        elif b is not None:raise RuntimeError(f"no next target for branch {b}")
+        else:return current+1
+    else:return current+1
+    if not 0<=target<total:raise ValueError(f"next target {target} out of range 0..{total-1}")
+    return target
 def tool_modes(response):
     out={};r=response.get("result") if isinstance(response,dict) else None
     for t in (r.get("tools",[]) if isinstance(r,dict) else []):
@@ -136,7 +136,7 @@ def run(driver,request,timeout,wlsock):
         send(p,{"jsonrpc":"2.0","method":"notifications/initialized"});send(p,{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}})
         try:modes=tool_modes(recv_for(p,2,min(timeout,5)))
         except Exception:modes={}
-        index=int(request.get("start",0));transition=0;request_id=3
+        index=request["start"];transition=0;request_id=3
         while 0<=index<requested:
             transition+=1
             if transition>MAX_TRANSITIONS:return envelope(False,"boundary",requested=requested,completed=completed,results=results,boundary={"index":index,"reason":"transition_limit"},control=control),30

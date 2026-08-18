@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 APP="gnome-wayland-computer-use"; SCHEMA="gwcu.worldline.v1"; REV="gwcu.worldline.revision.v1"
-MAX=1<<20; IDLE=300
+MAX=1<<20; IDLE=300; MAX_FACTS=4096
 
 def js(x:Any)->str:return json.dumps(x,separators=(",",":"),ensure_ascii=True)
 def root()->Path:return Path(os.getenv("XDG_RUNTIME_DIR",f"/run/user/{os.getuid()}"))/APP
@@ -25,16 +25,25 @@ def run(argv:list[str],timeout=.6)->str|None:
     return r.stdout.strip() if r.returncode==0 else None
 
 def call(path:Path,payload:dict[str,Any],timeout=3.0)->dict[str,Any]:
-    s=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM);s.settimeout(timeout)
+    s=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM);s.settimeout(timeout);buf=bytearray()
     try:
-        s.connect(str(path));s.sendall((js(payload)+"\n").encode());buf=bytearray()
+        try:s.connect(str(path))
+        except OSError as e:raise RuntimeError("worldline_socket_unreachable" if isinstance(e,FileNotFoundError) else "worldline_connect_failed") from None
+        try:s.sendall((js(payload)+"\n").encode())
+        except OSError:raise RuntimeError("worldline_write_failed") from None
         while b"\n" not in buf and len(buf)<=MAX:
-            b=s.recv(65536)
+            try:b=s.recv(65536)
+            except OSError as e:
+                if isinstance(e,socket.timeout):raise RuntimeError("worldline_response_timeout") from None
+                raise RuntimeError("worldline_response_failed") from None
             if not b:break
             buf.extend(b)
     finally:s.close()
-    if len(buf)>MAX:raise RuntimeError("response_too_large")
-    return json.loads(bytes(buf).split(b"\n",1)[0])
+    if not buf:raise RuntimeError("worldline_closed_without_response")
+    if len(buf)>MAX:raise RuntimeError("worldline_response_too_large")
+    raw=bytes(buf).split(b"\n",1)[0]
+    try:return json.loads(raw)
+    except ValueError:raise RuntimeError("worldline_invalid_response") from None
 
 def observer_capture(timeout_ms=1500)->dict[str,Any]:
     try:return call(observer(),{"v":1,"op":"capture","fresh":"next","timeout_ms":timeout_ms},max(2,timeout_ms/1000+1))
@@ -179,8 +188,12 @@ class World:
             ready=bool(states) and (all(states) if tx.get("mode","all")=="all" else any(states))
             if ready and tx.get("status")!="ready":tx["status"]="ready";tx["ready_revision"]=n;woken.append(ident)
         conflicts=[{"type":"postcondition_unsatisfied","predicate":p} for p in unsat] if q.get("conflict_on_unsatisfied") else []
+        if len(self.facts)>MAX_FACTS:
+            for k in sorted(self.facts,key=lambda x:self.facts[x].get("revision",0))[:len(self.facts)-MAX_FACTS]:self.facts.pop(k,None)
         self.last={"schema":REV,"ok":not conflicts,"revision":n,"previous_revision":n-1,"trigger":str(q.get("trigger") or "manual"),"boundary":{"monotonic_ns":time.monotonic_ns(),"wall_time_ns":time.time_ns()},"events":{"count":len(events),"sources":sources},"changed":sorted(changed),"invalidated":sorted(invalid),"preserved":sorted(before-changed-invalid),"predicates_satisfied":sat,"predicates_unsatisfied":unsat,"woken":woken,"conflicts":conflicts,"uncertain":bool(visual.get("uncertain")),"visual":visual}
-        self.save();self.changed.notify_all();return self.last
+        dirty=bool(changed or invalid or events or woken or conflicts or visual.get("changed"))
+        if dirty:self.save()
+        self.changed.notify_all();return self.last
     def event(self,e:dict[str,Any]):
         with self.changed:
             self.events.append({"source":str(e.get("source") or "external"),"type":str(e.get("type") or "event"),"facts":e.get("facts") if isinstance(e.get("facts"),dict) else {},"invalidates":e.get("invalidates") if isinstance(e.get("invalidates"),list) else [],"monotonic_ns":time.monotonic_ns()});self.events=self.events[-2048:]
