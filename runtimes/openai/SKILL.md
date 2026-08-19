@@ -66,7 +66,7 @@ Never actuate from a title-only match. Firefox has no typed page-mutation route.
 
 ## GNOME portal contract
 
-GNOME Wayland is the supported session. **No X11 or XWayland session is required.** Cua uses GNOME RemoteDesktop → EIS/libei for input. GWCU installs no RDP/VNC server or raw-input daemon. ScreenCast/PipeWire is the separate observation path.
+GNOME Wayland is the supported session. **No X11 or XWayland session is required.** Cua uses GNOME `RemoteDesktop` → EIS/libei for input; GNOME may label this permission **Remote Desktop**. GWCU installs no RDP/VNC server or raw-input daemon. ScreenCast/PipeWire is the separate observation path.
 
 Cua's installed `winrects@cua` GNOME Shell helper is part of the supported control plane. Its stable window id is the `window_id` used for exact presentation.
 
