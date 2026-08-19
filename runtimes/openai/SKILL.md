@@ -54,7 +54,19 @@ or any unsupported browser shape
 → normal Cua window discovery + AX/PX computer_use actions
 ```
 
-Use Cua's browser route only when Cua advertises and successfully binds it. Never infer support from “this is a browser.” A Cua structured refusal is routing truth, not permission to switch to a hidden/headless browser tool.
+The typed route is admitted by proof, never by product name:
+
+1. Discover the exact native browser `(pid, window_id)` with Cua `list_windows` or native capture.
+2. Bind with `cua_browser_state` using both values.
+3. Mutate only when the current bind reports `status:"ok"`, `binding_quality:"exact"`, and `mutation_allowed:true`.
+4. Choose the returned opaque `tab_id`, request a fresh `semantic_v2` snapshot, and use only refs/actions from that snapshot.
+5. Every mutation invalidates refs. Snapshot again before the next ref-based action and verify with a fresh state snapshot at completion.
+
+A heuristic title match is read-only. A moved tab, process restart, ambiguous compositor identity, stale ref, or changed native-window proof must re-bind or refuse. Never pick a similar-looking window. Firefox has no typed page-mutation route; keep it on Cua's native window ladder.
+
+Typed-browser page actions and their agent-cursor feedback do **not** imply focus or z-order. An unselected tab may still be fully addressable. When the resolved control posture is foreground/obvious, ensure the exact native browser window is visibly presented before depending on typed page actions. A `visible_required` task additionally carries the persistent final-presentation contract below.
+
+A Cua structured refusal is routing truth, not permission to switch to a hidden/headless browser tool.
 
 ## GNOME portal contract
 
@@ -121,7 +133,7 @@ If background was selected but Cua returns `background_unavailable` / `foregroun
 
 Foreground delivery and visible presentation are separate properties.
 
-A Cua foreground action may temporarily front a target and restore the previous app. That is correct delivery but does **not** satisfy “show me,” “watch this,” or another visible-result request. Conversely, explicitly requested background work may stay background while it executes and still require the result to be presented at completion.
+A Cua foreground action may temporarily front a target and restore the previous app. That is correct delivery but does **not** satisfy “show me,” “watch this,” or another visible-result request. Conversely, explicitly requested background work may stay background while it executes and still require the result to be presented at completion. Typed-browser mutation can also succeed on an unselected tab; that likewise does not satisfy a visible result.
 
 For `visible_required` tasks:
 
@@ -151,7 +163,7 @@ current transient fact        → WORLDLINE
 stable recurring mechanics    → repository script
 one-off mechanical fan-out    → execute_code
 predetermined GUI sequence    → one Cua action span
-browser page work             → Cua browser route if Cua binds it exactly
+browser page work             → exact-bound Cua browser route
 browser/native fallback       → Cua window AX/PX route
 explicit visual uncertainty   → WORLDLINE visual / observe.sh
 independent reasoning         → delegate_task
