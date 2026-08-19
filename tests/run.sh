@@ -27,7 +27,19 @@ pass "Cua remains pinned and sole actuator"
 # NAME=Ubuntu. The app identity must be namespaced and distro metadata isolated.
 grep -Fq 'APP_ID="gnome-wayland-computer-use"' "$installer" || fail "installer app identity is not namespaced"
 grep -Fq 'read_os_release' "$installer" || fail "isolated os-release reader missing"
-! grep -Eq '^[[:space:]]*\.[[:space:]]+/etc/os-release' "$installer" || fail "installer sources os-release into its global namespace"
+OS_SOURCE_COUNT=$(grep -Ec '^[[:space:]]*\.[[:space:]]+/etc/os-release' "$installer" || true)
+[ "$OS_SOURCE_COUNT" -eq 1 ] || fail "os-release must have exactly one controlled source point"
+python3 - "$installer" <<'PY' || fail "os-release source is not isolated in a subshell"
+import pathlib,sys
+text=pathlib.Path(sys.argv[1]).read_text()
+start=text.index('read_os_release(){')
+end=text.index('\n}\n', start)
+body=text[start:end]
+source=body.index('. /etc/os-release')
+subshell=body.index('(\n')
+assert subshell < source
+assert text.count('. /etc/os-release') == 1
+PY
 grep -Fq 'Host metadata never gets to mutate installer state.' "$installer" || fail "os-release namespace regression is undocumented"
 grep -Fq 'PLUGIN="$HERMES_HOME/plugins/$APP_ID"' "$installer" || fail "Hermes plugin path can drift from app identity"
 pass "Ubuntu metadata cannot clobber GWCU identity"
