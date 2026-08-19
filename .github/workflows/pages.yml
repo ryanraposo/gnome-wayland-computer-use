@@ -38,6 +38,8 @@ jobs:
         run: bash ./tests/lifecycle-safety.sh
       - name: Determinism contract
         run: bash ./tests/determinism.sh
+      - name: Hermes policy integration
+        run: bash ./tests/hermes.sh
       - name: Regression suite
         run: ./tests/run.sh
   deploy:

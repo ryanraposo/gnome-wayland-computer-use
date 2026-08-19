@@ -24,12 +24,12 @@ do
 done
 grep -Fq '/computer-use <task>' "$ROOT/SKILL.md" || fail "task-form slash invocation missing"
 grep -Fq 'Everything else is a task.' "$ROOT/SKILL.md" || fail "task/subcommand dispatch rule missing"
-grep -Fq 'status`, `background`, `managed`, `truths`, `consent`, `doctor`, and `help' "$ROOT/SKILL.md" || fail "reserved subcommand set drifted"
-if grep -Fq 'ctx.register_command(' "$ROOT/runtimes/hermes/__init__.py"; then
-    fail "Hermes plugin shadows the native computer-use skill command"
-fi
-grep -Fq 'installed skill owns the /computer-use slash command' "$ROOT/runtimes/hermes/__init__.py" || fail "Hermes slash-ownership contract missing"
-pass "/computer-use accepts both tasks and reserved subcommands"
+for sub in status trace present background managed truths consent doctor help; do grep -Fq "/computer-use $sub" "$ROOT/SKILL.md" || fail "reserved subcommand missing: $sub"; done
+! grep -Fq 'ctx.register_command(' "$ROOT/runtimes/hermes/__init__.py" || fail "Hermes plugin shadows skill task dispatch"
+grep -Fq 'installed skill owns ``/computer-use`` task dispatch' "$ROOT/runtimes/hermes/__init__.py" || fail "Hermes slash ownership contract missing"
+grep -Fq 'SUBCOMMANDS["/computer-use"]' "$ROOT/runtimes/hermes/__init__.py" || fail "Hermes completion metadata missing"
+grep -Fq 'normalized == "/computer-use"' "$ROOT/runtimes/hermes/__init__.py" || fail "skill-completer exception missing"
+pass "/computer-use keeps task dispatch while reserved subcommands autocomplete"
 
 grep -q 'MUST cross the model/tool boundary exactly once' "$ROOT/SKILL.md" || fail "one-call invariant softened"
 grep -q 'computer-use.sh" span --actions-json' "$ROOT/SKILL.md" || fail "span surface missing"
@@ -40,7 +40,7 @@ grep -q 'toggles the standing delivery preference' "$ROOT/SKILL.md" || fail "bac
 grep -q 'documentation lives in `README.md`' "$ROOT/SKILL.md" || fail "skill points at retired docs"
 pass "skill teaches one Cua + WORLDLINE execution contract"
 
-# Regression constitution for the real invisible-browser failure.
+# Invisible-control regression constitution.
 grep -Fq "do not route browser work through Hermes' separate \`browser_*\` toolset" "$ROOT/SKILL.md" || fail "browser actuator split can recur"
 grep -Fq 'cua_browser_state / cua_browser_* actions' "$ROOT/SKILL.md" || fail "Cua browser route is not explicit"
 grep -Fq 'binding_quality:"exact"' "$ROOT/SKILL.md" || fail "typed browser route no longer requires exact native binding"
@@ -49,24 +49,28 @@ grep -Fq 'Every mutation invalidates refs.' "$ROOT/SKILL.md" || fail "typed brow
 grep -Fq 'An unselected tab may still be fully addressable.' "$ROOT/SKILL.md" || fail "typed browser visibility trap is undocumented"
 grep -Fq 'Firefox has no typed page-mutation route' "$ROOT/SKILL.md" || fail "Firefox can be misrouted into typed browser mutation"
 grep -Fq 'A hidden/headless/managed browser success is a failure' "$ROOT/SKILL.md" || fail "visible-result failure is not explicit"
-grep -Fqi 'there is deliberately **no floating confidence threshold**' "$ROOT/SKILL.md" || fail "confidence arbiter regression guard missing"
+grep -Fqi 'There is deliberately **no floating confidence threshold**' "$ROOT/SKILL.md" || fail "confidence arbiter regression guard missing"
 ! grep -Eq 'F <|F >|0\.40|0\.60|\.40–\.60' "$ROOT/SKILL.md" || fail "obsolete confidence threshold still documented"
-grep -Fq 'foreground_confidence' "$ROOT/scripts/action-span.py" || fail "legacy compatibility parser disappeared"
-grep -Fq 'legacy_confidence_authoritative' "$ROOT/scripts/action-span.py" || fail "legacy confidence authority is ambiguous"
-grep -Fq 'tools.override' "$ROOT/runtimes/hermes/plugin.yaml" || fail "Hermes policy override is not capability-gated"
-pass "browser visibility, exact binding and control-priority regression are constitutionally covered"
+grep -Fq 'exact_pid_window -> cua_gnome_present -> focused_visible_proof -> cua_input' "$ROOT/scripts/action-span.py" || fail "action-span lost exact foreground invariant"
+grep -Fq 'exact_target_required_for_foreground' "$ROOT/scripts/action-span.py" || fail "targetless foreground can recur"
+grep -Fq 'presentation_not_proved' "$ROOT/scripts/action-span.py" || fail "presentation failure can leak into input"
+grep -Fq 'tools.override' "$ROOT/runtimes/hermes/plugin.yaml" || fail "Hermes policy override is not declared"
+pass "browser and exact foreground presentation are constitutionally covered"
 
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 SURFACE="$ROOT/scripts/computer-use.sh"
 XDG_STATE_HOME="$TMP/state" "$SURFACE" background status >"$TMP/default"
-grep -q 'Background computer use: OFF' "$TMP/default" || fail "background default is not obvious control"
-grep -q 'FASTEST / most deterministic' "$TMP/default" || fail "performance recommendation missing"
+grep -q 'Background computer use: OFF' "$TMP/default" || fail "background default is not visible takeover"
+grep -q 'EXACT VISIBLE TAKEOVER' "$TMP/default" || fail "default takeover contract missing"
+XDG_STATE_HOME="$TMP/state" "$SURFACE" trace >"$TMP/trace"
+for stage in DISCOVER PRESENT ACT REVALIDATE 'COMPLETE VISIBLY'; do grep -Fq "$stage" "$TMP/trace" || fail "trace lost stage: $stage"; done
+grep -Fq 'otherwise STOP before input' "$ROOT/SKILL.md" || fail "pre-actuation failure boundary missing"
 XDG_STATE_HOME="$TMP/state" "$SURFACE" background >"$TMP/on"
 grep -q 'Background computer use: ON' "$TMP/on" || fail "bare background command did not toggle on"
 XDG_STATE_HOME="$TMP/state" "$SURFACE" background >"$TMP/off"
 grep -q 'Background computer use: OFF' "$TMP/off" || fail "bare background command did not toggle off"
-grep -q 'Prioritize background computer use when available? Obvious control is faster and more deterministic' "$ROOT/install.sh" || fail "installer background choice missing"
-pass "background priority is deterministic, toggled, and installer-visible"
+grep -q 'Default visible takeover is faster and deterministic' "$ROOT/install.sh" || fail "installer background choice missing"
+pass "default control path is visible, pre-traced and deterministic"
 
 grep -q '^## Maintaining this repository$' "$ROOT/AGENTS.md" || fail "repository guide lost maintenance routing"
 grep -q 'Persistent machine/user truth never belongs in AGENTS.md' "$ROOT/AGENTS.md" || fail "AGENTS permits machine truth"

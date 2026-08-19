@@ -15,20 +15,22 @@ metadata:
 
 # Computer Use on Ubuntu GNOME
 
-Use **Cua Driver as the control authority**. WORLDLINE owns transient revisioned facts, invalidation and postconditions. `.gwcu` owns durable repo/workspace truth.
+Use **Cua Driver as the only control authority**. WORLDLINE owns transient revisioned truth and postconditions. `.gwcu` owns durable local facts.
 
-> **The model decides intent. WORLDLINE holds the control loop. Cua executes.**
-
-Cua owns semantic/pixel actions, browser-backed actions, target state, geometry, activation, input delivery, cursor behavior, effects, escalation and structured refusals. WORLDLINE never injects input.
+> **Resolve exactly. Present exactly. Cua acts. Verify reality.**
 
 ## Invocation contract
 
-`/computer-use <task>` is the primary user-facing entry point. Hermes loads this installed skill and attaches everything after `/computer-use` as the user's instruction. Treat that text exactly like a normal computer-use request; do not parse the first word as an operator command unless it is one of the reserved subcommands below.
+`/computer-use <task>` is the primary user-facing entry point. Everything after `/computer-use` is normal task text unless the first token is one of these reserved operator subcommands:
 
-Reserved subcommands are `status`, `background`, `managed`, `truths`, `consent`, `doctor`, and `help`. For those forms, invoke the installed operator surface once and return its result:
+`status`, `trace`, `present`, `background`, `managed`, `truths`, `consent`, `doctor`, and `help`.
+
+For a reserved form, your first tool call MUST execute the installed operator surface once; return its result without reinterpretation:
 
 ```text
 /computer-use status
+/computer-use trace
+/computer-use present --pid PID --window-id ID
 /computer-use background [on|off|status]
 /computer-use managed [on|off|status]
 /computer-use truths
@@ -37,119 +39,128 @@ Reserved subcommands are `status`, `background`, `managed`, `truths`, `consent`,
 /computer-use help
 ```
 
-Everything else is a task. For example, `/computer-use open YouTube and play something` means perform that task through Cua with this skill loaded; it is not an unknown `open` subcommand.
+Everything else is a task. `/computer-use open YouTube and play something` means do the task; `open` is not a subcommand.
 
 ## One actuator, including the browser
 
-While this skill is active, **do not route browser work through Hermes' separate `browser_*` toolset**. That can create or control a browser surface that is not the user's visible desktop session and violates GWCU's single-actuator contract.
-
-Browser work remains Cua work:
+While this skill is active, **do not route browser work through Hermes' separate `browser_*` toolset**. Browser work remains Cua work:
 
 ```text
 Chromium/Electron exact route available
 → computer_use cua_browser_state / cua_browser_* actions
 
-Firefox, browser chrome, generic GNOME Wayland typed-route refusal,
-or any unsupported browser shape
-→ normal Cua window discovery + AX/PX computer_use actions
+Firefox, browser chrome, unsupported typed route
+→ Cua native window AX/PX route
 ```
 
-The typed route is admitted by proof, never by product name:
+The typed route is admitted by proof:
 
-1. Discover the exact native browser `(pid, window_id)` with Cua `list_windows` or native capture.
-2. Bind with `cua_browser_state` using both values.
-3. Mutate only when the current bind reports `status:"ok"`, `binding_quality:"exact"`, and `mutation_allowed:true`.
-4. Choose the returned opaque `tab_id`, request a fresh `semantic_v2` snapshot, and use only refs/actions from that snapshot.
-5. Every mutation invalidates refs. Snapshot again before the next ref-based action and verify with a fresh state snapshot at completion.
+1. Discover the exact native browser `(pid, window_id)` with Cua `list_windows`.
+2. Run the foreground presentation gate when foreground/visible control applies.
+3. Bind `cua_browser_state` using both values.
+4. Mutate only when the bind says `status:"ok"`, `binding_quality:"exact"`, and `mutation_allowed:true`.
+5. Choose the returned opaque `tab_id`; request a fresh `semantic_v2` snapshot.
+6. Every mutation invalidates refs. Snapshot again before the next ref-based action and at completion.
 
-A heuristic title match is read-only. A moved tab, process restart, ambiguous compositor identity, stale ref, or changed native-window proof must re-bind or refuse. Never pick a similar-looking window. Firefox has no typed page-mutation route; keep it on Cua's native window ladder.
-
-Typed-browser page actions and their agent-cursor feedback do **not** imply focus or z-order. An unselected tab may still be fully addressable. When the resolved control posture is foreground/obvious, ensure the exact native browser window is visibly presented before depending on typed page actions. A `visible_required` task additionally carries the persistent final-presentation contract below.
-
-A Cua structured refusal is routing truth, not permission to switch to a hidden/headless browser tool.
+Never actuate from a title-only match. Firefox has no typed page-mutation route. An unselected tab may still be fully addressable. Typed page success does not prove the browser window or tab is visibly presented. A hidden/headless/managed browser success is a failure when the requested result is meant to be visible.
 
 ## GNOME portal contract
 
-GNOME Wayland is the intended session. **No X11 or XWayland session is required.** Cua uses GNOME's `org.freedesktop.portal.RemoteDesktop` API for a local EIS/libei pointer/keyboard session. GNOME may label this permission "Remote Desktop". GWCU installs no RDP/VNC server or raw-input daemon. Whole-screen observation is separately consented through ScreenCast/PipeWire.
+GNOME Wayland is the supported session. **No X11 or XWayland session is required.** Cua uses GNOME RemoteDesktop → EIS/libei for input. GWCU installs no RDP/VNC server or raw-input daemon. ScreenCast/PipeWire is the separate observation path.
+
+Cua's installed `winrects@cua` GNOME Shell helper is part of the supported control plane. Its stable window id is the `window_id` used for exact presentation.
 
 ## Core rule
 
 **Observation is an interrupt, not a ritual RPC.**
 
 ```text
-model
-→ one local call
-→ Cua actions
-→ WORLDLINE revisions/predicates
-→ continue locally
-→ model only at a real decision boundary
+model decides
+→ exact target is established
+→ local transaction runs
+→ Cua acts
+→ WORLDLINE watches postconditions
+→ model returns only at a real decision boundary
 ```
-
-A model/tool round-trip is justified only when fresh state can change the next decision and local machinery cannot establish it.
 
 ## Control priority
 
 `/computer-use background` **toggles the standing delivery preference**.
 
-- OFF is the default: foreground/obvious control.
-- ON prefers background delivery where Cua supports it.
-- Explicit user foreground/background wording chooses the delivery shape.
-- Otherwise, a task whose requested result must remain visible forces foreground delivery.
-- Cua capability/runtime truth has final say.
-- Independently of delivery shape, a visible-result request still carries the visible presentation postcondition below.
+- OFF is the default: **exact visible takeover**.
+- ON explicitly prefers background delivery where Cua supports it.
+- Explicit user foreground/background wording wins.
+- A requested visible result always finishes with exact visible presentation.
+- Cua runtime truth remains authoritative.
 
-There is deliberately **no floating confidence threshold** in the control policy. Absence of words such as “foreground” is not evidence for background use. Legacy `foreground_confidence` metadata is accepted by the runner for compatibility but does not select delivery.
+There is deliberately **no floating confidence threshold**. Missing foreground words do not imply background intent. Legacy `foreground_confidence` remains parse-compatible and non-authoritative.
 
-When preparing a GWCU action span, pass only control facts that are actually known:
+The default foreground path is not “send `delivery_mode:foreground` and hope.” Cua documents foreground delivery as action-scoped activation which may restore the prior frontmost window. GWCU therefore makes persistent presentation a separate admission gate.
 
-```json
-{"control":{"visible_required":true}}
-```
+### Exact default trace
 
-or, when the user explicitly chose a delivery shape:
-
-```json
-{"control":{"explicit_mode":"background"}}
-```
-
-The local arbiter is mechanical:
+When background priority is OFF, pre-trace this path before the first mutation:
 
 ```text
-explicit foreground/background wording    → explicit mode
-otherwise, visible result required         → foreground
-otherwise                                  → standing preference
-Cua capability/runtime truth               → final say
+1 DISCOVER
+  Cua list_windows
+  → exact intended (pid, window_id)
+  → no title-only actuation
+
+2 PRESENT
+  Cua GNOME presentation gate
+  → attested org.cua.WinRects owner
+  → exact stable-sequence id + pid exists exactly once
+  → Activate(window_id)
+  → GNOME reports that exact window focused=true, visible=true, minimized=false
+  → otherwise STOP before input
+
+3 ACT
+  computer_use mutation against the same pid + window_id
+  → delivery_mode="foreground"
+  → because the exact target was already frontmost, action-scoped restore returns to it
+
+4 REVALIDATE
+  if an action creates/closes/replaces the native target
+  → list_windows again before the next focus-bound mutation
+  → never carry stale identity forward
+
+5 COMPLETE VISIBLY
+  if visible_required
+  → present the final exact target again
+  → verify focused+visible
+  → verify requested app/page state
+  → leave it on screen
 ```
 
-`visible_required` is stronger than “we sent foreground input.” It means the completed task must be left on the user's visible desktop. Phrases such as “show me,” “watch/play this,” “take control,” “put this on my screen,” or “leave it open” normally imply it.
+This trace is the default contract, not advice. The Hermes `computer_use` policy shim and `action-span.py` both fail closed before foreground native input when exact `(pid, window_id)` presentation cannot be proved.
 
-For ordinary input, set `delivery_mode` explicitly when calling Hermes `computer_use`. The bundled GWCU Hermes policy shim also fills an omitted delivery mode from the standing preference when the user has granted its documented `tools.override` capability. This is a backstop, not a replacement for expressing known intent.
+For direct Hermes `computer_use` native input, always provide exact integer `pid` and `window_id`. Reads may remain target-free when their schema permits it.
 
-If background was selected but Cua returns `background_unavailable` / `foreground_required`, the local action-span runner retries that action once with foreground when Cua's live tool schema supports `delivery_mode`. It reports the override; it does not ask another model to rediscover the same fact.
+If background was selected and Cua explicitly returns `background_unavailable` / `foreground_required`, the action-span runner may fall forward once. It must pass the same exact presentation gate **before** retrying foreground.
 
-**Control-priority arbitration itself adds zero model calls.**
+**Control-priority arbitration adds zero model calls.**
 
 ## Visible-result contract
 
-Foreground delivery and visible presentation are separate properties.
+Foreground input and persistent presentation are different properties. `delivery_mode:"foreground"` alone does not satisfy “show me”, “watch this”, “take over”, “put this on my screen”, or “leave it open”.
 
-A Cua foreground action may temporarily front a target and restore the previous app. That is correct delivery but does **not** satisfy “show me,” “watch this,” or another visible-result request. Conversely, explicitly requested background work may stay background while it executes and still require the result to be presented at completion. Typed-browser mutation can also succeed on an unselected tab; that likewise does not satisfy a visible result.
+For `visible_required` work:
 
-For `visible_required` tasks:
+1. resolve exact native target;
+2. present it through `present-window.py` / the policy shim;
+3. perform Cua work;
+4. re-resolve if native identity changes;
+5. present the final exact target again;
+6. verify requested state; leave it visible.
 
-1. Resolve the exact native target through Cua.
-2. Perform the work through Cua.
-3. Persistently present the exact target with Cua (`focus_app` with `raise_window:true`, or Cua `bring_to_front` when using the direct MCP/action-span surface).
-4. Verify the intended target is the presented window and the requested state is true.
-5. Leave it visible unless the user asked for a different final presentation.
-
-A hidden/headless/managed browser success is a failure of this contract even when page state changed correctly.
+Do not use generic compositor guessing or title-only focus as a substitute.
 
 ## Call budget
 
 | Situation | setup calls before useful work |
 |---|---:|
-| known app/window | **0** |
+| exact known `(pid, window_id)` | **0 model calls** — presentation is local |
 | uncertain installed/PWA identity | **1** — `profile.sh route` |
 | host/runtime contradiction | **1** — `profile.sh recover` |
 | local postcondition/revision | **1** — `worldline-capture.sh` |
@@ -164,18 +175,16 @@ stable recurring mechanics    → repository script
 one-off mechanical fan-out    → execute_code
 predetermined GUI sequence    → one Cua action span
 browser page work             → exact-bound Cua browser route
-browser/native fallback       → Cua window AX/PX route
+browser/native fallback       → Cua native AX/PX route
 explicit visual uncertainty   → WORLDLINE visual / observe.sh
 independent reasoning         → delegate_task
 real user choice              → clarify
 unresolved desktop conflict   → parent Cua/model loop
 ```
 
-Keep portal consent and user-facing desktop decisions in the parent session. Delegate independent reasoning, not the interactive control loop.
-
 ## Known target
 
-If two or more consecutive Cua actions are fully determined by the same current evidence, they **MUST cross the model/tool boundary exactly once**.
+Two or more fully determined actions on the same current evidence **MUST cross the model/tool boundary exactly once**.
 
 ```bash
 ROOT="$HOME/.agents/skills/gnome-wayland-computer-use"
@@ -183,14 +192,14 @@ ROOT="$HOME/.agents/skills/gnome-wayland-computer-use"
   "schema":"gwcu.action-span.request.v1",
   "control":{"visible_required":true},
   "actions":[
-    {"name":"click","arguments":{"x":640,"y":420}},
-    {"name":"type_text","arguments":{"text":"hello"}},
-    {"name":"key_press","arguments":{"key":"ENTER"}}
+    {"name":"click","arguments":{"pid":1234,"window_id":88,"x":640,"y":420}},
+    {"name":"type_text","arguments":{"pid":1234,"window_id":88,"text":"hello"}},
+    {"name":"key_press","arguments":{"pid":1234,"window_id":88,"key":"ENTER"}}
   ]
 }'
 ```
 
-The installed runner keeps one Cua MCP session open. Split only when fresh state changes the next action, target identity becomes stale, a branch is undeclared, an async transition lacks a sufficient predicate, Cua fails/refuses, or a real user choice is required. No ritual screenshot or fixed sleep belongs between decided actions.
+The runner keeps one Cua MCP session open. For every foreground-capable mutation it locally proves exact presentation before sending `tools/call`. Split only when fresh state changes the decision, target identity changes, a branch is undeclared, Cua refuses/fails, or a real user choice appears.
 
 ## WORLDLINE postconditions
 
@@ -200,7 +209,7 @@ Use WORLDLINE when the executor can state what must become true.
 "$ROOT/scripts/worldline-capture.sh" --trigger action:save --expect-json '[{"path":"task.document.saved","op":"eq","value":true}]'
 ```
 
-Events may push authoritative facts. Prefer AT-SPI, filesystem, process, D-Bus, gsettings, network and task watchers before pixels. WORLDLINE runtime state is transient under `$XDG_RUNTIME_DIR`.
+Prefer direct truth: AT-SPI, filesystem, process, D-Bus, settings, network and task watchers before pixels. WORLDLINE never injects input.
 
 ## Unknown or browser-backed target
 
@@ -208,9 +217,7 @@ Events may push authoritative facts. Prefer AT-SPI, filesystem, process, D-Bus, 
 "$ROOT/scripts/profile.sh" route --machine "<target name>"
 ```
 
-Inside that one call: repo/workspace .gwcu lookup → deterministic launcher/PWA resolver only on miss → optional stable writeback → `gwcu.route.v1`. `.gwcu` accelerates identity; live Cua/WORLDLINE state wins on contradiction.
-
-This route identifies the desktop target. It never authorizes a switch to Hermes' separate browser automation plane.
+That call may use `.gwcu` to accelerate stable identity. Live Cua/WORLDLINE truth wins on contradiction. Route discovery never authorizes a switch to Hermes' separate browser automation plane.
 
 ## Host contradiction
 
@@ -218,7 +225,7 @@ This route identifies the desktop target. It never authorizes a switch to Hermes
 "$ROOT/scripts/profile.sh" recover --machine
 ```
 
-Do not make the model perform `read → refresh → diagnose` separately.
+Do not make the model perform `read → refresh → diagnose` as separate turns.
 
 ## Whole screen
 
@@ -227,40 +234,45 @@ Do not make the model perform `read → refresh → diagnose` separately.
 "$ROOT/scripts/observe.sh" --media --screen
 ```
 
-The observer keeps a portal-scoped PipeWire stream warm for a short task burst. Installation does not open ScreenCast merely to preheat it.
+Use visual escalation only when direct evidence is insufficient.
 
 ## `.gwcu`: durable truth, not runtime state
 
-Persistent machine/workspace truth belongs in a single `.gwcu` file, **never in `AGENTS.md`**. Git scopes add `/.gwcu` to the root `.gitignore` before the first write. Never persist screenshots, documents, user text, credentials, task history, transient focus/geometry, presentation guesses, or WORLDLINE revisions/predicates.
+Persistent machine/workspace truth belongs in one `.gwcu`, **never in `AGENTS.md`**. Never persist screenshots, documents, user text, credentials, transient focus/geometry, or WORLDLINE revisions.
 
 ## Failure and refusal policy
 
-Treat Cua output as information. **Never retry the same failed delivery shape blindly. Never answer a Cua refusal with raw pointer/keyboard injection. Never answer it by silently changing to Hermes' separate browser toolset.** A background→foreground retry is legal only when Cua explicitly establishes that the background delivery shape is unavailable and foreground is the declared deterministic fallback.
+**Never answer a Cua refusal with raw pointer/keyboard injection. Never switch silently to Hermes' separate browser toolset. Never guess focus.**
 
-Do not bypass Cua with `ydotool`, `/dev/uinput`, guessed focus or another control daemon.
+A foreground presentation failure is an actuation boundary: do not send the input. Re-resolve exact identity or report the failure. A background→foreground retry is legal only after Cua explicitly says background delivery is unavailable and the exact presentation gate succeeds.
 
 ## Completion proof
 
 ```text
 direct oracle / WORLDLINE predicate
-→ Cua verification
-→ targeted semantic evidence
-→ visual evidence only when necessary
-→ visible-target verification when visible_required
+→ exact Cua target truth
+→ focused+visible presentation proof when foreground/visible
+→ semantic/page verification
+→ pixels only when direct proof is insufficient
 ```
 
-Do not add a screenshot merely to feel certain. Do not report completion from a surface the user cannot see when visibility is part of the requested result. Report real failures and unresolved conflicts.
+A task is incomplete when the requested visible result is not actually on the user's desktop.
 
 ## Operator surfaces
 
 ```bash
 /computer-use <task>
 /computer-use status
+/computer-use trace
+/computer-use present --pid PID --window-id ID
 /computer-use background [on|off|status]
-/computer-use consent
-/computer-use managed on|off|status
+/computer-use managed [on|off|status]
 /computer-use truths
+/computer-use consent
 /computer-use doctor
+/computer-use help
 ```
 
-Human-facing architecture, lifecycle and operator documentation lives in `README.md`.
+`trace` prints the exact default control path. `present` is the deterministic exact-window presentation primitive.
+
+Project rationale and installation documentation lives in `README.md`.

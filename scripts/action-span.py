@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Execute a Cua/WORLDLINE transaction behind one model/tool boundary."""
+"""Execute a Cua/WORLDLINE transaction behind one model/tool boundary.
+
+Foreground is a mechanical contract on the supported GNOME target: before any
+Cua tool that advertises ``delivery_mode`` receives foreground input, the exact
+(pid, window_id) is persistently presented through Cua's attested GNOME helper.
+If that proof fails, the action is never sent.
+"""
 from __future__ import annotations
 
 import argparse
@@ -16,7 +22,7 @@ from mcp_client import recv_for, resolve_driver, send
 SCHEMA = "gwcu.action-span.v1"
 REQUEST_SCHEMA = "gwcu.action-span.request.v1"
 TRANSACTION_SCHEMA = "gwcu.transaction.v1"
-CONTROL_SCHEMA = "gwcu.control-priority.v2"
+CONTROL_SCHEMA = "gwcu.control-priority.v3"
 PROTOCOL = "2024-11-05"
 MAX_ACTIONS = 64
 MAX_TRANSITIONS = 256
@@ -49,12 +55,7 @@ def standing_preference() -> tuple[str, str]:
 
 
 def resolve_control(control: dict[str, Any]) -> dict[str, Any]:
-    """Resolve delivery mechanically; never infer background from missing cues.
-
-    ``foreground_confidence`` is retained only so older callers do not break.
-    It is deliberately non-authoritative: treating "no foreground words" as
-    confidence zero was the bug that made an OFF preference execute invisibly.
-    """
+    """Resolve delivery mechanically; never infer background from missing cues."""
     preference, source = standing_preference()
     explicit = control.get("explicit_mode")
     visible_required = bool(control.get("visible_required", False))
@@ -78,6 +79,11 @@ def resolve_control(control: dict[str, Any]) -> dict[str, Any]:
         "standing_preference": preference,
         "preference_source": source,
         "visible_required": visible_required,
+        "foreground_contract": (
+            "exact_pid_window -> cua_gnome_present -> focused_visible_proof -> cua_input"
+            if mode == "foreground"
+            else "exact_target_background_where_supported"
+        ),
         "legacy_foreground_confidence": legacy_confidence,
         "legacy_confidence_authoritative": False,
         "contradicts_preference": contradicts,
@@ -97,6 +103,10 @@ def worldline_socket(value: str | None) -> Path:
     return Path(runtime) / "gnome-wayland-computer-use" / "worldline.sock"
 
 
+def presenter_path(value: str | None) -> Path:
+    return Path(value) if value else Path(__file__).resolve().with_name("present-window.py")
+
+
 def worldline_call(path: Path, payload: dict[str, Any], timeout: float) -> dict[str, Any]:
     client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     client.settimeout(timeout)
@@ -114,6 +124,55 @@ def worldline_call(path: Path, payload: dict[str, Any], timeout: float) -> dict[
     if not data:
         raise RuntimeError("WORLDLINE closed without response")
     return json.loads(bytes(data).split(b"\n", 1)[0])
+
+
+def exact_target(arguments: dict[str, Any]) -> tuple[int, int] | None:
+    pid = arguments.get("pid")
+    window_id = arguments.get("window_id")
+    if (
+        isinstance(pid, int)
+        and not isinstance(pid, bool)
+        and pid > 0
+        and isinstance(window_id, int)
+        and not isinstance(window_id, bool)
+        and 0 <= window_id <= (1 << 32) - 1
+    ):
+        return pid, window_id
+    return None
+
+
+def present_exact(path: Path, target: tuple[int, int], timeout: float) -> dict[str, Any]:
+    pid, window_id = target
+    try:
+        proc = subprocess.run(
+            [
+                sys.executable,
+                str(path),
+                "present",
+                "--pid",
+                str(pid),
+                "--window-id",
+                str(window_id),
+                "--timeout-ms",
+                str(max(100, min(int(timeout * 1000), 3000))),
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=max(2.0, min(timeout + 1.0, 5.0)),
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {"ok": False, "code": "presentation_transport_failed", "detail": str(exc)}
+    try:
+        value = json.loads(proc.stdout.strip()) if proc.stdout.strip() else {}
+    except json.JSONDecodeError:
+        value = {"ok": False, "code": "presentation_invalid_output", "detail": proc.stdout[:1024]}
+    if proc.returncode != 0 and value.get("ok") is not False:
+        value = {"ok": False, "code": "presentation_failed", "detail": proc.stderr[:1024]}
+    return value
 
 
 def structured(response: dict[str, Any]) -> dict[str, Any] | None:
@@ -325,11 +384,19 @@ def tool_modes(response: dict[str, Any]) -> dict[str, bool]:
     return supported
 
 
-def run(driver: str, request: dict[str, Any], timeout: float, worldline_path: Path):
+def run(
+    driver: str,
+    request: dict[str, Any],
+    timeout: float,
+    worldline_path: Path,
+    presenter: Path,
+):
     steps = request["steps"]
     requested = len(steps)
     control = resolve_control(request.get("control", {}))
     overrides: list[dict[str, Any]] = []
+    presentations: list[dict[str, Any]] = []
+    last_foreground_target: tuple[int, int] | None = None
 
     try:
         process = subprocess.Popen(
@@ -343,40 +410,23 @@ def run(driver: str, request: dict[str, Any], timeout: float, worldline_path: Pa
             bufsize=1,
         )
     except OSError as exc:
-        return envelope(
-            False,
-            "driver_unavailable",
-            requested=requested,
-            detail=str(exc),
-            control=control,
-        ), 50
+        return envelope(False, "driver_unavailable", requested=requested, detail=str(exc), control=control), 50
 
     results: list[dict[str, Any]] = []
     completed = 0
     last_revision = None
     try:
-        send(
-            process,
-            {
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "initialize",
-                "params": {
-                    "protocolVersion": PROTOCOL,
-                    "capabilities": {},
-                    "clientInfo": {"name": "gwcu-action-span", "version": "2.3.0"},
-                },
+        send(process, {
+            "jsonrpc": "2.0", "id": 1, "method": "initialize",
+            "params": {
+                "protocolVersion": PROTOCOL,
+                "capabilities": {},
+                "clientInfo": {"name": "gwcu-action-span", "version": "2.3.0"},
             },
-        )
+        })
         initialized = recv_for(process, 1, timeout)
         if "error" in initialized:
-            return envelope(
-                False,
-                "mcp_initialize_failed",
-                requested=requested,
-                detail=compact(initialized),
-                control=control,
-            ), 50
+            return envelope(False, "mcp_initialize_failed", requested=requested, detail=compact(initialized), control=control), 50
 
         send(process, {"jsonrpc": "2.0", "method": "notifications/initialized"})
         send(process, {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
@@ -391,15 +441,7 @@ def run(driver: str, request: dict[str, Any], timeout: float, worldline_path: Pa
         while 0 <= index < requested:
             transition += 1
             if transition > MAX_TRANSITIONS:
-                return envelope(
-                    False,
-                    "boundary",
-                    requested=requested,
-                    completed=completed,
-                    results=results,
-                    boundary={"index": index, "reason": "transition_limit"},
-                    control=control,
-                ), 30
+                return envelope(False, "boundary", requested=requested, completed=completed, results=results, boundary={"index": index, "reason": "transition_limit"}, control=control), 30
 
             step = steps[index]
             action = step["action"]
@@ -409,60 +451,95 @@ def run(driver: str, request: dict[str, Any], timeout: float, worldline_path: Pa
                     status = worldline_call(worldline_path, {"op": "status"}, 3)
                     baseline = status.get("revision", baseline) if status.get("ok") else baseline
                 except Exception as exc:
-                    return envelope(
-                        False,
-                        "worldline_boundary",
-                        requested=requested,
-                        completed=completed,
-                        results=results,
-                        boundary={"index": index, "reason": "worldline_unavailable_before_action"},
-                        detail=str(exc),
-                        revision=last_revision,
-                        control=control,
-                    ), 50
+                    return envelope(False, "worldline_boundary", requested=requested, completed=completed, results=results, boundary={"index": index, "reason": "worldline_unavailable_before_action"}, detail=str(exc), revision=last_revision, control=control), 50
 
             arguments = dict(action["arguments"])
             supports_delivery = bool(modes.get(action["name"]))
-            applied = None
             if supports_delivery and "delivery_mode" not in arguments:
                 arguments["delivery_mode"] = control["mode"]
-                applied = control["mode"]
-            elif "delivery_mode" in arguments:
-                applied = arguments["delivery_mode"]
+            applied = arguments.get("delivery_mode") if supports_delivery else None
 
-            send(
-                process,
-                {
-                    "jsonrpc": "2.0",
-                    "id": request_id,
-                    "method": "tools/call",
-                    "params": {"name": action["name"], "arguments": arguments},
-                },
-            )
+            # Foreground is admitted only after exact persistent presentation.
+            # This deliberately happens BEFORE tools/call, so an ambiguous or
+            # unpresentable target cannot receive focus-bound global input.
+            presentation = None
+            target = exact_target(arguments) if supports_delivery else None
+            if applied == "foreground":
+                if target is None:
+                    control["presentations"] = presentations
+                    return envelope(
+                        False,
+                        "boundary",
+                        requested=requested,
+                        completed=completed,
+                        results=results,
+                        boundary={"index": index, "name": action["name"], "reason": "exact_target_required_for_foreground"},
+                        detail="foreground Cua input requires exact integer pid + window_id",
+                        revision=last_revision,
+                        control=control,
+                    ), 30
+                presentation = present_exact(presenter, target, min(timeout, 3))
+                presentations.append({"index": index, "target": {"pid": target[0], "window_id": target[1]}, "result": presentation})
+                if not presentation.get("ok"):
+                    control["presentations"] = presentations
+                    return envelope(
+                        False,
+                        "boundary",
+                        requested=requested,
+                        completed=completed,
+                        results=results,
+                        boundary={"index": index, "name": action["name"], "reason": "presentation_not_proved"},
+                        detail=compact(presentation),
+                        revision=last_revision,
+                        control=control,
+                    ), 30
+                last_foreground_target = target
+
+            send(process, {
+                "jsonrpc": "2.0", "id": request_id, "method": "tools/call",
+                "params": {"name": action["name"], "arguments": arguments},
+            })
             response = recv_for(process, request_id, timeout)
             request_id += 1
 
             fallback = False
             if applied == "background" and supports_delivery and background_unavailable(response):
                 fallback = True
-                overrides.append(
-                    {
-                        "index": index,
-                        "from": "background",
-                        "to": "foreground",
-                        "reason": "cua_background_unavailable",
-                    }
-                )
+                target = exact_target(arguments)
+                if target is None:
+                    control["presentations"] = presentations
+                    return envelope(
+                        False,
+                        "boundary",
+                        requested=requested,
+                        completed=completed,
+                        results=results,
+                        boundary={"index": index, "name": action["name"], "reason": "exact_target_required_for_foreground_fallback"},
+                        revision=last_revision,
+                        control=control,
+                    ), 30
+                presentation = present_exact(presenter, target, min(timeout, 3))
+                presentations.append({"index": index, "target": {"pid": target[0], "window_id": target[1]}, "reason": "background_fallback", "result": presentation})
+                if not presentation.get("ok"):
+                    control["presentations"] = presentations
+                    return envelope(
+                        False,
+                        "boundary",
+                        requested=requested,
+                        completed=completed,
+                        results=results,
+                        boundary={"index": index, "name": action["name"], "reason": "presentation_not_proved_for_fallback"},
+                        detail=compact(presentation),
+                        revision=last_revision,
+                        control=control,
+                    ), 30
+                overrides.append({"index": index, "from": "background", "to": "foreground", "reason": "cua_background_unavailable"})
                 arguments["delivery_mode"] = "foreground"
-                send(
-                    process,
-                    {
-                        "jsonrpc": "2.0",
-                        "id": request_id,
-                        "method": "tools/call",
-                        "params": {"name": action["name"], "arguments": arguments},
-                    },
-                )
+                last_foreground_target = target
+                send(process, {
+                    "jsonrpc": "2.0", "id": request_id, "method": "tools/call",
+                    "params": {"name": action["name"], "arguments": arguments},
+                })
                 response = recv_for(process, request_id, timeout)
                 request_id += 1
 
@@ -477,21 +554,14 @@ def run(driver: str, request: dict[str, Any], timeout: float, worldline_path: Pa
                     "delivery_mode_supported": supports_delivery,
                     "applied": arguments.get("delivery_mode") if supports_delivery else "driver_default",
                     "fallback": fallback,
+                    "presentation": presentation,
                 },
             }
             results.append(record)
             if failed:
                 control["runtime_overrides"] = overrides
-                return envelope(
-                    False,
-                    "boundary",
-                    requested=requested,
-                    completed=completed,
-                    results=results,
-                    boundary={"index": index, "name": action["name"], "reason": reason},
-                    revision=last_revision,
-                    control=control,
-                ), 30
+                control["presentations"] = presentations
+                return envelope(False, "boundary", requested=requested, completed=completed, results=results, boundary={"index": index, "name": action["name"], "reason": reason}, revision=last_revision, control=control), 30
 
             completed += 1
             wait_result = None
@@ -507,58 +577,35 @@ def run(driver: str, request: dict[str, Any], timeout: float, worldline_path: Pa
                         max(1, min(float(spec.get("timeout_ms", 5000)) / 1000 + 2, 122)),
                     )
                 except Exception as exc:
-                    return envelope(
-                        False,
-                        "worldline_boundary",
-                        requested=requested,
-                        completed=completed,
-                        results=results,
-                        boundary={"index": index, "reason": "worldline_unavailable"},
-                        detail=str(exc),
-                        revision=last_revision,
-                        control=control,
-                    ), 50
+                    return envelope(False, "worldline_boundary", requested=requested, completed=completed, results=results, boundary={"index": index, "reason": "worldline_unavailable"}, detail=str(exc), revision=last_revision, control=control), 50
                 record["worldline"] = wait_result
                 last_revision = wait_result.get("revision", last_revision)
                 if not wait_result.get("ok"):
-                    return envelope(
-                        False,
-                        "boundary",
-                        requested=requested,
-                        completed=completed,
-                        results=results,
-                        boundary={
-                            "index": index,
-                            "reason": f"worldline_{wait_result.get('code', 'failure')}",
-                        },
-                        revision=last_revision,
-                        control=control,
-                    ), 30
+                    return envelope(False, "boundary", requested=requested, completed=completed, results=results, boundary={"index": index, "reason": f"worldline_{wait_result.get('code', 'failure')}"}, revision=last_revision, control=control), 30
 
             index = next_index(step, index, wait_result, requested)
 
+        # A visible-result task finishes with persistent exact presentation.
+        # The final target is the last foreground target that actually admitted
+        # input; if the task destroyed/replaced it, the transaction must include
+        # another exact-target step instead of silently claiming visible success.
+        if control.get("visible_required"):
+            if last_foreground_target is None:
+                control["presentations"] = presentations
+                return envelope(False, "boundary", requested=requested, completed=completed, results=results, boundary={"reason": "visible_result_has_no_exact_final_target"}, revision=last_revision, control=control), 30
+            final_presentation = present_exact(presenter, last_foreground_target, min(timeout, 3))
+            presentations.append({"index": "final", "target": {"pid": last_foreground_target[0], "window_id": last_foreground_target[1]}, "result": final_presentation})
+            if not final_presentation.get("ok"):
+                control["presentations"] = presentations
+                return envelope(False, "boundary", requested=requested, completed=completed, results=results, boundary={"reason": "final_presentation_not_proved"}, detail=compact(final_presentation), revision=last_revision, control=control), 30
+
         control["runtime_overrides"] = overrides
+        control["presentations"] = presentations
         control["runtime_notice"] = "Had to switch to foreground for this." if overrides else None
-        return envelope(
-            True,
-            "completed",
-            requested=requested,
-            completed=completed,
-            results=results,
-            revision=last_revision,
-            control=control,
-        ), 0
+        return envelope(True, "completed", requested=requested, completed=completed, results=results, revision=last_revision, control=control), 0
     except Exception as exc:
-        return envelope(
-            False,
-            "transport_boundary",
-            requested=requested,
-            completed=completed,
-            results=results,
-            detail=str(exc),
-            revision=last_revision,
-            control=control,
-        ), 50
+        control["presentations"] = presentations
+        return envelope(False, "transport_boundary", requested=requested, completed=completed, results=results, detail=str(exc), revision=last_revision, control=control), 50
     finally:
         if process.poll() is None:
             process.terminate()
@@ -573,6 +620,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--driver")
     parser.add_argument("--worldline-socket")
+    parser.add_argument("--presenter")
     parser.add_argument("--timeout", type=float, default=15)
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--actions-json")
@@ -596,6 +644,7 @@ def main() -> int:
         request,
         max(1, min(args.timeout, 120)),
         worldline_socket(args.worldline_socket),
+        presenter_path(args.presenter),
     )
     print(compact(output))
     return rc

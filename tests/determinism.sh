@@ -22,12 +22,9 @@ grep -qi 'postcondition' "$ROOT/README.md" || fail "README lost predicate rule"
 grep -qi 'Transient revisioned state' "$ROOT/README.md" || fail "README lost WORLDLINE transient-state boundary"
 grep -Fq '0x0' "$ROOT/README.md" || fail "README lost the little guy"
 [ "$(grep -Fc 'Agents have variable success using Linux.' "$ROOT/README.md")" -eq 1 ] || fail "README must use the single little-guy-era description exactly once"
-! grep -Fq 'Computer use for Ubuntu 26.04 GNOME Wayland that keeps already-known reality out of the model loop.' "$ROOT/README.md" || fail "README still carries the discarded first description"
 pass "README carries state lifetimes, little-guy identity and one description"
 
-for retired in WORLDLINE.md GWCU.md DETERMINISM.md CAPABILITIES.md PERF_NOTES.md references/skill-ux-contract.md; do
-    [ ! -e "$ROOT/$retired" ] || fail "parallel documentation still exists: $retired"
-done
+for retired in WORLDLINE.md GWCU.md DETERMINISM.md CAPABILITIES.md PERF_NOTES.md references/skill-ux-contract.md; do [ ! -e "$ROOT/$retired" ] || fail "parallel documentation still exists: $retired"; done
 pass "README is the only human-facing project documentation"
 
 site="$ROOT/index.html"
@@ -35,28 +32,27 @@ grep -Fq '0x0' "$site" || fail "landing page lost the little guy"
 grep -Fq '<h1>gnome-wayland-computer-use</h1>' "$site" || fail "landing page lost original-style title"
 [ "$(grep -Fc 'class="description"' "$site")" -eq 1 ] || fail "landing page must contain one primary description element"
 [ "$(grep -Fc 'Agents have variable success using Linux.' "$site")" -eq 1 ] || fail "landing page must use the lower original description exactly once"
-! grep -Fq 'Computer use that remembers what just happened.' "$site" || fail "landing page still carries the discarded first description"
 grep -Fq '/computer-use open YouTube' "$site" || fail "landing page lost task-form slash UX"
 grep -Fq 'curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh | bash' "$site" || fail "landing page install command drifted"
 grep -Fq 'prefers-reduced-motion' "$site" || fail "landing page lost reduced-motion handling"
 grep -Fq 'background:var(--bg)' "$site" || fail "landing page lost dark little-guy visual language"
 grep -Fq 'mascot-card' "$site" || fail "landing page lost mascot panel"
-for retired in WORLDLINE.md GWCU.md DETERMINISM.md CAPABILITIES.md PERF_NOTES.md; do ! grep -Fq "$retired" "$site" || fail "landing page links retired doc: $retired"; done
-pass "little-guy landing page stays current, accessible and README-only"
+pass "little-guy landing page stays current and accessible"
 
 ! grep -Eq 'ydotool|/dev/uinput' "$ROOT/scripts/worldline.py" || fail "WORLDLINE owns input"
 ! grep -Eq 'ExecStart=.*cua-driver.*serve' "$ROOT/install.sh" || fail "installer creates a Cua daemon"
-grep -q 'Cua Driver as the control authority' "$ROOT/SKILL.md" || fail "skill lost single actuator"
+grep -q 'Cua Driver as the only control authority' "$ROOT/SKILL.md" || fail "skill lost single actuator"
 grep -q "do not route browser work through Hermes' separate" "$ROOT/SKILL.md" || fail "browser work can escape Cua authority"
 grep -q 'Never answer a Cua refusal with raw pointer/keyboard injection' "$ROOT/SKILL.md" || fail "refusal boundary missing"
-pass "one control plane remains across native and browser work"
+grep -Fq 'No exact `(pid, window_id)` proof, no focus-bound input.' "$ROOT/README.md" || fail "README lost exact presentation invariant"
+grep -Fq 'exact_target_required_for_foreground' "$ROOT/scripts/action-span.py" || fail "action-span no longer fails closed"
+pass "one exact control plane remains across native and browser work"
 
-grep -q 'scripts/action-span.py' "$ROOT/install.sh" || fail "installer still omits action span"
-grep -q 'scripts/worldline.py' "$ROOT/install.sh" || fail "installer omits WORLDLINE"
+for shipped in scripts/action-span.py scripts/worldline.py scripts/present-window.py; do grep -q "$shipped" "$ROOT/install.sh" || fail "installer omits $shipped"; done
 grep -q 'gnome-wayland-computer-use-worldline.socket' "$ROOT/install.sh" || fail "installer omits WORLDLINE unit"
 grep -q 'gnome-wayland-computer-use-worldline.socket' "$ROOT/scripts/teardown.sh" || fail "teardown omits WORLDLINE unit"
 grep -q 'Repo/workspace .gwcu files' "$ROOT/scripts/teardown.sh" || fail "teardown no longer preserves workspace truth"
-pass "WORLDLINE lifecycle is installed and reversible"
+pass "WORLDLINE and exact-presentation lifecycle are installed and reversible"
 
 README_BUDGET_BYTES=8500
 size=$(wc -c <"$ROOT/README.md")

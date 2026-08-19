@@ -8,6 +8,7 @@ HEALTH="$ROOT/scripts/cua-health.py"
 DIAGNOSE="$ROOT/scripts/diagnose.sh"
 ACTION_SPAN="$ROOT/scripts/action-span.py"
 WORLDLINE="$ROOT/scripts/worldline.py"
+PRESENTER="$ROOT/scripts/present-window.py"
 PYTHON="${GWCU_SYSTEM_PYTHON:-${GNOME_WAYLAND_SYSTEM_PYTHON:-/usr/bin/python3}}"
 [ -x "$PYTHON" ] || PYTHON="$(command -v python3)"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/gnome-wayland-computer-use"
@@ -18,11 +19,16 @@ usage() {
 /computer-use commands
 
   /computer-use status
-      Compact Cua, WORLDLINE, RemoteDesktop, observer and .gwcu status.
+      Compact Cua, presentation, WORLDLINE, consent, observer and .gwcu status.
+
+  /computer-use trace
+      Print the exact default foreground execution path agents must follow.
+
+  /computer-use present --pid PID --window-id ID
+      Persistently focus + raise one exact Cua/GNOME window and prove it.
 
   /computer-use background [on|off|status]
-      Toggles priority for background computer use.
-      Default OFF = obvious control priority (faster / most deterministic).
+      Set background priority. Default OFF = exact visible takeover.
 
   /computer-use managed [on|off|status]
       Control repo/workspace-local .gwcu persistence.
@@ -74,13 +80,15 @@ show_background() {
     [ -n "${GWCU_BACKGROUND_PRIORITY:-}" ] && source=environment
     if [ "$value" = on ]; then
         printf 'Background computer use: ON\n'
-        printf '  priority: background where Cua can preserve your foreground safely\n'
-        printf '  fallback: obvious control when background delivery is unavailable\n'
-        printf '  performance: convenience-first; may add routing/fallback overhead\n'
+        printf '  priority: background where Cua can address the exact target safely\n'
+        printf '  visible-result tasks: exact presentation is still a final postcondition\n'
+        printf '  fallback: explicit foreground only when Cua reports background unavailable\n'
     else
         printf 'Background computer use: OFF\n'
-        printf '  priority: obvious control\n'
-        printf '  performance: FASTEST / most deterministic on GNOME Wayland\n'
+        printf '  priority: EXACT VISIBLE TAKEOVER\n'
+        printf '  gate: exact (pid, window_id) -> attested Cua GNOME helper -> focused+visible proof\n'
+        printf '  input: Cua foreground delivery only after that gate succeeds\n'
+        printf '  completion: re-present + verify exact target; leave it visible\n'
     fi
     printf '  source: %s\n' "$source"
 }
@@ -96,11 +104,53 @@ worldline_status() {
     return "$rc"
 }
 
+show_trace() {
+    cat <<'TRACE'
+Default foreground trace (background priority OFF)
+
+  1. DISCOVER
+     Cua list_windows resolves the intended native target to exact (pid, window_id).
+     No title-only actuation. Ambiguity is resolved before input.
+
+  2. PRESENT
+     GWCU calls Cua's installed GNOME Shell helper for that stable window id.
+     GNOME must report that exact pid/window_id focused, visible, and not minimized.
+     Failure here is terminal for the action: no global input is sent.
+
+  3. ACT
+     Cua performs the mutation against the same exact target with
+     delivery_mode=foreground. Because the target is already the focused window,
+     Cua's action-scoped foreground restore resolves back to that same target.
+
+  4. REVALIDATE
+     If an action creates, closes, replaces, or navigates the native target,
+     resolve its current exact identity before the next focus-bound mutation.
+
+  5. COMPLETE VISIBLY
+     Re-present the final exact target, verify focused+visible again, then verify
+     the requested application/page state. Leave the intended result on screen.
+
+Typed Chromium/Electron route
+  Resolve exact native (pid, window_id) -> PRESENT -> exact cua_browser_state bind
+  -> fresh semantic snapshot -> typed mutation -> fresh snapshot -> PRESENT/verify.
+  Typed browser success never substitutes for native visible presentation.
+
+Background priority ON is the explicit opt-out from persistent takeover for
+ordinary work. A user-visible result still ends at step 5.
+TRACE
+}
+
 command="${1:-help}"
 [ "$#" -eq 0 ] || shift
 case "$command" in
     span)
         exec "$PYTHON" "$ACTION_SPAN" "$@"
+        ;;
+    trace)
+        show_trace
+        ;;
+    present)
+        exec "$PYTHON" "$PRESENTER" present "$@"
         ;;
     background)
         mode="${1:-toggle}"
@@ -176,25 +226,28 @@ PY
         portal=$("$PORTAL" --status 2>/dev/null); portal_rc=$?
         health=$("$HEALTH" 2>/dev/null); health_rc=$?
         worldline=$(worldline_status); worldline_rc=$?
+        presentation=$("$PYTHON" "$PRESENTER" status 2>/dev/null); presentation_rc=$?
         set -e
         [ -n "$portal" ] || portal='{"schema":"gwcu.portal-control.v1","ok":false,"code":"unavailable"}'
         [ -n "$health" ] || health='{"schema":"gwcu.cua-health.v1","ok":false,"code":"unavailable"}'
         [ -n "$worldline" ] || worldline='{"schema":"gwcu.worldline.v1","ok":false,"code":"unavailable"}'
-        "$PYTHON" - "$managed" "$portal" "$health" "$worldline" "$background" <<'PY'
+        [ -n "$presentation" ] || presentation='{"schema":"gwcu.presentation.v1","ok":false,"code":"unavailable"}'
+        "$PYTHON" - "$managed" "$portal" "$health" "$worldline" "$presentation" "$background" <<'PY'
 import json,sys
-m=json.loads(sys.argv[1]); p=json.loads(sys.argv[2]); h=json.loads(sys.argv[3]); w=json.loads(sys.argv[4]); background=sys.argv[5]=='on'
+m=json.loads(sys.argv[1]); p=json.loads(sys.argv[2]); h=json.loads(sys.argv[3]); w=json.loads(sys.argv[4]); pr=json.loads(sys.argv[5]); background=sys.argv[6]=='on'
 portal=p.get('portal',{}); token=portal.get('restore_token',{}); report=h.get('report') or {}; scope=m.get('scope') or {}
 state=w.get('state') if isinstance(w.get('state'),dict) else w
 print("Computer use")
 print(f"  Cua health: {report.get('overall') or h.get('code','unknown')}")
+print(f"  exact presentation: {pr.get('code','unavailable')} (helper API {pr.get('helper_api','?')})")
 print(f"  WORLDLINE: {w.get('code','ready') if w.get('ok') else w.get('code','unavailable')}")
 if isinstance(state,dict) and state.get('revision') is not None: print(f"  WORLDLINE revision: {state.get('revision')}")
-print(f"  control priority: {'background' if background else 'obvious (fastest)'}")
+print(f"  control priority: {'background' if background else 'exact visible takeover'}")
 print(f"  RemoteDesktop portal: {'available' if portal.get('available') else 'unavailable'}")
 print(f"  RemoteDesktop restore token: {'present' if token.get('present') else 'not established'}")
 print(f"  managed .gwcu: {'on' if m.get('managed_truths') else 'off'}")
 if scope.get('path'): print(f"  truth file: {scope['path']}")
-print("  control: Cua -> GNOME RemoteDesktop -> EIS/libei")
+print("  default foreground: exact target -> Cua GNOME presentation gate -> Cua input -> visible proof")
 print("  runtime truth: AT-SPI/direct oracles -> WORLDLINE")
 print("  visual escalation: XDG ScreenCast -> PipeWire observer -> WORLDLINE")
 PY
