@@ -23,6 +23,15 @@ grep -q 'Qualified Cua Driver.*already installed' "$installer" || fail "qualifie
 grep -q 'packages/current/wayland-helper' "$installer" || fail "Cua helper boundary missing"
 pass "Cua remains pinned and sole actuator"
 
+# Regression for the physical installer failure: /etc/os-release contains
+# NAME=Ubuntu. The app identity must be namespaced and distro metadata isolated.
+grep -Fq 'APP_ID="gnome-wayland-computer-use"' "$installer" || fail "installer app identity is not namespaced"
+grep -Fq 'read_os_release' "$installer" || fail "isolated os-release reader missing"
+! grep -Eq '^[[:space:]]*\.[[:space:]]+/etc/os-release' "$installer" || fail "installer sources os-release into its global namespace"
+grep -Fq 'Host metadata never gets to mutate installer state.' "$installer" || fail "os-release namespace regression is undocumented"
+grep -Fq 'PLUGIN="$HERMES_HOME/plugins/$APP_ID"' "$installer" || fail "Hermes plugin path can drift from app identity"
+pass "Ubuntu metadata cannot clobber GWCU identity"
+
 for pkg in pipewire pipewire-bin wireplumber xdg-desktop-portal xdg-desktop-portal-gnome python3-dbus python3-gi python3-gst-1.0 gstreamer1.0-pipewire gir1.2-gst-plugins-base-1.0 gir1.2-gdkpixbuf-2.0 gir1.2-atspi-2.0 at-spi2-core libei1 libxkbcommon0; do grep -q "$pkg" "$installer" || fail "installer cannot repair $pkg"; done
 grep -q 'dpkg --compare-versions.*0.3.40' "$installer" || fail "PipeWire floor missing"
 for iface in RemoteDesktop ScreenCast Screenshot; do grep -q "portal_has $iface" "$installer" || fail "$iface portal check missing"; done
@@ -37,7 +46,11 @@ grep -q 'enable --now gnome-wayland-computer-use-worldline.socket' "$installer" 
 grep -q 'enable --now gnome-wayland-computer-use-observer.socket' "$installer" || fail "observer socket not enabled"
 grep -q 'worldline.py" self-test' "$installer" || fail "WORLDLINE self-test missing"
 grep -q 'observer.py" self-test' "$installer" || fail "observer self-test missing"
-pass "WORLDLINE and visual sensor lifecycle ship with one README"
+grep -Fq 'observer.py" client status' "$installer" || fail "observer live protocol proof missing"
+grep -Fq 'worldline.py" request --json' "$installer" || fail "WORLDLINE live protocol proof missing"
+grep -Fq 'ensure_user_daemon worldline "WORLDLINE"' "$installer" || fail "WORLDLINE automatic repair missing"
+grep -Fq 'journalctl --user -u "$service_unit"' "$installer" || fail "daemon failure capsule lacks journal evidence"
+pass "WORLDLINE and visual sensor lifecycle are live-proved, repairable, and diagnosable"
 
 grep -q 'Enable managed .gwcu local truths?' "$installer" || fail "managed truth prompt missing"
 grep -q '/dev/tty' "$installer" || fail "curl-pipe prompt cannot reach terminal"
@@ -56,13 +69,19 @@ grep -q '"move_cursor"' "$portal" || fail "pointer-only Cua handshake missing"
 ! grep -Eq '"name"[[:space:]]*:[[:space:]]*"(click|type_text|key_press)"' "$portal" || fail "portal helper contains invasive actions"
 pass "RemoteDesktop consent is explicit and minimally invasive"
 
-grep -q 'hermes plugins enable "$NAME"' "$installer" || fail "Hermes plugin not enabled"
+grep -Fq 'hermes_exec plugins enable "$APP_ID"' "$installer" || fail "Hermes plugin not enabled by exact app identity"
 grep -q 'Hermes may ask once for tools.override' "$installer" || fail "Hermes capability consent is hidden"
 grep -q 'plugins disable "$NAME"' "$teardown" || fail "Hermes plugin not disabled"
 grep -q 'doctor_mentions_drm' "$installer" || fail "DRM repair not evidence-gated"
 grep -q 'adduser "$LOGIN_USER" video' "$installer" || fail "video-group repair missing"
 grep -q 'video-group-added' "$teardown" || fail "video-group ownership not reversible"
 pass "integration ownership and Hermes capability consent are explicit"
+
+grep -Fq 'diagnose.sh" --machine' "$installer" || fail "final installed-state diagnosis missing"
+grep -Fq 'gwcu.install-receipt.v1' "$installer" || fail "installer produces no durable proof receipt"
+grep -Fq 'install.log' "$installer" || fail "installer has no durable private log"
+grep -Fq 'READY // PROVED' "$installer" || fail "success output does not distinguish proved state"
+pass "installer ends on unified proof with durable receipts"
 
 grep -q 'gnome-wayland-computer-use-worldline.socket' "$teardown" || fail "WORLDLINE unit not removed"
 grep -q 'disable --now "$unit"' "$teardown" || fail "user units not disabled"

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Hermes integration checks: the installed skill owns /computer-use; the plugin
-# may replace the built-in computer_use TOOL only through Hermes' consented
-# tools.override capability.
+# may replace the built-in computer_use TOOL through modern tools.override
+# consent or through Hermes' pre-capability explicit-plugin trust model.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
@@ -84,10 +84,22 @@ assert out['delivery_mode']=='foreground'
 # Reads and Cua typed-browser actions do not gain unsupported delivery args.
 assert 'delivery_mode' not in wrapped({'action':'capture'})
 assert 'delivery_mode' not in wrapped({'action':'cua_browser_click','ref':'x'})
-# Capability denial fails closed: no override registration.
+# Modern capability denial fails closed: no override registration.
 ctx2=Ctx(False); mod.register(ctx2); assert ctx2.registration is None
+
+# Pre-capability Hermes exposes register_tool(override=True) but no
+# has_capability method. Explicit plugin enable is that generation's host-owned
+# trust boundary, so the policy shim must not silently become a no-op.
+class LegacyCtx:
+    def __init__(self): self.registration=None
+    def register_tool(self, **kwargs): self.registration=kwargs
+legacy=LegacyCtx(); mod.register(legacy)
+assert legacy.registration is not None and legacy.registration['override'] is True
+legacy_wrapped=legacy.registration['handler']
+out=legacy_wrapped({'action':'click','coordinate':[3,4]})
+assert out['delivery_mode']=='background'
 PY
-pass "Hermes computer_use mechanically honors GWCU standing delivery preference"
+pass "Hermes computer_use mechanically honors GWCU preference across modern and legacy plugin APIs"
 
 HOME_A="$TMP/hermes-a"
 make_home "$HOME_A"
@@ -148,11 +160,13 @@ OUT=$(run_hermes "$HOME_B" "$REGISTRY_CODE")
 printf '%s\n' "$OUT" | grep -Fq 'PLUGIN_HAS_COMPUTER_USE False' || fail "stale plugin still shadows native skill path after retirement"
 pass "duplicate retirement restores skill-native /computer-use ownership"
 
-# Installer/teardown must preserve the upgrade seam and invoke Hermes enable,
-# which is the host-owned capability-consent path for tools.override.
+# Installer/teardown must preserve the upgrade seam and invoke the exact Hermes
+# enable surface. Unattended mode intentionally leaves new privileged consent
+# deferred; interactive Hermes remains the host-owned capability grant path.
 grep -Fq 'retire_duplicate_plugins' "$ROOT/install.sh" || fail "installer does not retire duplicate plugins"
 grep -Fq '"$HERMES_HOME/plugins"/*/plugin.yaml' "$ROOT/install.sh" || fail "installer cannot scan plugin copies"
 grep -Fq '"$HERMES_HOME/plugins"/*/plugin.yaml' "$ROOT/scripts/teardown.sh" || fail "teardown cannot find plugin copies"
-grep -Fq 'hermes plugins enable "$NAME"' "$ROOT/install.sh" || fail "installer does not run Hermes capability-enable surface"
-grep -Fq 'archived and restored by teardown' "$ROOT/install.sh" || fail "installer does not surface teardown-ability"
-pass "installer/teardown keep clean slash ownership and consent seams"
+grep -Fq 'hermes_exec plugins enable "$APP_ID"' "$ROOT/install.sh" || fail "installer does not run exact Hermes capability-enable surface"
+grep -Fq 'privileged policy plugin left disabled in unattended mode' "$ROOT/install.sh" || fail "unattended Hermes consent does not fail closed"
+grep -Fq 'archived for teardown' "$ROOT/install.sh" || fail "installer does not surface teardown-ability"
+pass "installer/teardown keep clean slash ownership and version-aware policy consent seams"

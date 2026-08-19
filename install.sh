@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# install.sh — install GWCU + WORLDLINE around Cua Driver on Ubuntu GNOME Wayland.
+# install.sh — install and prove GWCU + WORLDLINE around Cua Driver on Ubuntu GNOME Wayland.
 set -euo pipefail
 
-NAME="gnome-wayland-computer-use"
+APP_ID="gnome-wayland-computer-use"
 VERSION="2.3.0"
 BASE_URL="${GWCU_BASE_URL:-https://ryanraposo.github.io/gnome-wayland-computer-use}"
 CUA_DRIVER_RS_VERSION="${GWCU_CUA_DRIVER_RS_VERSION:-0.20.0}" # deliberately pinned
@@ -10,37 +10,85 @@ PYTHON="${GWCU_SYSTEM_PYTHON:-/usr/bin/python3}"
 SELF=""; [ -f "${BASH_SOURCE[0]:-}" ] && SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 
-info(){ printf '\033[34m[INFO]\033[0m %s\n' "$*"; }
-ok(){ printf '\033[32m[OK]\033[0m %s\n' "$*"; }
-warn(){ printf '\033[33m[WARN]\033[0m %s\n' "$*"; }
-die(){ printf '\033[31m[ERROR]\033[0m %s\n' "$*" >&2; exit 1; }
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+  BLUE=$'\033[34m'; GREEN=$'\033[32m'; YELLOW=$'\033[33m'; RED=$'\033[31m'; BOLD=$'\033[1m'; DIM=$'\033[2m'; RESET=$'\033[0m'
+else
+  BLUE=""; GREEN=""; YELLOW=""; RED=""; BOLD=""; DIM=""; RESET=""
+fi
+
+info(){ printf '%s[INFO]%s %s\n' "$BLUE" "$RESET" "$*"; }
+ok(){ printf '%s[OK]%s %s\n' "$GREEN" "$RESET" "$*"; }
+warn(){ printf '%s[WARN]%s %s\n' "$YELLOW" "$RESET" "$*"; }
+error(){ printf '%s[ERROR]%s %s\n' "$RED" "$RESET" "$*" >&2; }
+action(){ printf '%s[ACTION]%s %s\n' "$YELLOW" "$RESET" "$*"; }
+die(){ error "$*"; [ -n "${INSTALL_LOG:-}" ] && printf '        details: %s\n' "$INSTALL_LOG" >&2; exit 1; }
+needs_session(){ action "$*"; [ -n "${INSTALL_LOG:-}" ] && printf '         details: %s\n' "$INSTALL_LOG"; exit 20; }
 as_root(){ if command -v pkexec >/dev/null; then pkexec "$@"; elif command -v sudo >/dev/null; then sudo "$@"; else die "pkexec or sudo is required"; fi; }
 get_file(){ local r=$1 d=$2; mkdir -p "$(dirname "$d")"; if [ -n "$SELF" ] && [ -f "$SELF/$r" ]; then cp "$SELF/$r" "$d"; else curl -fsSL --retry 3 --retry-delay 1 -o "$d" "$BASE_URL/$r" || die "download failed: $r"; fi; }
-# worldline_request: prove the WORLDLINE socket serves status. The unit can be
-# left with a stale pathname (active but file missing) and the first
-# socket-activated request races service startup, so re-arm the socket and retry.
-worldline_request(){
-  local i rdir sock
-  rdir="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/$NAME"
-  sock="$rdir/worldline.sock"
-  sleep 3
-  for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
-    if [ -S "$sock" ] && "$PYTHON" "$PRIMARY/scripts/worldline.py" request --json '{"op":"status"}' >/dev/null 2>&1; then return 0; fi
-    if [ -S "$sock" ]; then sleep 1; continue; fi
-    systemctl --user stop gnome-wayland-computer-use-worldline.service >/dev/null 2>&1 || true
-    systemctl --user stop gnome-wayland-computer-use-worldline.socket >/dev/null 2>&1 || true
-    systemctl --user reset-failed gnome-wayland-computer-use-worldline.service gnome-wayland-computer-use-worldline.socket >/dev/null 2>&1 || true
-    systemctl --user start gnome-wayland-computer-use-worldline.socket >/dev/null 2>&1 || true
-    sleep 1
-  done
-  return 1
-}
 portal_has(){ gdbus introspect --session --dest org.freedesktop.portal.Desktop --object-path /org/freedesktop/portal/desktop 2>/dev/null | grep -q "interface org.freedesktop.portal.$1"; }
 resolve_cua(){ command -v cua-driver 2>/dev/null || { [ -x "$HOME/.local/bin/cua-driver" ] && printf '%s\n' "$HOME/.local/bin/cua-driver"; }; }
+
+COMPAT=false; EXPLICIT_UNATTENDED=false; HERMES_MODE=auto
+for arg in "$@"; do case "$arg" in
+  --compat) COMPAT=true;; --unattended) EXPLICIT_UNATTENDED=true;;
+  --hermes) HERMES_MODE=require;; --agent-only) HERMES_MODE=skip;;
+  --help|-h)
+    cat <<'HELP'
+Usage: install.sh [--compat] [--unattended] [--hermes|--agent-only]
+  --compat       install files without requiring a live GNOME Wayland session
+  --unattended   accept defaults; never grant a new privileged Hermes capability
+  --hermes       require Hermes integration
+  --agent-only   skip Hermes integration
+
+Environment:
+  GWCU_CUA_DRIVER_RS_VERSION=<version>  deliberate Cua pin override
+  GWCU_TRUTHS=off                       disable managed .gwcu at runtime
+  GWCU_SCOPE_ROOT=<path>                explicit truth scope
+  GWCU_BACKGROUND_PRIORITY=on|off       prefer background computer use at runtime
+  GWCU_SYSTEM_PYTHON=<absolute path>    Python used by installed runtime checks
+  NO_COLOR=1                            disable ANSI installer color
+HELP
+    exit 0;;
+  *) die "unknown option: $arg";; esac; done
+
+[ "$EUID" -ne 0 ] || die "Run as the logged-in desktop user, not sudo"
+[ -x "$PYTHON" ] || die "Configured Python is not executable: $PYTHON"
+LOGIN_USER="${USER:-$(id -un)}"
+HERMES=false; HERMES_BIN=""
+case "$HERMES_MODE" in
+  auto) HERMES_BIN=$(command -v hermes 2>/dev/null || true); [ -n "$HERMES_BIN" ] && HERMES=true || true;;
+  require) HERMES_BIN=$(command -v hermes 2>/dev/null || true); [ -n "$HERMES_BIN" ] || die "Hermes requested but not found"; HERMES=true;;
+  skip) :;;
+esac
+HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
+STATE="${XDG_STATE_HOME:-$HOME/.local/state}/$APP_ID"; mkdir -p "$STATE"; chmod 700 "$STATE"
+PRIMARY="$HOME/.agents/skills/$APP_ID"
+INSTALL_LOG="$STATE/install.log"; touch "$INSTALL_LOG"; chmod 600 "$INSTALL_LOG"
+printf '\n=== %s version=%s pid=%s ===\n' "$(date -Is 2>/dev/null || date)" "$VERSION" "$$" >>"$INSTALL_LOG"
+
+log(){ printf '%s\n' "$*" >>"$INSTALL_LOG"; }
+run_logged(){ local label=$1; shift; log ">>> $label"; "$@" >>"$INSTALL_LOG" 2>&1; }
+
+# Read distro metadata in a subshell. /etc/os-release defines generic names such
+# as NAME=Ubuntu; sourcing it into this process once clobbered the installer's
+# application identity and simultaneously broke Hermes discovery + WORLDLINE's
+# expected socket path. Host metadata never gets to mutate installer state.
+read_os_release(){
+  (
+    set +u
+    . /etc/os-release
+    printf '%s\n%s\n' "${ID:-}" "${VERSION_ID:-}"
+  )
+}
+
 ensure_managed_path(){
   export PATH="$HOME/.local/bin:$PATH"
   local files=("$HOME/.profile"); case "${SHELL##*/}" in bash) files+=("$HOME/.bashrc");; zsh) files+=("$HOME/.zshrc");; esac
-  for f in "${files[@]}"; do mkdir -p "$(dirname "$f")"; touch "$f"; grep -Fq '# >>> gnome-wayland-computer-use PATH >>>' "$f" && continue; cat >>"$f" <<'PATH'
+  local f
+  for f in "${files[@]}"; do
+    mkdir -p "$(dirname "$f")"; touch "$f"
+    grep -Fq '# >>> gnome-wayland-computer-use PATH >>>' "$f" && continue
+    cat >>"$f" <<'PATH'
 
 # >>> gnome-wayland-computer-use PATH >>>
 case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) export PATH="$HOME/.local/bin:$PATH" ;; esac
@@ -48,6 +96,7 @@ case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) export PATH="$HOME/.local/bin:$P
 PATH
   done
 }
+
 write_cua_ownership(){
   local provisioned="$1" version="$2" existing="$STATE/ownership.json" tmp
   tmp=$(mktemp "$STATE/.ownership.XXXXXX")
@@ -65,47 +114,114 @@ PY
   mv -f "$tmp" "$existing"
 }
 
-COMPAT=false; EXPLICIT_UNATTENDED=false; HERMES_MODE=auto
-for arg in "$@"; do case "$arg" in
-  --compat) COMPAT=true;; --unattended) EXPLICIT_UNATTENDED=true;;
-  --hermes) HERMES_MODE=require;; --agent-only) HERMES_MODE=skip;;
-  --help|-h)
-    cat <<'HELP'
-Usage: install.sh [--compat] [--unattended] [--hermes|--agent-only]
-  --compat       install files without requiring a live GNOME Wayland session
-  --unattended   accept defaults; privilege/portal UI can still appear
-  --hermes       require Hermes integration
-  --agent-only   skip Hermes integration
+probe_daemon(){
+  local key=$1; shift
+  "$@" >"$STATE/$key-probe.json" 2>"$STATE/$key-probe.stderr"
+}
 
-Environment:
-  GWCU_CUA_DRIVER_RS_VERSION=<version>  deliberate Cua pin override
-  GWCU_TRUTHS=off                       disable managed .gwcu at runtime
-  GWCU_SCOPE_ROOT=<path>                explicit truth scope
-  GWCU_BACKGROUND_PRIORITY=on|off       prefer background computer use at runtime
-HELP
-    exit 0;;
-  *) die "unknown option: $arg";; esac; done
-[ "$EUID" -ne 0 ] || die "Run as the logged-in desktop user, not sudo"
-LOGIN_USER="${USER:-$(id -un)}"
-HERMES=false; case "$HERMES_MODE" in auto) command -v hermes >/dev/null && HERMES=true || true;; require) command -v hermes >/dev/null || die "Hermes requested but not found"; HERMES=true;; skip) :;; esac
-HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
-STATE="${XDG_STATE_HOME:-$HOME/.local/state}/$NAME"; mkdir -p "$STATE"; chmod 700 "$STATE"
-PRIMARY="$HOME/.agents/skills/$NAME"
+daemon_failure_capsule(){
+  local key=$1 label=$2 socket_unit=$3 service_unit=$4
+  {
+    printf '\n=== %s LIVE PROOF FAILURE ===\n' "$label"
+    systemctl --user show "$socket_unit" "$service_unit" --no-pager \
+      -p Id -p LoadState -p ActiveState -p SubState -p Result -p ExecMainCode -p ExecMainStatus -p FragmentPath 2>&1 || true
+    printf '%s\n' '--- service journal ---'
+    journalctl --user -u "$service_unit" -n 40 --no-pager 2>&1 || true
+    printf '%s\n' '--- last probe stdout ---'; cat "$STATE/$key-probe.json" 2>/dev/null || true
+    printf '%s\n' '--- last probe stderr ---'; cat "$STATE/$key-probe.stderr" 2>/dev/null || true
+  } >>"$INSTALL_LOG"
+  error "$label failed its live RPC proof after automatic repair"
+  printf '        unit: %s\n' "$service_unit" >&2
+  printf '        log:  %s\n' "$INSTALL_LOG" >&2
+}
 
-printf '\nCOMPUTER USE // WORLDLINE // INSTALL\n\n'
+# A socket pathname is not health. Prove the protocol, then repair the owning
+# socket/service pair once and prove it again. This handles stale socket files,
+# failed service activation, start-limit state, and first-activation races.
+ensure_user_daemon(){
+  local key=$1 label=$2 socket_unit=$3 service_unit=$4; shift 4
+  local -a probe=("$@") delays=(0 .05 .10 .20 .35 .55 .85 1.25)
+  local delay
+  if probe_daemon "$key" "${probe[@]}"; then return 0; fi
+
+  warn "$label did not answer the first live probe; repairing its socket/service pair"
+  {
+    systemctl --user reset-failed "$service_unit" "$socket_unit" || true
+    systemctl --user stop "$service_unit" || true
+    systemctl --user restart "$socket_unit" || true
+  } >>"$INSTALL_LOG" 2>&1
+  for delay in "${delays[@]}"; do
+    [ "$delay" = 0 ] || sleep "$delay"
+    if probe_daemon "$key" "${probe[@]}"; then ok "$label recovered and answered"; return 0; fi
+  done
+
+  # Second and final repair rung: explicitly start the service while the socket
+  # unit is active. No blind 15-second sleep loop; every delay buys a real probe.
+  run_logged "$label direct service restart" systemctl --user restart "$service_unit" || true
+  for delay in .05 .10 .20 .35 .55 .85 1.25; do
+    sleep "$delay"
+    if probe_daemon "$key" "${probe[@]}"; then ok "$label recovered and answered"; return 0; fi
+  done
+  daemon_failure_capsule "$key" "$label" "$socket_unit" "$service_unit"
+  return 1
+}
+
+hermes_exec(){ ( cd "$HOME" && HERMES_HOME="$HERMES_HOME" NO_COLOR=1 "$HERMES_BIN" "$@" ); }
+hermes_plugin_enabled(){
+  local out
+  out=$(hermes_exec plugins list --plain --no-bundled 2>>"$INSTALL_LOG" || hermes_exec plugins list --plain 2>>"$INSTALL_LOG" || true)
+  printf '%s\n' "$out" >>"$INSTALL_LOG"
+  printf '%s\n' "$out" | grep -Eq "^enabled[[:space:]].*[[:space:]]${APP_ID}$"
+}
+
+HERMES_POLICY_STATUS="not-detected"
+configure_hermes(){
+  HERMES_POLICY_STATUS="installed-disabled"
+  if $EXPLICIT_UNATTENDED; then
+    warn "Hermes skill installed; privileged policy plugin left disabled in unattended mode"
+    info "Enable it later with: hermes plugins enable $APP_ID"
+    HERMES_POLICY_STATUS="deferred-consent"
+    return 0
+  fi
+
+  info "Hermes may ask once for tools.override so GWCU can enforce the saved computer_use delivery preference."
+  if hermes_exec plugins enable "$APP_ID"; then
+    if hermes_plugin_enabled; then
+      HERMES_POLICY_STATUS="enabled"
+      ok "Hermes integration enabled and verified"
+      return 0
+    fi
+    warn "Hermes returned success but the exact GWCU plugin is not enabled"
+  else
+    warn "Hermes could not enable the exact GWCU plugin"
+  fi
+
+  HERMES_POLICY_STATUS="enable-failed"
+  log "Hermes exact plugin enable failed for $APP_ID"
+  if [ "$HERMES_MODE" = require ]; then die "Hermes integration was required but could not be verified"; fi
+  warn "Core GWCU remains installed; Hermes details are in $INSTALL_LOG"
+  return 0
+}
+
+printf '\n%sCOMPUTER USE // WORLDLINE // INSTALL%s\n\n' "$BOLD" "$RESET"
 if ! $COMPAT; then
   [ -r /etc/os-release ] || die "/etc/os-release missing"
-  . /etc/os-release
-  [ "${ID:-}" = ubuntu ] || die "Supported host: Ubuntu 26.04 GNOME Wayland"
-  dpkg --compare-versions "${VERSION_ID:-0}" ge 26.04 || die "Ubuntu 26.04+ required"
-  [ "${XDG_SESSION_TYPE:-$(loginctl show-session "${XDG_SESSION_ID:-self}" -p Type --value 2>/dev/null || true)}" = wayland ] || die "Wayland session required"
-  printf '%s' "${XDG_CURRENT_DESKTOP:-$(loginctl show-session "${XDG_SESSION_ID:-self}" -p Desktop --value 2>/dev/null || true)}" | grep -qi gnome || die "GNOME session required"
+  mapfile -t OS_RELEASE < <(read_os_release)
+  OS_ID="${OS_RELEASE[0]:-}"; OS_VERSION_ID="${OS_RELEASE[1]:-0}"
+  [ "$OS_ID" = ubuntu ] || die "Supported host: Ubuntu 26.04 GNOME Wayland"
+  dpkg --compare-versions "$OS_VERSION_ID" ge 26.04 || die "Ubuntu 26.04+ required"
+  SESSION_TYPE="${XDG_SESSION_TYPE:-$(loginctl show-session "${XDG_SESSION_ID:-self}" -p Type --value 2>/dev/null || true)}"
+  SESSION_DESKTOP="${XDG_CURRENT_DESKTOP:-$(loginctl show-session "${XDG_SESSION_ID:-self}" -p Desktop --value 2>/dev/null || true)}"
+  [ "$SESSION_TYPE" = wayland ] || die "Wayland session required"
+  printf '%s' "$SESSION_DESKTOP" | grep -qi gnome || die "GNOME session required"
 fi
 
 info "[1/8] Qualifying Ubuntu portal/PipeWire/AT-SPI foundation"
 PKGS=(ca-certificates curl git libglib2.0-bin pipewire pipewire-bin wireplumber xdg-desktop-portal xdg-desktop-portal-gnome python3 python3-dbus python3-gi python3-gst-1.0 gstreamer1.0-tools gstreamer1.0-pipewire gstreamer1.0-plugins-base gstreamer1.0-plugins-good gir1.2-gstreamer-1.0 gir1.2-gst-plugins-base-1.0 gir1.2-gdkpixbuf-2.0 gir1.2-atspi-2.0 at-spi2-core libei1 libxkbcommon0)
 missing=(); for p in "${PKGS[@]}"; do dpkg -s "$p" >/dev/null 2>&1 || missing+=("$p"); done
-if [ ${#missing[@]} -gt 0 ]; then $COMPAT && warn "compat mode: packages missing: ${missing[*]}" || { as_root apt-get update; as_root apt-get install -y "${missing[@]}"; }; fi
+if [ ${#missing[@]} -gt 0 ]; then
+  if $COMPAT; then warn "compat mode: packages missing: ${missing[*]}"; else as_root apt-get update; as_root apt-get install -y "${missing[@]}"; fi
+fi
 if ! $COMPAT; then
   PW=$(pipewire --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
   [ -n "$PW" ] || die "PipeWire unavailable"
@@ -126,8 +242,7 @@ ok "Ubuntu native foundation qualified"
 # new Cua/portal path so two generations never run concurrently during upgrade.
 MIGRATOR="$TMP/migrate-main.sh"
 get_file scripts/migrate-main.sh "$MIGRATOR"; chmod +x "$MIGRATOR"
-migration_args=(--repair --state "$STATE")
-$COMPAT && migration_args+=(--compat)
+migration_args=(--repair --state "$STATE"); $COMPAT && migration_args+=(--compat)
 "$MIGRATOR" "${migration_args[@]}" || die "Could not repair an older published GWCU installation"
 
 info "[2/8] Installing / qualifying pinned Cua Driver $CUA_DRIVER_RS_VERSION"
@@ -140,17 +255,25 @@ else
   CUA=$(resolve_cua || true); [ -n "$CUA" ] || die "cua-driver missing after install"
 fi
 "$CUA" --version 2>/dev/null | grep -Fq "$CUA_DRIVER_RS_VERSION" || die "Expected Cua $CUA_DRIVER_RS_VERSION"
-# Persist upstream ownership immediately. Reinstalls OR the existing value, so a
-# later failure or rerun cannot forget that GWCU originally provisioned Cua.
 write_cua_ownership "$CUA_INSTALLED_BY_GWCU" "$CUA_DRIVER_RS_VERSION"
 
 info "[3/8] Installing Cua GNOME Wayland helper"
 CUA_HOME="${CUA_DRIVER_HOME:-$HOME/.cua-driver}"; HELPER="$CUA_HOME/packages/current/wayland-helper"; CUA_HELPER_INSTALLER="$HELPER/install.sh"
 [ -x "$CUA_HELPER_INSTALLER" ] || die "Cua packaged helper missing: packages/current/wayland-helper/install.sh"
-"$CUA_HELPER_INSTALLER" || die "Cua GNOME helper installation failed"
-# Enable the WinRects extension so GNOME loads it immediately
-gnome-extensions enable winrects@cua 2>/dev/null || true
-RELOAD_REQUIRED=false; gnome-extensions info winrects@cua >/dev/null 2>&1 && gnome-extensions info winrects@cua 2>/dev/null | grep -qi 'State: ACTIVE' || RELOAD_REQUIRED=true
+if run_logged "Cua GNOME helper install" "$CUA_HELPER_INSTALLER"; then
+  ok "Cua GNOME helper installed"
+else
+  tail -n 20 "$INSTALL_LOG" >&2 || true
+  die "Cua GNOME helper installation failed"
+fi
+gnome-extensions enable winrects@cua >>"$INSTALL_LOG" 2>&1 || true
+RELOAD_REQUIRED=false
+if gnome-extensions info winrects@cua >/dev/null 2>&1 && gnome-extensions info winrects@cua 2>/dev/null | grep -qi 'State: ACTIVE'; then
+  ok "winrects@cua is ACTIVE"
+else
+  RELOAD_REQUIRED=true
+  warn "winrects@cua is installed and will become active after one GNOME sign-out/sign-in"
+fi
 
 info "[4/8] Installing GWCU runtime, skill and WORLDLINE"
 FILES=(VERSION README.md agents/openai.yaml scripts/action-span.py scripts/app-identity.sh scripts/capture.sh scripts/check-update.sh scripts/computer-use.sh scripts/cua-health.py scripts/diagnose.sh scripts/mcp_client.py scripts/migrate-main.sh scripts/observe.sh scripts/observer.py scripts/portal-control.py scripts/profile.sh scripts/teardown.sh scripts/truths.py scripts/worldline.py scripts/worldline-capture.sh systemd/user/gnome-wayland-computer-use-observer.socket systemd/user/gnome-wayland-computer-use-observer.service systemd/user/gnome-wayland-computer-use-worldline.socket systemd/user/gnome-wayland-computer-use-worldline.service)
@@ -158,7 +281,7 @@ rm -rf "$TMP/bundle"; mkdir -p "$TMP/bundle"
 for f in "${FILES[@]}"; do get_file "$f" "$TMP/bundle/$f"; done
 get_file SKILL.md "$TMP/bundle/SKILL.md"
 for f in "$TMP/bundle/scripts"/*.sh "$TMP/bundle/scripts"/*.py; do chmod +x "$f"; done
-BACKUPS="$HERMES_HOME/backups/$NAME"; MANIFEST="$BACKUPS/manifest.tsv"
+BACKUPS="$HERMES_HOME/backups/$APP_ID"; MANIFEST="$BACKUPS/manifest.tsv"
 plugin_name_of(){ awk -F': *' '/^name:[[:space:]]*/{gsub(/^[[:space:]]+|[[:space:]]+$|["'\'']/,"",$2); print $2; exit}' "$1"; }
 manifest_backup(){
   local dst=$1 backup
@@ -166,21 +289,18 @@ manifest_backup(){
 }
 install_dir(){
   local src=$1 dst=$2
-  if [ -e "$dst" ] && [ ! -f "$dst/.gnome-wayland-computer-use-managed" ]; then
-    manifest_backup "$dst"
-  fi
+  if [ -e "$dst" ] && [ ! -f "$dst/.gnome-wayland-computer-use-managed" ]; then manifest_backup "$dst"; fi
   rm -rf "$dst"; mkdir -p "$(dirname "$dst")"; cp -a "$src" "$dst"; : >"$dst/.gnome-wayland-computer-use-managed"
 }
-# A stale Hermes plugin copy (same plugin.yaml name, different directory) still
-# registers /computer-use and can shadow the freshly installed one depending on
-# plugin scan order. Retire only what GWCU provably owns; archive the rest so
-# teardown can restore it.
+# A stale copy with the same manifest name can shadow the canonical plugin.
+# This also self-heals the ~/.hermes/plugins/Ubuntu directory produced by the
+# old /etc/os-release NAME collision, but only when GWCU owns that directory.
 retire_duplicate_plugins(){
   local canonical=$1 dir name yaml
   [ -d "$HERMES_HOME/plugins" ] || return 0
   for yaml in "$HERMES_HOME/plugins"/*/plugin.yaml; do
     [ -f "$yaml" ] || continue
-    name=$(plugin_name_of "$yaml"); [ "$name" = "$NAME" ] || continue
+    name=$(plugin_name_of "$yaml"); [ "$name" = "$APP_ID" ] || continue
     dir=$(dirname "$yaml"); [ "$dir" != "$canonical" ] || continue
     if [ -f "$dir/.gnome-wayland-computer-use-managed" ]; then
       rm -rf "$dir"; ok "Retired stale duplicate Hermes plugin ${dir/$HOME/\~}"
@@ -193,33 +313,35 @@ retire_duplicate_plugins(){
 install_dir "$TMP/bundle" "$PRIMARY"
 if $HERMES; then
   HSKILL="$HERMES_HOME/skills/computer-use"
-  # The installed skill MUST be the GWCU skill or /computer-use does not work.
   if [ -e "$HSKILL" ] && [ ! -f "$HSKILL/.gnome-wayland-computer-use-managed" ]; then
-    warn "Replacing existing computer-use skill at ${HSKILL/$HOME/\~}; it is archived and restored by teardown"
+    warn "Replacing existing computer-use skill at ${HSKILL/$HOME/\~}; archived for teardown"
   fi
   install_dir "$TMP/bundle" "$HSKILL"
-  PLUGIN="$HERMES_HOME/plugins/$NAME"; mkdir -p "$TMP/plugin"; get_file runtimes/hermes/plugin.yaml "$TMP/plugin/plugin.yaml"; get_file runtimes/hermes/__init__.py "$TMP/plugin/__init__.py"; install_dir "$TMP/plugin" "$PLUGIN"
+  PLUGIN="$HERMES_HOME/plugins/$APP_ID"; mkdir -p "$TMP/plugin"
+  get_file runtimes/hermes/plugin.yaml "$TMP/plugin/plugin.yaml"; get_file runtimes/hermes/__init__.py "$TMP/plugin/__init__.py"
+  install_dir "$TMP/plugin" "$PLUGIN"
   retire_duplicate_plugins "$PLUGIN"
-  if $EXPLICIT_UNATTENDED; then
-    hermes plugins enable "$NAME" >/dev/null 2>&1 || warn "Hermes plugin installed but could not be enabled"
-    warn "Unattended Hermes setup leaves any new tools.override capability ungranted; run 'hermes plugins enable $NAME' interactively once to grant the GWCU computer_use policy shim."
-  else
-    info "Hermes may ask once for tools.override so GWCU can enforce the saved computer_use delivery preference."
-    hermes plugins enable "$NAME" || warn "Hermes plugin installed; enable it manually if needed"
-  fi
+  configure_hermes
 fi
 ok "Installed action-span.py + WORLDLINE runtime + skill"
 
 info "[5/8] Configuring preferences and RemoteDesktop consent"
-PREF="$STATE/managed-truths"; if [ ! -s "$PREF" ]; then value=on; if ! $EXPLICIT_UNATTENDED && [ -r /dev/tty ]; then printf 'Enable managed .gwcu local truths? Git scopes add /.gwcu to .gitignore before storing machine/workspace facts [Y/n]: ' >/dev/tty; read -r reply </dev/tty || reply=""; [[ "$reply" =~ ^[nN] ]] && value=off; fi; printf '%s\n' "$value" >"$PREF"; chmod 600 "$PREF"; fi
+PREF="$STATE/managed-truths"
+if [ ! -s "$PREF" ]; then
+  value=on
+  if ! $EXPLICIT_UNATTENDED && [ -r /dev/tty ]; then
+    printf 'Enable managed .gwcu local truths? Git scopes add /.gwcu to .gitignore before storing machine/workspace facts [Y/n]: ' >/dev/tty
+    read -r reply </dev/tty || reply=""; [[ "$reply" =~ ^[nN] ]] && value=off
+  fi
+  printf '%s\n' "$value" >"$PREF"; chmod 600 "$PREF"
+fi
 [ "${GWCU_TRUTHS:-}" = off ] && warn "GWCU_TRUTHS=off overrides managed truth at runtime"
 BACKGROUND_PREF="$STATE/background-priority"
 if [ ! -s "$BACKGROUND_PREF" ]; then
   background=off
   if ! $EXPLICIT_UNATTENDED && [ -r /dev/tty ]; then
     printf 'Prioritize background computer use when available? Obvious control is faster and more deterministic [y/N]: ' >/dev/tty
-    read -r reply </dev/tty || reply=""
-    [[ "$reply" =~ ^[yY] ]] && background=on
+    read -r reply </dev/tty || reply=""; [[ "$reply" =~ ^[yY] ]] && background=on
   fi
   printf '%s\n' "$background" >"$BACKGROUND_PREF"; chmod 600 "$BACKGROUND_PREF"
 fi
@@ -242,30 +364,36 @@ fi
 ok "Preferences + control consent prepared"
 
 info "[6/8] Verifying published-main repair and single control plane"
-verify_args=(--verify --state "$STATE")
-$COMPAT && verify_args+=(--compat)
+verify_args=(--verify --state "$STATE"); $COMPAT && verify_args+=(--compat)
 "$MIGRATOR" "${verify_args[@]}" || die "An older published GWCU control artifact still conflicts with the new runtime"
 systemctl --user daemon-reload 2>/dev/null || true
 ok "Legacy published-main control plane retired; Cua is the only actuator"
 
-info "[7/8] Enabling WORLDLINE + lazy ScreenCast observer"
+info "[7/8] Enabling and live-proving WORLDLINE + lazy ScreenCast observer"
 UNIT_DIR="$HOME/.config/systemd/user"; mkdir -p "$UNIT_DIR"
 for u in gnome-wayland-computer-use-observer.socket gnome-wayland-computer-use-observer.service gnome-wayland-computer-use-worldline.socket gnome-wayland-computer-use-worldline.service; do cp "$PRIMARY/systemd/user/$u" "$UNIT_DIR/$u"; done
 systemctl --user daemon-reload || $COMPAT || die "user systemd reload failed"
 for u in gnome-wayland-computer-use-observer.socket gnome-wayland-computer-use-observer.service gnome-wayland-computer-use-worldline.socket gnome-wayland-computer-use-worldline.service; do systemctl --user reset-failed "$u" 2>/dev/null || true; done
 if ! $COMPAT; then
-  systemctl --user enable --now gnome-wayland-computer-use-observer.socket || die "observer socket failed"
-  systemctl --user enable --now gnome-wayland-computer-use-worldline.socket || die "WORLDLINE socket failed"
+  systemctl --user enable --now gnome-wayland-computer-use-observer.socket >>"$INSTALL_LOG" 2>&1 || die "observer socket failed to enable"
+  systemctl --user enable --now gnome-wayland-computer-use-worldline.socket >>"$INSTALL_LOG" 2>&1 || die "WORLDLINE socket failed to enable"
 fi
-"$PYTHON" "$PRIMARY/scripts/observer.py" self-test >/dev/null || die "observer.py self-test failed"
-"$PYTHON" "$PRIMARY/scripts/worldline.py" self-test >/dev/null || die "worldline.py self-test failed"
-ok "WORLDLINE revision daemon + private ScreenCast observer ready"
+"$PYTHON" "$PRIMARY/scripts/observer.py" self-test >>"$INSTALL_LOG" || die "observer.py self-test failed"
+"$PYTHON" "$PRIMARY/scripts/worldline.py" self-test >>"$INSTALL_LOG" || die "worldline.py self-test failed"
+if ! $COMPAT; then
+  ensure_user_daemon observer "ScreenCast observer" \
+    gnome-wayland-computer-use-observer.socket gnome-wayland-computer-use-observer.service \
+    "$PYTHON" "$PRIMARY/scripts/observer.py" client status || die "ScreenCast observer is not responding"
+  ensure_user_daemon worldline "WORLDLINE" \
+    gnome-wayland-computer-use-worldline.socket gnome-wayland-computer-use-worldline.service \
+    "$PYTHON" "$PRIMARY/scripts/worldline.py" request --json '{"op":"status"}' || die "WORLDLINE is not responding"
+fi
+ok "WORLDLINE + observer protocol health proved"
 
-info "[8/8] Proving installed-state health"
+info "[8/8] Proving the complete installed state"
 PREV_ACCESS=$(gsettings get org.gnome.desktop.interface toolkit-accessibility 2>/dev/null || printf unknown); ACCESS_CHANGED=false
 if [ "$PREV_ACCESS" = false ]; then gsettings set org.gnome.desktop.interface toolkit-accessibility true 2>/dev/null && ACCESS_CHANGED=true || true; fi
 mkdir -p "$STATE"
-# Merge final ownership facts; never reset durable Cua provenance recorded above.
 "$PYTHON" - "$STATE/ownership.json" "$PREV_ACCESS" "$ACCESS_CHANGED" "$CUA_DRIVER_RS_VERSION" "$HERMES" "$COMPAT" <<'PY'
 import json,os,pathlib,sys
 p=pathlib.Path(sys.argv[1])
@@ -279,20 +407,74 @@ d["user_units"]={"observer_socket":enabled,"observer_service":enabled,"worldline
 d["hermes_plugin"]={"managed":sys.argv[5]=="true","name":"gnome-wayland-computer-use"};d["distro_foundation_owned"]=False
 p.write_text(json.dumps(d,separators=(",",":"))+"\n");os.chmod(p,0o600)
 PY
+
+DIAG_CODE="compat"
 if ! $COMPAT; then
-  DOCTOR_OUT="$STATE/cua-doctor.json"; DOCTOR_ERR="$STATE/cua-doctor.stderr"; rc=0; "$CUA" doctor --json >"$DOCTOR_OUT" 2>"$DOCTOR_ERR" || rc=$?
+  DOCTOR_OUT="$STATE/cua-doctor.json"; DOCTOR_ERR="$STATE/cua-doctor.stderr"; rc=0
+  "$CUA" doctor --json >"$DOCTOR_OUT" 2>"$DOCTOR_ERR" || rc=$?
   doctor_mentions_drm(){ { cat "$1" 2>/dev/null; cat "$2" 2>/dev/null; } | grep -Eiq '(/dev/dri|DRM|render node|video group|permission[^[:cntrl:]]*(card|render|gpu))'; }
   if [ "$rc" -ne 0 ] && doctor_mentions_drm "$DOCTOR_OUT" "$DOCTOR_ERR" && ! id -nG "$LOGIN_USER" | tr ' ' '\n' | grep -qx video; then
-    if $EXPLICIT_UNATTENDED || { printf 'Cua reported DRM access trouble. Add %s to video group? [Y/n] ' "$LOGIN_USER" >/dev/tty; read -r x </dev/tty || x=""; [[ ! "$x" =~ ^[nN] ]]; }; then as_root adduser "$LOGIN_USER" video; : >"$STATE/video-group-added"; die "DRM access repaired; sign out/in once, then rerun install.sh"; fi
+    if $EXPLICIT_UNATTENDED || { printf 'Cua reported DRM access trouble. Add %s to video group? [Y/n] ' "$LOGIN_USER" >/dev/tty; read -r x </dev/tty || x=""; [[ ! "$x" =~ ^[nN] ]]; }; then
+      as_root adduser "$LOGIN_USER" video; : >"$STATE/video-group-added"
+      needs_session "DRM access repaired. Sign out/in once, then rerun install.sh to complete the live proof."
+    fi
   fi
   [ "$rc" -eq 0 ] || { cat "$DOCTOR_ERR" >&2 || true; die "cua-driver doctor failed"; }
   "$PRIMARY/scripts/cua-health.py" --driver "$CUA" >"$STATE/cua-health.json" || die "Cua health_report failed"
-  worldline_request || die "WORLDLINE socket not responding"
-fi
-ok "Installed state healthy"
 
-printf '\n'
-if $RELOAD_REQUIRED; then printf 'READY EXCEPT GNOME HELPER RELOAD\nReload/sign out once so GNOME loads winrects@cua.\n'; elif $COMPAT; then printf 'INSTALLED FOR NEXT UBUNTU GNOME SESSION\n'; else printf 'READY. Cua controls; WORLDLINE watches; .gwcu remembers.\n'; fi
+  DIAG_OUT="$STATE/diagnose.json"; diag_rc=0
+  "$PRIMARY/scripts/diagnose.sh" --machine >"$DIAG_OUT" 2>>"$INSTALL_LOG" || diag_rc=$?
+  DIAG_CODE=$("$PYTHON" - "$DIAG_OUT" <<'PY'
+import json,sys
+try: print(json.load(open(sys.argv[1])).get("code","invalid"))
+except Exception: print("invalid")
+PY
+)
+  case "$DIAG_CODE" in
+    ready) :;;
+    reload_required) RELOAD_REQUIRED=true;;
+    *)
+      "$PYTHON" - "$DIAG_OUT" <<'PY' >&2 || true
+import json,sys
+try:
+ d=json.load(open(sys.argv[1])); print("Installed-state proof failed:")
+ print("  host:", d.get("host",{}).get("ok")); print("  observation:", d.get("observation",{}).get("status"))
+ print("  WORLDLINE:", d.get("worldline",{}).get("status")); print("  Cua:", d.get("cua",{}).get("status")); print("  next:", (d.get("next") or {}).get("action"))
+except Exception: pass
+PY
+      die "Installed-state diagnosis failed ($DIAG_CODE)"
+      ;;
+  esac
+fi
+
+MANAGED_VALUE=$(cat "$PREF" 2>/dev/null || printf unknown); BACKGROUND_VALUE=$(cat "$BACKGROUND_PREF" 2>/dev/null || printf unknown)
+RECEIPT="$STATE/install-receipt.json"
+"$PYTHON" - "$RECEIPT" "$VERSION" "$CUA_DRIVER_RS_VERSION" "$DIAG_CODE" "$RELOAD_REQUIRED" "$HERMES" "$HERMES_POLICY_STATUS" "$MANAGED_VALUE" "$BACKGROUND_VALUE" <<'PY'
+import json,os,pathlib,sys,time
+p=pathlib.Path(sys.argv[1])
+d={"schema":"gwcu.install-receipt.v1","version":sys.argv[2],"cua_driver":sys.argv[3],"diagnosis":sys.argv[4],"reload_required":sys.argv[5]=="true","hermes_detected":sys.argv[6]=="true","hermes_policy":sys.argv[7],"managed_truths":sys.argv[8],"background_priority":sys.argv[9],"installed_at_unix":int(time.time())}
+p.write_text(json.dumps(d,separators=(",",":"))+"\n");os.chmod(p,0o600)
+PY
+ok "Installed state proved; receipt written"
+
+printf '\n%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n' "$DIM" "$RESET"
+if $RELOAD_REQUIRED; then
+  printf '%sREADY AFTER ONE GNOME SIGN-OUT / SIGN-IN%s\n' "$BOLD" "$RESET"
+  printf 'Everything else is installed and proved now. GNOME must load winrects@cua once.\n'
+elif $COMPAT; then
+  printf '%sINSTALLED FOR NEXT UBUNTU GNOME SESSION%s\n' "$BOLD" "$RESET"
+else
+  printf '%sREADY // PROVED%s\n' "$BOLD" "$RESET"
+fi
+printf '  Cua Driver:      %s\n' "$CUA_DRIVER_RS_VERSION"
+printf '  WORLDLINE:       %s\n' "$([ "$COMPAT" = true ] && printf installed || printf ready)"
+printf '  Observation:     %s\n' "$([ "$COMPAT" = true ] && printf installed || printf ready)"
+printf '  .gwcu truths:    %s\n' "$MANAGED_VALUE"
+printf '  Background pref: %s\n' "$BACKGROUND_VALUE"
+if $HERMES; then printf '  Hermes policy:   %s\n' "$HERMES_POLICY_STATUS"; else printf '  Hermes:          not detected (agent skill still installed)\n'; fi
+printf '%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n' "$DIM" "$RESET"
+if $RELOAD_REQUIRED; then printf '\nAfter signing back in: /computer-use doctor\n'; fi
 printf '\nUninstall: curl -fsSL %s/uninstall.sh | bash\n' "$BASE_URL"
 printf 'Teardown:  %s/scripts/teardown.sh --help\n' "$PRIMARY"
-printf '           Cua preserved by default; --remove-cua removes only GWCU-provisioned Cua\n'
+printf 'Receipt:   %s\n' "$RECEIPT"
+printf 'Log:       %s\n' "$INSTALL_LOG"
