@@ -26,7 +26,7 @@ for line in sys.stdin:
   tools=[{'name':n,'inputSchema':{'type':'object','properties':{'delivery_mode':{'type':'string'},'pid':{},'window_id':{},'x':{},'y':{},'text':{},'key':{}}}} for n in ('click','type_text','key_press')]
   print(json.dumps({'jsonrpc':'2.0','id':q['id'],'result':{'tools':tools}}),flush=True)
  elif m=='tools/call':
-  name=q['params']['name'];args=q['params']['arguments'];
+  name=q['params']['name'];args=q['params']['arguments']
   with log.open('a') as f:f.write(name+' '+json.dumps(args,separators=(',',':'))+'\n')
   if name=='click' and os.environ.get('EMIT_AFTER_CLICK'):
    s=socket.socket(socket.AF_UNIX);s.connect(os.environ['WORLDLINE_SOCKET']);s.sendall((json.dumps({'op':'event','event':{'source':'test-ui','facts':{'ui.dialog':'ready'}}})+'\n').encode());s.recv(65536);s.close()
@@ -37,7 +37,6 @@ for line in sys.stdin:
 PY
 chmod +x "$TMP/fake-cua"
 
-T='"pid":4242,"window_id":77'
 REQ='{"schema":"gwcu.action-span.request.v1","actions":[{"name":"click","arguments":{"pid":4242,"window_id":77,"x":10,"y":20}},{"name":"type_text","arguments":{"pid":4242,"window_id":77,"text":"hello"}},{"name":"key_press","arguments":{"pid":4242,"window_id":77,"key":"ENTER"}}]}'
 : >"$TMP/calls";: >"$TMP/present"
 FAKE_CUA_LOG="$TMP/calls" FAKE_PRESENTER_LOG="$TMP/present" XDG_STATE_HOME="$TMP/state" bash "$SURFACE" span --driver "$TMP/fake-cua" --presenter "$TMP/fake-presenter" --actions-json "$REQ" >"$TMP/result.json"
@@ -49,19 +48,15 @@ PY
 [ "$(wc -l <"$TMP/present")" -eq 3 ] || fail "each foreground mutation was not presentation-gated"
 pass "default OFF is exact visible takeover before every Cua mutation"
 
-# Foreground without exact identity must fail before Cua sees any input.
 : >"$TMP/calls";REQ_NO_TARGET='{"schema":"gwcu.action-span.request.v1","actions":[{"name":"click","arguments":{"x":10,"y":20}}]}'
 set +e;FAKE_CUA_LOG="$TMP/calls" XDG_STATE_HOME="$TMP/state" bash "$SURFACE" span --driver "$TMP/fake-cua" --presenter "$TMP/fake-presenter" --actions-json "$REQ_NO_TARGET" >"$TMP/no-target.json";rc=$?;set -e
-[ "$rc" -ne 0 ] || fail "targetless foreground input succeeded"
-[ ! -s "$TMP/calls" ] || fail "Cua received input before exact target proof"
+[ "$rc" -ne 0 ] || fail "targetless foreground input succeeded";[ ! -s "$TMP/calls" ] || fail "Cua received input before exact target proof"
 grep -q 'exact_target_required_for_foreground' "$TMP/no-target.json" || fail "targetless refusal was not explicit"
 pass "foreground actuation fails closed before input without exact pid/window_id"
 
-# Presentation refusal is also pre-actuation.
-: >"$TMP/calls"
-set +e;FAKE_CUA_LOG="$TMP/calls" PRESENTER_FAIL=1 XDG_STATE_HOME="$TMP/state" bash "$SURFACE" span --driver "$TMP/fake-cua" --presenter "$TMP/fake-presenter" --actions-json "$REQ" >"$TMP/present-fail.json";rc=$?;set -e
-[ "$rc" -ne 0 ] || fail "failed presentation still actuated"
-[ ! -s "$TMP/calls" ] || fail "Cua received input after presentation refusal"
+: >"$TMP/calls";set +e
+FAKE_CUA_LOG="$TMP/calls" PRESENTER_FAIL=1 XDG_STATE_HOME="$TMP/state" bash "$SURFACE" span --driver "$TMP/fake-cua" --presenter "$TMP/fake-presenter" --actions-json "$REQ" >"$TMP/present-fail.json";rc=$?;set -e
+[ "$rc" -ne 0 ] || fail "failed presentation still actuated";[ ! -s "$TMP/calls" ] || fail "Cua received input after presentation refusal"
 grep -q 'presentation_not_proved' "$TMP/present-fail.json" || fail "presentation boundary missing"
 pass "Cua input is impossible until GNOME focus proof succeeds"
 
@@ -84,19 +79,23 @@ pass "background ON remains background regardless of legacy confidence"
 
 : >"$TMP/calls";: >"$TMP/present";REQ_VISIBLE='{"schema":"gwcu.action-span.request.v1","control":{"visible_required":true},"actions":[{"name":"click","arguments":{"pid":4242,"window_id":77,"x":10,"y":20}}]}'
 FAKE_CUA_LOG="$TMP/calls" FAKE_PRESENTER_LOG="$TMP/present" XDG_STATE_HOME="$TMP/state" bash "$SURFACE" span --driver "$TMP/fake-cua" --presenter "$TMP/fake-presenter" --actions-json "$REQ_VISIBLE" >"$TMP/visible.json"
-python3 - "$TMP/visible.json" <<'PY' || fail "visible-result intent did not override background preference"
+python3 - "$TMP/visible.json" <<'PY' || fail "visible-result intent did not override standing background preference"
 import json,sys
 d=json.load(open(sys.argv[1]));c=d['control'];assert c['mode']=='foreground' and c['reason']=='visible_result';assert c['visible_required'] is True;assert c['contradicts_preference'];assert c['extra_model_calls']==0;assert len(c['presentations'])==2 and c['presentations'][-1]['index']=='final'
 PY
 pass "visible result presents before actuation and again at completion"
 
-: >"$TMP/calls";REQ_EXPLICIT='{"schema":"gwcu.action-span.request.v1","control":{"explicit_mode":"background","visible_required":false},"actions":[{"name":"click","arguments":{"pid":4242,"window_id":77,"x":10,"y":20}}]}'
-FAKE_CUA_LOG="$TMP/calls" XDG_STATE_HOME="$TMP/other-state" bash "$SURFACE" span --driver "$TMP/fake-cua" --presenter "$TMP/fake-presenter" --actions-json "$REQ_EXPLICIT" >"$TMP/explicit.json"
-python3 - "$TMP/explicit.json" <<'PY' || fail "explicit delivery wording did not win"
+# Explicit background is honored for intermediate work, but visibility remains
+# an independent final postcondition.
+: >"$TMP/calls";: >"$TMP/present"
+REQ_EXPLICIT='{"schema":"gwcu.action-span.request.v1","control":{"explicit_mode":"background","visible_required":true},"actions":[{"name":"click","arguments":{"pid":4242,"window_id":77,"x":10,"y":20}}]}'
+FAKE_CUA_LOG="$TMP/calls" FAKE_PRESENTER_LOG="$TMP/present" XDG_STATE_HOME="$TMP/other-state" bash "$SURFACE" span --driver "$TMP/fake-cua" --presenter "$TMP/fake-presenter" --actions-json "$REQ_EXPLICIT" >"$TMP/explicit.json"
+python3 - "$TMP/explicit.json" <<'PY' || fail "background work lost independent visible completion"
 import json,sys
-d=json.load(open(sys.argv[1]));assert d['control']['mode']=='background';assert d['control']['reason']=='explicit_intent'
+d=json.load(open(sys.argv[1]));assert d['ok'];assert d['control']['mode']=='background';assert d['control']['reason']=='explicit_intent';assert d['results'][0]['control']['applied']=='background';assert len(d['control']['presentations'])==1;assert d['control']['presentations'][0]['index']=='final'
 PY
-pass "explicit user delivery wording remains authoritative"
+[ "$(wc -l <"$TMP/present")" -eq 1 ] || fail "explicit background visible result did not present exactly once at completion"
+pass "explicit background stays background and still ends visibly"
 
 : >"$TMP/calls";: >"$TMP/present"
 FAKE_CUA_LOG="$TMP/calls" FAKE_PRESENTER_LOG="$TMP/present" XDG_STATE_HOME="$TMP/state" BACKGROUND_FAIL_ONCE=1 bash "$SURFACE" span --driver "$TMP/fake-cua" --presenter "$TMP/fake-presenter" --actions-json "$REQ_BG" >"$TMP/fallback.json"
