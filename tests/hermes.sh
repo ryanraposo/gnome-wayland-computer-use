@@ -37,7 +37,7 @@ YAML
 grep -Fq '/computer-use <task>' "$ROOT/SKILL.md" || fail "skill-native task invocation missing"
 grep -Fq 'Everything else is a task.' "$ROOT/SKILL.md" || fail "skill task/subcommand dispatch rule missing"
 grep -Fq 'tools.override' "$ROOT/runtimes/hermes/plugin.yaml" || fail "Hermes tool override capability is undeclared"
-grep -Fq 'provides_tools:' "$ROOT/runtimes/hermes/plugin.yaml" || fail "Hermes policy tool is undeclared"
+! grep -Fq 'provides_tools:' "$ROOT/runtimes/hermes/plugin.yaml" || fail "conditional override is incorrectly advertised as an unconditional tool"
 pass "skill owns slash routing while plugin declares only consented tool policy"
 
 # Exercise the policy wrapper without depending on a Hermes installation. This

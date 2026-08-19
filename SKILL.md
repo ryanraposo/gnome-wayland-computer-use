@@ -81,9 +81,10 @@ A model/tool round-trip is justified only when fresh state can change the next d
 
 - OFF is the default: foreground/obvious control.
 - ON prefers background delivery where Cua supports it.
-- Explicit user foreground/background wording overrides the standing preference.
-- A task whose requested result must remain visible forces foreground presentation.
+- Explicit user foreground/background wording chooses the delivery shape.
+- Otherwise, a task whose requested result must remain visible forces foreground delivery.
 - Cua capability/runtime truth has final say.
+- Independently of delivery shape, a visible-result request still carries the visible presentation postcondition below.
 
 There is deliberately **no floating confidence threshold** in the control policy. Absence of words such as “foreground” is not evidence for background use. Legacy `foreground_confidence` metadata is accepted by the runner for compatibility but does not select delivery.
 
@@ -102,13 +103,13 @@ or, when the user explicitly chose a delivery shape:
 The local arbiter is mechanical:
 
 ```text
-visible result required                    → foreground
 explicit foreground/background wording    → explicit mode
-otherwise                                 → standing preference
-Cua capability/runtime truth              → final say
+otherwise, visible result required         → foreground
+otherwise                                  → standing preference
+Cua capability/runtime truth               → final say
 ```
 
-`visible_required` is stronger than transient foreground input. It means the completed task must be left on the user's visible desktop. Phrases such as “show me,” “watch/play this,” “take control,” “put this on my screen,” or “leave it open” normally imply it.
+`visible_required` is stronger than “we sent foreground input.” It means the completed task must be left on the user's visible desktop. Phrases such as “show me,” “watch/play this,” “take control,” “put this on my screen,” or “leave it open” normally imply it.
 
 For ordinary input, set `delivery_mode` explicitly when calling Hermes `computer_use`. The bundled GWCU Hermes policy shim also fills an omitted delivery mode from the standing preference when the user has granted its documented `tools.override` capability. This is a backstop, not a replacement for expressing known intent.
 
@@ -120,7 +121,7 @@ If background was selected but Cua returns `background_unavailable` / `foregroun
 
 Foreground delivery and visible presentation are separate properties.
 
-A Cua foreground action may temporarily front a target and restore the previous app. That is correct delivery but does **not** satisfy “show me,” “watch this,” or another visible-result request.
+A Cua foreground action may temporarily front a target and restore the previous app. That is correct delivery but does **not** satisfy “show me,” “watch this,” or another visible-result request. Conversely, explicitly requested background work may stay background while it executes and still require the result to be presented at completion.
 
 For `visible_required` tasks:
 
@@ -195,7 +196,7 @@ Events may push authoritative facts. Prefer AT-SPI, filesystem, process, D-Bus, 
 "$ROOT/scripts/profile.sh" route --machine "<target name>"
 ```
 
-Inside that one call: repo/workspace `.gwcu` lookup → deterministic launcher/PWA resolver only on miss → optional stable writeback → `gwcu.route.v1`. `.gwcu` accelerates identity; live Cua/WORLDLINE state wins on contradiction.
+Inside that one call: repo/workspace .gwcu lookup → deterministic launcher/PWA resolver only on miss → optional stable writeback → `gwcu.route.v1`. `.gwcu` accelerates identity; live Cua/WORLDLINE state wins on contradiction.
 
 This route identifies the desktop target. It never authorizes a switch to Hermes' separate browser automation plane.
 
