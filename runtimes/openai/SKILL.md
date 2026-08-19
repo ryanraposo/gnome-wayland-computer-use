@@ -160,7 +160,7 @@ Do not use generic compositor guessing or title-only focus as a substitute.
 
 | Situation | setup calls before useful work |
 |---|---:|
-| exact known `(pid, window_id)` | **0 model calls** — presentation is local |
+| known app/window | **0** model calls once exact `(pid, window_id)` is already known; presentation is local |
 | uncertain installed/PWA identity | **1** — `profile.sh route` |
 | host/runtime contradiction | **1** — `profile.sh recover` |
 | local postcondition/revision | **1** — `worldline-capture.sh` |
@@ -217,7 +217,7 @@ Prefer direct truth: AT-SPI, filesystem, process, D-Bus, settings, network and t
 "$ROOT/scripts/profile.sh" route --machine "<target name>"
 ```
 
-That call may use `.gwcu` to accelerate stable identity. Live Cua/WORLDLINE truth wins on contradiction. Route discovery never authorizes a switch to Hermes' separate browser automation plane.
+That one route performs the repo/workspace .gwcu lookup before deterministic identity discovery. `.gwcu` accelerates stable identity; live Cua/WORLDLINE truth wins on contradiction. Route discovery never authorizes a switch to Hermes' separate browser automation plane.
 
 ## Host contradiction
 
