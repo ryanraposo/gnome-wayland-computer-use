@@ -24,31 +24,51 @@ for line in sys.stdin:
   print(json.dumps({'jsonrpc':'2.0','id':q['id'],'result':{'content':[],'isError':False,'structuredContent':structured}}),flush=True)
 PY
 chmod +x "$TMP/fake-cua"
+
 REQ='{"schema":"gwcu.action-span.request.v1","actions":[{"name":"click","arguments":{"x":10,"y":20}},{"name":"type_text","arguments":{"text":"hello"}},{"name":"key_press","arguments":{"key":"ENTER"}}]}'
 FAKE_CUA_LOG="$TMP/calls" XDG_STATE_HOME="$TMP/state" bash "$SURFACE" span --driver "$TMP/fake-cua" --actions-json "$REQ" >"$TMP/result.json"
 python3 - "$TMP/result.json" <<'PY' || fail "completed span envelope invalid"
 import json,sys
-d=json.load(open(sys.argv[1]));assert d['ok'] and d['completed']==3;assert d['control']['mode']=='foreground';assert d['control']['extra_model_calls']==0
+d=json.load(open(sys.argv[1]));assert d['ok'] and d['completed']==3;assert d['control']['mode']=='foreground';assert d['control']['reason']=='standing_preference';assert d['control']['extra_model_calls']==0
 assert all(x['control']['applied']=='foreground' for x in d['results'])
 PY
-pass "default obvious control reaches Cua delivery_mode with zero arbitration calls"
+pass "default OFF mechanically reaches foreground Cua delivery"
+
+# Regression from the real diagnostic: absence of foreground wording was encoded
+# as confidence zero and incorrectly overrode background=OFF. Legacy confidence
+# is now accepted but non-authoritative.
+REQ_LEGACY_LOW='{"schema":"gwcu.action-span.request.v1","control":{"foreground_confidence":0},"actions":[{"name":"click","arguments":{"x":10,"y":20}}]}'
+FAKE_CUA_LOG="$TMP/calls" XDG_STATE_HOME="$TMP/state" bash "$SURFACE" span --driver "$TMP/fake-cua" --actions-json "$REQ_LEGACY_LOW" >"$TMP/legacy-low.json"
+python3 - "$TMP/legacy-low.json" <<'PY' || fail "legacy confidence still overrode OFF"
+import json,sys
+d=json.load(open(sys.argv[1]));c=d['control'];assert c['mode']=='foreground';assert c['reason']=='standing_preference';assert c['legacy_foreground_confidence']==0.0;assert c['legacy_confidence_authoritative'] is False
+PY
+pass "confidence zero can no longer turn background OFF into invisible execution"
 
 mkdir -p "$TMP/state/gnome-wayland-computer-use";printf 'on\n' >"$TMP/state/gnome-wayland-computer-use/background-priority";: >"$TMP/calls"
-REQ_BG='{"schema":"gwcu.action-span.request.v1","control":{"foreground_confidence":0.50},"actions":[{"name":"click","arguments":{"x":10,"y":20}}]}'
+REQ_BG='{"schema":"gwcu.action-span.request.v1","control":{"foreground_confidence":1.0},"actions":[{"name":"click","arguments":{"x":10,"y":20}}]}'
 FAKE_CUA_LOG="$TMP/calls" XDG_STATE_HOME="$TMP/state" bash "$SURFACE" span --driver "$TMP/fake-cua" --actions-json "$REQ_BG" >"$TMP/bg.json"
-python3 - "$TMP/bg.json" <<'PY' || fail "deadband did not honor toggle"
+python3 - "$TMP/bg.json" <<'PY' || fail "standing background preference not authoritative"
 import json,sys
 d=json.load(open(sys.argv[1]));assert d['control']['mode']=='background';assert d['control']['reason']=='standing_preference';assert d['results'][0]['control']['applied']=='background'
 PY
-pass "40-60 confidence deadband honors standing background preference"
+pass "background ON remains background regardless of legacy confidence"
 
-: >"$TMP/calls";REQ_FG='{"schema":"gwcu.action-span.request.v1","control":{"foreground_confidence":0.82},"actions":[{"name":"click","arguments":{"x":10,"y":20}}]}'
-FAKE_CUA_LOG="$TMP/calls" XDG_STATE_HOME="$TMP/state" bash "$SURFACE" span --driver "$TMP/fake-cua" --actions-json "$REQ_FG" >"$TMP/fg.json"
-python3 - "$TMP/fg.json" <<'PY' || fail "clear foreground intent did not override preference"
+: >"$TMP/calls";REQ_VISIBLE='{"schema":"gwcu.action-span.request.v1","control":{"visible_required":true},"actions":[{"name":"click","arguments":{"x":10,"y":20}}]}'
+FAKE_CUA_LOG="$TMP/calls" XDG_STATE_HOME="$TMP/state" bash "$SURFACE" span --driver "$TMP/fake-cua" --actions-json "$REQ_VISIBLE" >"$TMP/visible.json"
+python3 - "$TMP/visible.json" <<'PY' || fail "visible-result intent did not override background preference"
 import json,sys
-d=json.load(open(sys.argv[1]));c=d['control'];assert c['mode']=='foreground' and c['contradicts_preference'];assert 'switching to foreground' in c['notice'];assert c['extra_model_calls']==0
+d=json.load(open(sys.argv[1]));c=d['control'];assert c['mode']=='foreground' and c['reason']=='visible_result';assert c['visible_required'] is True;assert c['contradicts_preference'];assert 'switching to foreground' in c['notice'];assert c['extra_model_calls']==0
 PY
-pass "clear intent overrides background preference and returns same-turn heads-up"
+pass "visible-result intent forces foreground delivery with zero arbitration calls"
+
+: >"$TMP/calls";REQ_EXPLICIT='{"schema":"gwcu.action-span.request.v1","control":{"explicit_mode":"background","visible_required":true},"actions":[{"name":"click","arguments":{"x":10,"y":20}}]}'
+FAKE_CUA_LOG="$TMP/calls" XDG_STATE_HOME="$TMP/other-state" bash "$SURFACE" span --driver "$TMP/fake-cua" --actions-json "$REQ_EXPLICIT" >"$TMP/explicit.json"
+python3 - "$TMP/explicit.json" <<'PY' || fail "explicit delivery wording did not win"
+import json,sys
+d=json.load(open(sys.argv[1]));assert d['control']['mode']=='background';assert d['control']['reason']=='explicit_intent'
+PY
+pass "explicit user delivery wording remains authoritative"
 
 : >"$TMP/calls"
 FAKE_CUA_LOG="$TMP/calls" XDG_STATE_HOME="$TMP/state" BACKGROUND_FAIL_ONCE=1 bash "$SURFACE" span --driver "$TMP/fake-cua" --actions-json "$REQ_BG" >"$TMP/fallback.json"

@@ -17,8 +17,9 @@ For an approved installation:
 3. Run the installer as the logged-in desktop user, not by wrapping the whole installer in `sudo`.
 4. Preserve unrelated agent/runtime configuration. Let the installer select the supported integration it actually finds.
 5. Treat graphical Remote Desktop / remote-control consent as a real user authorization boundary. Explain the prompt and let the user approve it.
-6. Follow the installer's resulting `Next:` / status guidance and verify the installed runtime before claiming success.
-7. If the environment is unsupported, consent is declined, or a required privilege cannot be obtained, stop cleanly and report the exact boundary.
+6. If Hermes asks for `tools.override`, explain that GWCU uses it only to make the built-in `computer_use` tool obey the saved foreground/background preference; do not hide or pre-answer that host-owned consent.
+7. Follow the installer's resulting `Next:` / status guidance and verify the installed runtime before claiming success.
+8. If the environment is unsupported, consent is declined, or a required privilege cannot be obtained, stop cleanly and report the exact boundary.
 
 The intended UX is agent-native: **the user supplies intent and the repository supplies the installation procedure.**
 
@@ -27,7 +28,7 @@ The intended UX is agent-native: **the user supplies intent and the repository s
 Treat GWCU as a small operating layer around one upstream control authority.
 
 ```text
-Cua Driver   → changes the desktop
+Cua Driver   → changes native apps and browser-backed desktop surfaces
 WORLDLINE    → transient revisions, invalidation, predicates, conflicts
 observer     → optional ScreenCast/PipeWire visual sensor
 .gwcu        → durable repo/workspace truth
@@ -38,13 +39,15 @@ A change is complete only when those boundaries still agree in code, runtime ins
 
 ## Architectural invariants
 
-1. **Cua is the only actuator.** Do not add `ydotool`, `/dev/uinput`, guessed focus, a project RDP/VNC server, or another pointer/keyboard daemon.
-2. **WORLDLINE is read-only.** Sensors may add facts/events; they do not gain control authority.
-3. **Observation is event/predicate driven.** Avoid fixed sleeps and ritual screenshots between already-decided actions.
-4. **Direct truth beats visual inference.** Prefer AT-SPI, process/filesystem, D-Bus/settings/network/task events before pixels.
-5. **`.gwcu` is durable only.** WORLDLINE state, screenshots and task content do not belong there.
-6. **Persistent machine/user truth never belongs in AGENTS.md.**
-7. **Live Cua/WORLDLINE evidence beats cached truth on contradiction.**
+1. **Cua is the only actuator.** Native apps and browser work stay under Cua. Do not add `ydotool`, `/dev/uinput`, guessed focus, a project RDP/VNC server, a hidden browser control plane, or another pointer/keyboard daemon.
+2. **Visible completion is a postcondition.** When the user's requested result must remain visible, verify the exact Cua target is actually presented on the desktop; page-state success in a hidden/headless surface is insufficient.
+3. **Background OFF means foreground by default.** Missing intent metadata must never be interpreted as a request for background execution.
+4. **WORLDLINE is read-only.** Sensors may add facts/events; they do not gain control authority.
+5. **Observation is event/predicate driven.** Avoid fixed sleeps and ritual screenshots between already-decided actions.
+6. **Direct truth beats visual inference.** Prefer AT-SPI, process/filesystem, D-Bus/settings/network/task events before pixels.
+7. **`.gwcu` is durable only.** WORLDLINE state, screenshots and task content do not belong there.
+8. **Persistent machine/user truth never belongs in AGENTS.md.**
+9. **Live Cua/WORLDLINE evidence beats cached truth on contradiction.**
 
 ## Change routing
 
@@ -53,6 +56,8 @@ Action/control semantics:
 ```text
 SKILL.md
 runtimes/openai/SKILL.md
+runtimes/hermes/__init__.py
+runtimes/hermes/plugin.yaml
 scripts/computer-use.sh
 scripts/action-span.py
 ```
@@ -116,12 +121,13 @@ A local revision is cheap. A model re-entry is expensive. When benchmarking, rec
 The installer must remain:
 
 - Ubuntu 26.04 GNOME Wayland qualified;
-- pinned to a deliberate Cua release;
+- pinned to a deliberate current Cua release;
 - explicit about PipeWire/portal/AT-SPI dependencies;
 - idempotent;
 - compatible with curl-pipe terminal prompting;
 - ownership-aware and reversible;
-- free of a project raw-input fallback.
+- explicit and visible about Hermes capability consent;
+- free of a project raw-input or browser-control fallback.
 
 Do not open ScreenCast merely to prove install success. RemoteDesktop control consent and whole-screen observation consent are separate.
 

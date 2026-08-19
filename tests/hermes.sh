@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Hermes integration checks: the installed skill owns /computer-use; the plugin
-# exists only as an upgrade/retirement shim and must never shadow task text.
+# may replace the built-in computer_use TOOL only through Hermes' consented
+# tools.override capability.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
@@ -32,10 +33,61 @@ YAML
 }
 
 # Source-level invariants always run, even on CI without Hermes installed.
-! grep -Fq 'ctx.register_command(' "$ROOT/runtimes/hermes/__init__.py" || fail "compatibility plugin shadows native /computer-use"
+! grep -Fq 'ctx.register_command(' "$ROOT/runtimes/hermes/__init__.py" || fail "plugin shadows native /computer-use"
 grep -Fq '/computer-use <task>' "$ROOT/SKILL.md" || fail "skill-native task invocation missing"
 grep -Fq 'Everything else is a task.' "$ROOT/SKILL.md" || fail "skill task/subcommand dispatch rule missing"
-pass "installed skill owns /computer-use task routing"
+grep -Fq 'tools.override' "$ROOT/runtimes/hermes/plugin.yaml" || fail "Hermes tool override capability is undeclared"
+grep -Fq 'provides_tools:' "$ROOT/runtimes/hermes/plugin.yaml" || fail "Hermes policy tool is undeclared"
+pass "skill owns slash routing while plugin declares only consented tool policy"
+
+# Exercise the policy wrapper without depending on a Hermes installation. This
+# catches the exact bug seen in the diagnostic: direct Hermes computer_use
+# actions defaulted to background even when GWCU background priority was OFF.
+python3 - "$ROOT/runtimes/hermes/__init__.py" "$TMP/policy-state" <<'PY' || fail "Hermes policy wrapper regression"
+import importlib.util, os, pathlib, sys, types
+plugin_path, state = sys.argv[1:]
+os.environ['XDG_STATE_HOME'] = state
+pathlib.Path(state).mkdir(parents=True, exist_ok=True)
+
+schema_mod = types.ModuleType('tools.computer_use.schema')
+schema_mod.COMPUTER_USE_SCHEMA = {'name':'computer_use','description':'builtin','parameters':{'type':'object'}}
+tool_mod = types.ModuleType('tools.computer_use.tool')
+seen=[]
+def builtin(args, **kwargs):
+    seen.append(dict(args)); return dict(args)
+tool_mod.handle_computer_use = builtin
+pkg_tools = types.ModuleType('tools'); pkg_cu = types.ModuleType('tools.computer_use')
+sys.modules['tools'] = pkg_tools; sys.modules['tools.computer_use'] = pkg_cu
+sys.modules['tools.computer_use.schema'] = schema_mod; sys.modules['tools.computer_use.tool'] = tool_mod
+
+spec=importlib.util.spec_from_file_location('gwcu_hermes_policy', plugin_path)
+mod=importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
+class Ctx:
+    def __init__(self, allowed=True): self.allowed=allowed; self.registration=None
+    def has_capability(self, name): return self.allowed and name == 'tools.override'
+    def register_tool(self, **kwargs): self.registration=kwargs
+ctx=Ctx(); mod.register(ctx)
+assert ctx.registration is not None and ctx.registration['name']=='computer_use'
+assert ctx.registration['override'] is True
+wrapped=ctx.registration['handler']
+
+# Default/OFF => foreground, mechanically.
+out=wrapped({'action':'click','coordinate':[1,2]})
+assert out['delivery_mode']=='foreground'
+# Saved ON => background.
+pref=pathlib.Path(state)/'gnome-wayland-computer-use'/'background-priority'; pref.parent.mkdir(parents=True, exist_ok=True); pref.write_text('on\n')
+out=wrapped({'action':'key','keys':'ctrl+l'})
+assert out['delivery_mode']=='background'
+# Explicit call intent always survives the shim.
+out=wrapped({'action':'click','delivery_mode':'foreground'})
+assert out['delivery_mode']=='foreground'
+# Reads and Cua typed-browser actions do not gain unsupported delivery args.
+assert 'delivery_mode' not in wrapped({'action':'capture'})
+assert 'delivery_mode' not in wrapped({'action':'cua_browser_click','ref':'x'})
+# Capability denial fails closed: no override registration.
+ctx2=Ctx(False); mod.register(ctx2); assert ctx2.registration is None
+PY
+pass "Hermes computer_use mechanically honors GWCU standing delivery preference"
 
 HOME_A="$TMP/hermes-a"
 make_home "$HOME_A"
@@ -49,7 +101,7 @@ for c in "$HOME/.hermes/hermes-agent/venv/bin/python" "$HOME/.hermes/hermes-agen
     [ -x "$c" ] && HERMES_PY="$c" && break
 done
 if [ -z "$HERMES_PY" ]; then
-    printf 'ok - Hermes runtime not present; skipping registry integration checks\n'
+    printf 'ok - Hermes runtime not present; skipping live registry integration checks\n'
     exit 0
 fi
 AGENT_DIR="$(cd "$(dirname "$HERMES_PY")/../.." && pwd)"
@@ -60,14 +112,13 @@ run_hermes() {
     HERMES_HOME="$home" XDG_STATE_HOME="$TMP/state" PYTHONPATH="$AGENT_DIR" "$HERMES_PY" -c "$code"
 }
 
-# The compatibility plugin must contribute no /computer-use command. This leaves
-# Hermes' native skill slash-command path free to load the computer-use skill.
+# No plugin-level slash command: the installed skill remains canonical.
 REGISTRY_CODE='from hermes_cli.plugins import get_plugin_commands
 cmds = get_plugin_commands()
 print("PLUGIN_HAS_COMPUTER_USE", "computer-use" in cmds)
 '
 OUT=$(run_hermes "$HOME_A" "$REGISTRY_CODE")
-printf '%s\n' "$OUT" | grep -Fq 'PLUGIN_HAS_COMPUTER_USE False' || fail "compatibility plugin still owns /computer-use"
+printf '%s\n' "$OUT" | grep -Fq 'PLUGIN_HAS_COMPUTER_USE False' || fail "plugin owns /computer-use"
 pass "Hermes plugin registry leaves /computer-use to the skill"
 
 # A stale older GWCU plugin can shadow the native skill path. Prove the upgrade
@@ -97,10 +148,11 @@ OUT=$(run_hermes "$HOME_B" "$REGISTRY_CODE")
 printf '%s\n' "$OUT" | grep -Fq 'PLUGIN_HAS_COMPUTER_USE False' || fail "stale plugin still shadows native skill path after retirement"
 pass "duplicate retirement restores skill-native /computer-use ownership"
 
-# Installer/teardown must preserve the upgrade seam.
+# Installer/teardown must preserve the upgrade seam and invoke Hermes enable,
+# which is the host-owned capability-consent path for tools.override.
 grep -Fq 'retire_duplicate_plugins' "$ROOT/install.sh" || fail "installer does not retire duplicate plugins"
 grep -Fq '"$HERMES_HOME/plugins"/*/plugin.yaml' "$ROOT/install.sh" || fail "installer cannot scan plugin copies"
 grep -Fq '"$HERMES_HOME/plugins"/*/plugin.yaml' "$ROOT/scripts/teardown.sh" || fail "teardown cannot find plugin copies"
-grep -Fq 'hermes plugins enable "$NAME"' "$ROOT/install.sh" || fail "installer does not enable compatibility plugin"
+grep -Fq 'hermes plugins enable "$NAME"' "$ROOT/install.sh" || fail "installer does not run Hermes capability-enable surface"
 grep -Fq 'archived and restored by teardown' "$ROOT/install.sh" || fail "installer does not surface teardown-ability"
-pass "installer/teardown keep clean /computer-use ownership seams"
+pass "installer/teardown keep clean slash ownership and consent seams"

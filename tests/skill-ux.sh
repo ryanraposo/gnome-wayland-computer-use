@@ -16,9 +16,9 @@ cmp -s "$ROOT/SKILL.md" "$ROOT/runtimes/openai/SKILL.md" || fail "runtime skill 
 pass "runtime skills are identical and compact"
 
 for heading in \
-    'Invocation contract' 'Core rule' 'Control priority' 'Call budget' 'Execution ladder' 'Known target' \
-    'WORLDLINE postconditions' 'Whole screen' '`.gwcu`: durable truth, not runtime state' \
-    'Failure and refusal policy' 'Completion proof'
+    'Invocation contract' 'One actuator, including the browser' 'Core rule' 'Control priority' 'Visible-result contract' \
+    'Call budget' 'Execution ladder' 'Known target' 'WORLDLINE postconditions' 'Whole screen' \
+    '`.gwcu`: durable truth, not runtime state' 'Failure and refusal policy' 'Completion proof'
 do
     grep -Fqi "## $heading" "$ROOT/SKILL.md" || fail "skill lost: $heading"
 done
@@ -28,7 +28,7 @@ grep -Fq 'status`, `background`, `managed`, `truths`, `consent`, `doctor`, and `
 if grep -Fq 'ctx.register_command(' "$ROOT/runtimes/hermes/__init__.py"; then
     fail "Hermes plugin shadows the native computer-use skill command"
 fi
-grep -Fq 'installed skill owns it' "$ROOT/runtimes/hermes/__init__.py" || fail "Hermes compatibility shim contract missing"
+grep -Fq 'installed skill owns the /computer-use slash command' "$ROOT/runtimes/hermes/__init__.py" || fail "Hermes slash-ownership contract missing"
 pass "/computer-use accepts both tasks and reserved subcommands"
 
 grep -q 'MUST cross the model/tool boundary exactly once' "$ROOT/SKILL.md" || fail "one-call invariant softened"
@@ -36,9 +36,20 @@ grep -q 'computer-use.sh" span --actions-json' "$ROOT/SKILL.md" || fail "span su
 grep -q 'worldline-capture.sh' "$ROOT/SKILL.md" || fail "WORLDLINE surface missing"
 grep -q 'Never answer a Cua refusal with raw pointer/keyboard injection' "$ROOT/SKILL.md" || fail "refusal boundary missing"
 grep -q 'No X11 or XWayland session is required' "$ROOT/SKILL.md" || fail "GNOME Wayland contract missing"
-grep -q 'toggles priority for background computer use' "$ROOT/SKILL.md" || fail "background command contract missing"
+grep -q 'toggles the standing delivery preference' "$ROOT/SKILL.md" || fail "background command contract missing"
 grep -q 'documentation lives in `README.md`' "$ROOT/SKILL.md" || fail "skill points at retired docs"
 pass "skill teaches one Cua + WORLDLINE execution contract"
+
+# Regression constitution for the real invisible-browser failure.
+grep -Fq "do not route browser work through Hermes' separate \`browser_*\` toolset" "$ROOT/SKILL.md" || fail "browser actuator split can recur"
+grep -Fq 'cua_browser_state / cua_browser_* actions' "$ROOT/SKILL.md" || fail "Cua browser route is not explicit"
+grep -Fq 'A hidden/headless/managed browser success is a failure' "$ROOT/SKILL.md" || fail "visible-result failure is not explicit"
+grep -Fqi 'there is deliberately **no floating confidence threshold**' "$ROOT/SKILL.md" || fail "confidence arbiter regression guard missing"
+! grep -Eq 'F <|F >|0\.40|0\.60|\.40–\.60' "$ROOT/SKILL.md" || fail "obsolete confidence threshold still documented"
+grep -Fq 'foreground_confidence' "$ROOT/scripts/action-span.py" || fail "legacy compatibility parser disappeared"
+grep -Fq 'legacy_confidence_authoritative' "$ROOT/scripts/action-span.py" || fail "legacy confidence authority is ambiguous"
+grep -Fq 'tools.override' "$ROOT/runtimes/hermes/plugin.yaml" || fail "Hermes policy override is not capability-gated"
+pass "browser visibility and control-priority regression is constitutionally covered"
 
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 SURFACE="$ROOT/scripts/computer-use.sh"

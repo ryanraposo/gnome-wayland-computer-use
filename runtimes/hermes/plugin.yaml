@@ -1,3 +1,7 @@
 name: gnome-wayland-computer-use
 version: "2.3.0"
-description: Compatibility shim; the installed skill owns /computer-use
+description: GWCU policy shim; the installed skill owns /computer-use
+provides_tools:
+  - computer_use
+capabilities:
+  - tools.override

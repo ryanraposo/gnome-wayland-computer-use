@@ -5,7 +5,7 @@ set -euo pipefail
 NAME="gnome-wayland-computer-use"
 VERSION="2.3.0"
 BASE_URL="${GWCU_BASE_URL:-https://ryanraposo.github.io/gnome-wayland-computer-use}"
-CUA_DRIVER_RS_VERSION="${GWCU_CUA_DRIVER_RS_VERSION:-0.19.3}" # deliberately pinned
+CUA_DRIVER_RS_VERSION="${GWCU_CUA_DRIVER_RS_VERSION:-0.20.0}" # deliberately pinned
 PYTHON="${GWCU_SYSTEM_PYTHON:-/usr/bin/python3}"
 SELF=""; [ -f "${BASH_SOURCE[0]:-}" ] && SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
@@ -200,7 +200,13 @@ if $HERMES; then
   install_dir "$TMP/bundle" "$HSKILL"
   PLUGIN="$HERMES_HOME/plugins/$NAME"; mkdir -p "$TMP/plugin"; get_file runtimes/hermes/plugin.yaml "$TMP/plugin/plugin.yaml"; get_file runtimes/hermes/__init__.py "$TMP/plugin/__init__.py"; install_dir "$TMP/plugin" "$PLUGIN"
   retire_duplicate_plugins "$PLUGIN"
-  hermes plugins enable "$NAME" >/dev/null 2>&1 || warn "Hermes plugin installed; enable it manually if needed"
+  if $EXPLICIT_UNATTENDED; then
+    hermes plugins enable "$NAME" >/dev/null 2>&1 || warn "Hermes plugin installed but could not be enabled"
+    warn "Unattended Hermes setup leaves any new tools.override capability ungranted; run 'hermes plugins enable $NAME' interactively once to grant the GWCU computer_use policy shim."
+  else
+    info "Hermes may ask once for tools.override so GWCU can enforce the saved computer_use delivery preference."
+    hermes plugins enable "$NAME" || warn "Hermes plugin installed; enable it manually if needed"
+  fi
 fi
 ok "Installed action-span.py + WORLDLINE runtime + skill"
 
