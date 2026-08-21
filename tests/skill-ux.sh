@@ -72,6 +72,18 @@ grep -q 'Background computer use: OFF' "$TMP/off" || fail "bare background comma
 grep -q 'Default visible takeover is faster and deterministic' "$ROOT/install.sh" || fail "installer background choice missing"
 pass "default control path is visible, pre-traced and deterministic"
 
+# New subcommands: list-windows and cursor-color
+XDG_STATE_HOME="$TMP/state" "$SURFACE" list-windows >"$TMP/list"
+grep -q 'Found [0-9]* windows:' "$TMP/list" || fail "list-windows returned window list"
+grep -q '"schema":"gwcu' "$TMP/list" || true  # accepts MCP envelope
+XDG_STATE_HOME="$TMP/state" "$SURFACE" list-windows --on-screen-only >"$TMP/list_on"
+grep -q 'Found [0-9]* windows:' "$TMP/list_on" || fail "list-windows --on-screen-only works"
+XDG_STATE_HOME="$TMP/state" "$SURFACE" cursor-color >"$TMP/cursor"
+grep -q 'Set agent cursor color to #00FF00' "$TMP/cursor" || fail "cursor-color default green"
+XDG_STATE_HOME="$TMP/state" "$SURFACE" cursor-color "#FF0000" >"$TMP/cursor2"
+grep -q 'Set agent cursor color to #FF0000' "$TMP/cursor2" || fail "cursor-color accepts custom hex"
+pass "list-windows and cursor-color operator surfaces work"
+
 grep -q '^## Maintaining this repository$' "$ROOT/AGENTS.md" || fail "repository guide lost maintenance routing"
 grep -q 'Persistent machine/user truth never belongs in AGENTS.md' "$ROOT/AGENTS.md" || fail "AGENTS permits machine truth"
 grep -q 'README.md.*only human-facing documentation file' "$ROOT/AGENTS.md" || fail "repository docs authority is unclear"

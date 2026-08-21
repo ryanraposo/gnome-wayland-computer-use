@@ -23,7 +23,7 @@ Use **Cua Driver as the only control authority**. WORLDLINE owns transient revis
 
 `/computer-use <task>` is the primary user-facing entry point. Everything after `/computer-use` is normal task text unless the first token is one of these reserved operator subcommands:
 
-`status`, `trace`, `present`, `background`, `managed`, `truths`, `consent`, `doctor`, and `help`.
+`status`, `trace`, `present`, `list-windows`, `cursor-color`, `background`, `managed`, `truths`, `consent`, `doctor`, and `help`.
 
 For a reserved form, your first tool call MUST execute the installed operator surface once; return its result without reinterpretation:
 
@@ -31,6 +31,8 @@ For a reserved form, your first tool call MUST execute the installed operator su
 /computer-use status
 /computer-use trace
 /computer-use present --pid PID --window-id ID
+/computer-use list-windows [--on-screen-only] [--pid PID]
+/computer-use cursor-color [#RRGGBB]
 /computer-use background [on|off|status]
 /computer-use managed [on|off|status]
 /computer-use truths
@@ -265,6 +267,8 @@ A task is incomplete when the requested visible result is not actually on the us
 /computer-use status
 /computer-use trace
 /computer-use present --pid PID --window-id ID
+/computer-use list-windows [--on-screen-only] [--pid PID]
+/computer-use cursor-color [#RRGGBB]
 /computer-use background [on|off|status]
 /computer-use managed [on|off|status]
 /computer-use truths
@@ -273,6 +277,40 @@ A task is incomplete when the requested visible result is not actually on the us
 /computer-use help
 ```
 
-`trace` prints the exact default control path. `present` is the deterministic exact-window presentation primitive.
+`trace` prints the exact default control path. `present` is the deterministic exact-window presentation primitive. `list-windows` is read-only discovery (no presentation gate, works in both background modes). `cursor-color` sets the agent cursor fill color via Cua WinRects helper (default green, visual aid only).
+
+## WORLDLINE socket lifecycle
+
+The WORLDLINE daemon runs as a systemd socket-activated user service:
+
+```bash
+# Socket path (canonical)
+$XDG_RUNTIME_DIR/gnome-wayland-computer-use/worldline.sock
+
+# Service units
+gnome-wayland-computer-use-worldline.socket
+gnome-wayland-computer-use-worldline.service
+```
+
+**Health check RPC:**
+```bash
+worldline.py request --json '{"op":"status"}'
+```
+
+**Recovery commands:**
+```bash
+systemctl --user restart gnome-wayland-computer-use-worldline.socket gnome-wayland-computer-use-worldline.service
+```
+
+**Log inspection:**
+```bash
+journalctl --user -u gnome-wayland-computer-use-worldline.service -n 50
+```
+
+**Socket activation contract:**
+- Daemon inherits fd 3 from systemd (`LISTEN_FDS=1`, `LISTEN_PID=$$`)
+- `worldline.py listen()` handles this; callers connect to the socket path
+- Socket units are installed and enabled by `install.sh`
+- Daemon idle timeout defaults to 300s; configurable via `GWCU_WORLDLINE_IDLE_SECONDS`
 
 Project rationale and installation documentation lives in `README.md`.

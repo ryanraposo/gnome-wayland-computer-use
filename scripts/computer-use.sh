@@ -14,6 +14,34 @@ PYTHON="${GWCU_SYSTEM_PYTHON:-${GNOME_WAYLAND_SYSTEM_PYTHON:-/usr/bin/python3}}"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/gnome-wayland-computer-use"
 BACKGROUND_PREF="$STATE_DIR/background-priority"
 
+# Resolve cua-driver binary (mirrors mcp_client.resolve_driver)
+resolve_cua() {
+    local explicit="${1:-}"
+    if [ -n "$explicit" ]; then
+        printf '%s\n' "$explicit"
+        return 0
+    fi
+    local env="${CUA_DRIVER_BIN:-}"
+    if [ -n "$env" ]; then
+        printf '%s\n' "$env"
+        return 0
+    fi
+    local found
+    found=$(command -v cua-driver 2>/dev/null || true)
+    if [ -n "$found" ]; then
+        printf '%s\n' "$found"
+        return 0
+    fi
+    local candidate="$HOME/.local/bin/cua-driver"
+    if [ -x "$candidate" ]; then
+        printf '%s\n' "$candidate"
+        return 0
+    fi
+    return 1
+}
+
+die() { printf '[ERROR] %s\n' "$*" >&2; exit 1; }
+
 usage() {
     cat <<'HELP'
 /computer-use commands
@@ -26,6 +54,15 @@ usage() {
 
   /computer-use present --pid PID --window-id ID
       Persistently focus + raise one exact Cua/GNOME window and prove it.
+
+  /computer-use list-windows [--on-screen-only] [--pid PID] [--json|--table]
+      List top-level windows with exact (pid, window_id), geometry, and focus state.
+      Read-only discovery; no presentation gate; works in both background modes.
+      Output: raw MCP JSON (default), --json for pretty JSON, --table for columns.
+
+  /computer-use cursor-color [#RRGGBB]
+      Set the agent cursor fill color via Cua WinRects helper (default #00FF00 green).
+      Visual aid only; works in both background modes; requires winrects@cua v8+.
 
   /computer-use background [on|off|status]
       Set background priority. Default OFF = exact visible takeover.
@@ -218,6 +255,92 @@ PY
         set +e; out=$("$DIAGNOSE" --machine); rc=$?; set -e
         pretty_json "$out"
         exit "$rc"
+        ;;
+    list-windows)
+        on_screen_only=false
+        filter_pid=
+        output_format=table
+        while [ "$#" -gt 0 ]; do
+            case "$1" in
+                --on-screen-only) on_screen_only=true ;;
+                --pid) filter_pid="$2"; shift ;;
+                --json) output_format=json ;;
+                --table) output_format=table ;;
+                --raw) output_format=raw ;;
+                *) printf 'list-windows: unknown option %s\n' "$1" >&2; exit 2 ;;
+            esac
+            shift
+        done
+        driver=$(resolve_cua || true)
+        [ -n "$driver" ] || die "cua-driver not found"
+        args='{}'
+        if [ "$on_screen_only" = true ] || [ -n "$filter_pid" ]; then
+            args=$("$PYTHON" - "$on_screen_only" "$filter_pid" <<'PY'
+import json,sys
+on_screen=sys.argv[1]=='true'
+pid=sys.argv[2] if sys.argv[2] else None
+d={}
+if on_screen: d['on_screen_only']=True
+if pid: d['pid']=int(pid)
+print(json.dumps(d,separators=(',',':')))
+PY
+)
+        fi
+        out=$("$driver" mcp <<MCP
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"gwcu-list-windows","version":"2.3.0"}}}
+{"jsonrpc":"2.0","method":"notifications/initialized"}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_windows","arguments":$args}}
+MCP
+)
+        if [ "$output_format" = raw ]; then
+            printf '%s\n' "$out"
+            exit 0
+        fi
+        printf '%s' "$out" | "$PYTHON" - "$output_format" <<'PY'
+import json,sys
+fmt=sys.argv[1]
+wins=None
+for line in sys.stdin:
+    line=line.strip()
+    if not line: continue
+    try:
+        msg=json.loads(line)
+        if msg.get("id")==2 and "result" in msg:
+            result=msg["result"]
+            structured=result.get("structuredContent")
+            if structured and "windows" in structured:
+                wins=structured["windows"]
+            elif result.get("content"):
+                for c in result["content"]:
+                    if c.get("type")=="text":
+                        try:
+                            d=json.loads(c["text"])
+                            if isinstance(d,dict) and "windows" in d:
+                                wins=d["windows"]
+                                break
+                        except: pass
+            break
+    except: pass
+n=len(wins) if wins is not None else 0
+if fmt=="json":
+    print(json.dumps({"found": n, "windows": wins or []}, indent=2, ensure_ascii=False))
+else:
+    print(f"Found {n} windows:")
+    if wins:
+        print(f"{'PID':>6} {'WID':>8} {'X':>6} {'Y':>6} {'W':>6} {'H':>6} {'FOCUSED':>7} {'VISIBLE':>7} {'MINIMIZED':>9} {'Z':>4} TITLE")
+        for w in wins:
+            pid=w.get("pid","?"); wid=w.get("window_id","?"); x=w.get("x","?"); y=w.get("y","?"); width=w.get("width","?"); height=w.get("height","?"); focused=w.get("focused","?"); visible=w.get("visible","?"); minimized=w.get("minimized","?"); z=w.get("z_index","?"); title=w.get("title","")[:60]
+            print(f"{pid:>6} {wid:>8} {x:>6} {y:>6} {width:>6} {height:>6} {str(focused):>7} {str(visible):>7} {str(minimized):>9} {str(z):>4} {title}")
+PY
+        ;;
+    cursor-color)
+        color="${1:-#00FF00}"
+        case "$color" in
+            \#*) : ;;
+            *) color="#$color" ;;
+        esac
+        gdbus call --session --dest org.cua.WinRects --object-path /org/cua/WinRects --method org.cua.WinRects.SetCursorColor "$color"
+        printf 'Set agent cursor color to %s\n' "$color"
         ;;
     status)
         managed=$("$PROFILE" managed status --machine)

@@ -1,2 +1,8 @@
 __pycache__/
 *.pyc
+
+# GWCU local machine/workspace truths
+/.gwcu
+
+# Agent planning artifacts (session-local, not repository content)
+/.hermes/
