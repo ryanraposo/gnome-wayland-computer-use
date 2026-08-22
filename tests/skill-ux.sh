@@ -24,13 +24,57 @@ do
 done
 grep -Fq '/computer-use <task>' "$ROOT/SKILL.md" || fail "task-form slash invocation missing"
 grep -Fq 'Everything else is a task.' "$ROOT/SKILL.md" || fail "task/subcommand dispatch rule missing"
-for sub in status trace present list-windows cursor-color background managed truths consent doctor help; do grep -Fq "/computer-use $sub" "$ROOT/SKILL.md" || fail "reserved subcommand missing: $sub"; done
+
+python3 - "$ROOT" <<'PY' || fail "operator command documentation/completion drift"
+import ast
+import pathlib
+import re
+import sys
+
+root = pathlib.Path(sys.argv[1])
+surface = (root / "scripts/computer-use.sh").read_text()
+
+# Four-space case arms are the top-level computer-use.sh dispatch. `span` is
+# intentionally an internal composition surface, not a slash operator.
+operators = []
+for line in surface.splitlines():
+    match = re.match(r"^    ([a-z][a-z0-9-]*)(?:\|[^)]*)?\)$", line)
+    if match and match.group(1) != "span":
+        operators.append(match.group(1))
+assert operators, "no operator commands discovered from computer-use.sh"
+assert len(operators) == len(set(operators)), f"duplicate operator dispatch arms: {operators}"
+
+for relative in ("SKILL.md", "runtimes/openai/SKILL.md", "README.md"):
+    text = (root / relative).read_text()
+    missing = [name for name in operators if f"/computer-use {name}" not in text]
+    assert not missing, f"{relative} missing operator docs: {missing}"
+
+plugin_path = root / "runtimes/hermes/__init__.py"
+tree = ast.parse(plugin_path.read_text())
+subcommands = None
+for node in tree.body:
+    if isinstance(node, ast.Assign):
+        for target in node.targets:
+            if isinstance(target, ast.Name) and target.id == "_SUBCOMMANDS":
+                subcommands = list(ast.literal_eval(node.value))
+                break
+    if subcommands is not None:
+        break
+assert subcommands is not None, "Hermes _SUBCOMMANDS missing"
+assert len(subcommands) == len(set(subcommands)), f"duplicate Hermes subcommands: {subcommands}"
+assert set(subcommands) == set(operators), (
+    f"operator/completion mismatch: dispatch={operators}, _SUBCOMMANDS={subcommands}"
+)
+assert "span" not in subcommands, "internal span leaked into slash completion"
+assert "computer-use.sh span" in (root / "SKILL.md").read_text(), "internal span surface undocumented in skill"
+assert "computer-use.sh span" in (root / "README.md").read_text(), "internal span distinction undocumented in README"
+PY
+pass "operator dispatch, docs and Hermes completion are locked together"
+
 ! grep -Fq 'ctx.register_command(' "$ROOT/runtimes/hermes/__init__.py" || fail "Hermes plugin shadows skill task dispatch"
 grep -Fq 'installed skill owns ``/computer-use`` task dispatch' "$ROOT/runtimes/hermes/__init__.py" || fail "Hermes slash ownership contract missing"
 grep -Fq 'SUBCOMMANDS["/computer-use"]' "$ROOT/runtimes/hermes/__init__.py" || fail "Hermes completion metadata missing"
 grep -Fq 'normalized == "/computer-use"' "$ROOT/runtimes/hermes/__init__.py" || fail "skill-completer exception missing"
-grep -Fq '"list-windows",' "$ROOT/runtimes/hermes/__init__.py" || fail "Hermes completion lost list-windows"
-grep -Fq '"cursor-color",' "$ROOT/runtimes/hermes/__init__.py" || fail "Hermes completion lost cursor-color"
 pass "/computer-use keeps task dispatch while reserved subcommands autocomplete"
 
 grep -q 'MUST cross the model/tool boundary exactly once' "$ROOT/SKILL.md" || fail "one-call invariant softened"
