@@ -64,21 +64,9 @@ Reserved operator subcommands are developed local surfaces; the Hermes integrati
 /computer-use help
 ```
 
-| Operator | Purpose |
-|---|---|
-| `status` | Show compact Cua, exact-presentation, WORLDLINE, consent, observer and `.gwcu` health. |
-| `trace` | Print the exact default foreground execution path. |
-| `present` | Focus, raise and prove one exact `(pid, window_id)` target. |
-| `list-windows` | Read-only exact window discovery, with on-screen/PID filters and table, JSON or raw MCP output. |
-| `cursor-color` | Set the Cua agent cursor fill color through the WinRects helper. |
-| `background` | Read, toggle or set the standing delivery preference. |
-| `managed` | Read or set repo/workspace-local `.gwcu` persistence. |
-| `truths` | Show the current `.gwcu` scope and stored truth counts. |
-| `consent` | Explain and verify GNOME RemoteDesktop → EIS/libei control consent. |
-| `doctor` | Run deterministic installed-system diagnosis. |
-| `help` | Print the complete operator surface. |
+`status`, `doctor`, `truths`, and `consent` inspect state; `trace` and `present` expose the foreground contract; `list-windows` discovers exact targets; `cursor-color` controls the agent cursor; `background` and `managed` set standing preferences; `help` prints the surface.
 
-`computer-use.sh span` is an internal composition surface for already-decided multi-action work. It is intentionally **not** a `/computer-use` operator subcommand and does not appear in Hermes slash completion.
+`computer-use.sh span` is internal composition, intentionally absent from `/computer-use` and Hermes `_SUBCOMMANDS`.
 
 ### Browser work is still computer use
 
