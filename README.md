@@ -48,12 +48,14 @@ The installed Hermes skill owns `/computer-use` task dispatch:
 /computer-use send the message I drafted
 ```
 
-Reserved operator subcommands are developed local surfaces; the Hermes integration also publishes them to slash completion:
+Reserved operator subcommands are developed local surfaces; the Hermes integration also publishes every one to slash completion:
 
 ```text
 /computer-use status
 /computer-use trace
 /computer-use present --pid PID --window-id ID
+/computer-use list-windows [--on-screen-only] [--pid PID] [--json|--table|--raw]
+/computer-use cursor-color [#RRGGBB]
 /computer-use background [on|off|status]
 /computer-use managed [on|off|status]
 /computer-use truths
@@ -62,7 +64,21 @@ Reserved operator subcommands are developed local surfaces; the Hermes integrati
 /computer-use help
 ```
 
-`trace` prints the exact default execution path. `present` is the exact-window presentation primitive.
+| Operator | Purpose |
+|---|---|
+| `status` | Show compact Cua, exact-presentation, WORLDLINE, consent, observer and `.gwcu` health. |
+| `trace` | Print the exact default foreground execution path. |
+| `present` | Focus, raise and prove one exact `(pid, window_id)` target. |
+| `list-windows` | Read-only exact window discovery, with on-screen/PID filters and table, JSON or raw MCP output. |
+| `cursor-color` | Set the Cua agent cursor fill color through the WinRects helper. |
+| `background` | Read, toggle or set the standing delivery preference. |
+| `managed` | Read or set repo/workspace-local `.gwcu` persistence. |
+| `truths` | Show the current `.gwcu` scope and stored truth counts. |
+| `consent` | Explain and verify GNOME RemoteDesktop → EIS/libei control consent. |
+| `doctor` | Run deterministic installed-system diagnosis. |
+| `help` | Print the complete operator surface. |
+
+`computer-use.sh span` is an internal composition surface for already-decided multi-action work. It is intentionally **not** a `/computer-use` operator subcommand and does not appear in Hermes slash completion.
 
 ### Browser work is still computer use
 
