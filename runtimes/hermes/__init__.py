@@ -27,6 +27,8 @@ _SUBCOMMANDS = (
     "status",
     "trace",
     "present",
+    "list-windows",
+    "cursor-color",
     "background",
     "managed",
     "truths",
