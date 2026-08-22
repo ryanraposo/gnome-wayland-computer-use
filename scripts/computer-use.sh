@@ -55,10 +55,10 @@ usage() {
   /computer-use present --pid PID --window-id ID
       Persistently focus + raise one exact Cua/GNOME window and prove it.
 
-  /computer-use list-windows [--on-screen-only] [--pid PID] [--json|--table]
+  /computer-use list-windows [--on-screen-only] [--pid PID] [--json|--table|--raw]
       List top-level windows with exact (pid, window_id), geometry, and focus state.
       Read-only discovery; no presentation gate; works in both background modes.
-      Output: raw MCP JSON (default), --json for pretty JSON, --table for columns.
+      Output: table by default, --json for pretty JSON, --raw for the MCP exchange.
 
   /computer-use cursor-color [#RRGGBB]
       Set the agent cursor fill color via Cua WinRects helper (default #00FF00 green).
@@ -263,7 +263,12 @@ PY
         while [ "$#" -gt 0 ]; do
             case "$1" in
                 --on-screen-only) on_screen_only=true ;;
-                --pid) filter_pid="$2"; shift ;;
+                --pid)
+                    [ "$#" -ge 2 ] || { printf 'list-windows: --pid requires a positive integer\n' >&2; exit 2; }
+                    filter_pid="$2"
+                    [[ "$filter_pid" =~ ^[1-9][0-9]*$ ]] || { printf 'list-windows: --pid requires a positive integer\n' >&2; exit 2; }
+                    shift
+                    ;;
                 --json) output_format=json ;;
                 --table) output_format=table ;;
                 --raw) output_format=raw ;;
@@ -296,31 +301,34 @@ MCP
             printf '%s\n' "$out"
             exit 0
         fi
-        printf '%s' "$out" | "$PYTHON" - "$output_format" <<'PY'
-import json,sys
+        "$PYTHON" - "$output_format" 3<<<"$out" <<'PY'
+import json,os,sys
 fmt=sys.argv[1]
 wins=None
-for line in sys.stdin:
-    line=line.strip()
-    if not line: continue
-    try:
-        msg=json.loads(line)
-        if msg.get("id")==2 and "result" in msg:
-            result=msg["result"]
-            structured=result.get("structuredContent")
-            if structured and "windows" in structured:
-                wins=structured["windows"]
-            elif result.get("content"):
-                for c in result["content"]:
-                    if c.get("type")=="text":
-                        try:
-                            d=json.loads(c["text"])
-                            if isinstance(d,dict) and "windows" in d:
-                                wins=d["windows"]
-                                break
-                        except: pass
-            break
-    except: pass
+with os.fdopen(3) as stream:
+    for line in stream:
+        line=line.strip()
+        if not line: continue
+        try:
+            msg=json.loads(line)
+            if msg.get("id")==2 and "result" in msg:
+                result=msg["result"]
+                structured=result.get("structuredContent")
+                if structured and "windows" in structured:
+                    wins=structured["windows"]
+                elif result.get("content"):
+                    for c in result["content"]:
+                        if c.get("type")=="text":
+                            try:
+                                d=json.loads(c["text"])
+                                if isinstance(d,dict) and "windows" in d:
+                                    wins=d["windows"]
+                                    break
+                            except (json.JSONDecodeError, TypeError):
+                                pass
+                break
+        except (json.JSONDecodeError, TypeError):
+            pass
 n=len(wins) if wins is not None else 0
 if fmt=="json":
     print(json.dumps({"found": n, "windows": wins or []}, indent=2, ensure_ascii=False))
@@ -329,16 +337,19 @@ else:
     if wins:
         print(f"{'PID':>6} {'WID':>8} {'X':>6} {'Y':>6} {'W':>6} {'H':>6} {'FOCUSED':>7} {'VISIBLE':>7} {'MINIMIZED':>9} {'Z':>4} TITLE")
         for w in wins:
-            pid=w.get("pid","?"); wid=w.get("window_id","?"); x=w.get("x","?"); y=w.get("y","?"); width=w.get("width","?"); height=w.get("height","?"); focused=w.get("focused","?"); visible=w.get("visible","?"); minimized=w.get("minimized","?"); z=w.get("z_index","?"); title=w.get("title","")[:60]
+            pid=w.get("pid","?"); wid=w.get("window_id","?"); x=w.get("x","?"); y=w.get("y","?"); width=w.get("width","?"); height=w.get("height","?"); focused=w.get("focused","?"); visible=w.get("visible","?"); minimized=w.get("minimized","?"); z=w.get("z_index","?"); title=str(w.get("title", ""))[:60]
             print(f"{pid:>6} {wid:>8} {x:>6} {y:>6} {width:>6} {height:>6} {str(focused):>7} {str(visible):>7} {str(minimized):>9} {str(z):>4} {title}")
 PY
         ;;
     cursor-color)
+        [ "$#" -le 1 ] || { printf 'cursor-color accepts at most one #RRGGBB value\n' >&2; exit 2; }
         color="${1:-#00FF00}"
         case "$color" in
             \#*) : ;;
             *) color="#$color" ;;
         esac
+        [[ "$color" =~ ^#[0-9A-Fa-f]{6}$ ]] || { printf 'cursor-color expects #RRGGBB\n' >&2; exit 2; }
+        command -v gdbus >/dev/null 2>&1 || die "gdbus not found"
         gdbus call --session --dest org.cua.WinRects --object-path /org/cua/WinRects --method org.cua.WinRects.SetCursorColor "$color"
         printf 'Set agent cursor color to %s\n' "$color"
         ;;
