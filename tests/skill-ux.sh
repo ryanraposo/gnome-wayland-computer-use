@@ -24,11 +24,13 @@ do
 done
 grep -Fq '/computer-use <task>' "$ROOT/SKILL.md" || fail "task-form slash invocation missing"
 grep -Fq 'Everything else is a task.' "$ROOT/SKILL.md" || fail "task/subcommand dispatch rule missing"
-for sub in status trace present background managed truths consent doctor help; do grep -Fq "/computer-use $sub" "$ROOT/SKILL.md" || fail "reserved subcommand missing: $sub"; done
+for sub in status trace present list-windows cursor-color background managed truths consent doctor help; do grep -Fq "/computer-use $sub" "$ROOT/SKILL.md" || fail "reserved subcommand missing: $sub"; done
 ! grep -Fq 'ctx.register_command(' "$ROOT/runtimes/hermes/__init__.py" || fail "Hermes plugin shadows skill task dispatch"
 grep -Fq 'installed skill owns ``/computer-use`` task dispatch' "$ROOT/runtimes/hermes/__init__.py" || fail "Hermes slash ownership contract missing"
 grep -Fq 'SUBCOMMANDS["/computer-use"]' "$ROOT/runtimes/hermes/__init__.py" || fail "Hermes completion metadata missing"
 grep -Fq 'normalized == "/computer-use"' "$ROOT/runtimes/hermes/__init__.py" || fail "skill-completer exception missing"
+grep -Fq '"list-windows",' "$ROOT/runtimes/hermes/__init__.py" || fail "Hermes completion lost list-windows"
+grep -Fq '"cursor-color",' "$ROOT/runtimes/hermes/__init__.py" || fail "Hermes completion lost cursor-color"
 pass "/computer-use keeps task dispatch while reserved subcommands autocomplete"
 
 grep -q 'MUST cross the model/tool boundary exactly once' "$ROOT/SKILL.md" || fail "one-call invariant softened"
@@ -72,17 +74,48 @@ grep -q 'Background computer use: OFF' "$TMP/off" || fail "bare background comma
 grep -q 'Default visible takeover is faster and deterministic' "$ROOT/install.sh" || fail "installer background choice missing"
 pass "default control path is visible, pre-traced and deterministic"
 
-# New subcommands: list-windows and cursor-color
-XDG_STATE_HOME="$TMP/state" "$SURFACE" list-windows >"$TMP/list"
-grep -q 'Found [0-9]* windows:' "$TMP/list" || fail "list-windows returned window list"
-grep -q '"schema":"gwcu' "$TMP/list" || true  # accepts MCP envelope
-XDG_STATE_HOME="$TMP/state" "$SURFACE" list-windows --on-screen-only >"$TMP/list_on"
-grep -q 'Found [0-9]* windows:' "$TMP/list_on" || fail "list-windows --on-screen-only works"
-XDG_STATE_HOME="$TMP/state" "$SURFACE" cursor-color >"$TMP/cursor"
+# Machine-bound operator surfaces must be hermetic in CI.
+mkdir -p "$TMP/bin"
+cat >"$TMP/bin/cua-driver" <<'PY'
+#!/usr/bin/env python3
+import json, os, pathlib, sys
+if len(sys.argv) < 2 or sys.argv[1] != "mcp":
+    raise SystemExit(2)
+for line in sys.stdin:
+    msg = json.loads(line)
+    method = msg.get("method")
+    if method == "initialize":
+        print(json.dumps({"jsonrpc":"2.0","id":msg["id"],"result":{"protocolVersion":"2024-11-05","serverInfo":{"name":"cua-driver","version":"test"}}}), flush=True)
+    elif method == "tools/call":
+        args = msg.get("params", {}).get("arguments", {})
+        log = os.environ.get("CUA_TEST_LOG")
+        if log:
+            pathlib.Path(log).open("a").write(json.dumps(args, separators=(",", ":")) + "\n")
+        windows = [{"pid":4242,"window_id":77,"x":10,"y":20,"width":800,"height":600,"focused":True,"visible":True,"minimized":False,"z_index":0,"title":"CI Window"}]
+        print(json.dumps({"jsonrpc":"2.0","id":msg["id"],"result":{"content":[],"isError":False,"structuredContent":{"windows":windows}}}), flush=True)
+PY
+cat >"$TMP/bin/gdbus" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"${GDBUS_TEST_LOG:?}"
+printf '()\n'
+SH
+chmod +x "$TMP/bin/cua-driver" "$TMP/bin/gdbus"
+
+CUA_TEST_LOG="$TMP/cua.log" CUA_DRIVER_BIN="$TMP/bin/cua-driver" XDG_STATE_HOME="$TMP/state" "$SURFACE" list-windows >"$TMP/list"
+grep -q 'Found 1 windows:' "$TMP/list" || fail "list-windows did not parse Cua window list"
+grep -q 'CI Window' "$TMP/list" || fail "list-windows table lost returned window"
+CUA_TEST_LOG="$TMP/cua.log" CUA_DRIVER_BIN="$TMP/bin/cua-driver" XDG_STATE_HOME="$TMP/state" "$SURFACE" list-windows --on-screen-only --pid 4242 --json >"$TMP/list_on"
+grep -q '"found": 1' "$TMP/list_on" || fail "list-windows --json lost returned window"
+grep -q '"on_screen_only":true' "$TMP/cua.log" || fail "list-windows did not forward --on-screen-only"
+grep -q '"pid":4242' "$TMP/cua.log" || fail "list-windows did not forward --pid"
+if CUA_DRIVER_BIN="$TMP/bin/cua-driver" XDG_STATE_HOME="$TMP/state" "$SURFACE" list-windows --pid nope >/dev/null 2>&1; then fail "list-windows accepted invalid pid"; fi
+PATH="$TMP/bin:$PATH" GDBUS_TEST_LOG="$TMP/gdbus.log" XDG_STATE_HOME="$TMP/state" "$SURFACE" cursor-color >"$TMP/cursor"
 grep -q 'Set agent cursor color to #00FF00' "$TMP/cursor" || fail "cursor-color default green"
-XDG_STATE_HOME="$TMP/state" "$SURFACE" cursor-color "#FF0000" >"$TMP/cursor2"
+PATH="$TMP/bin:$PATH" GDBUS_TEST_LOG="$TMP/gdbus.log" XDG_STATE_HOME="$TMP/state" "$SURFACE" cursor-color "#FF0000" >"$TMP/cursor2"
 grep -q 'Set agent cursor color to #FF0000' "$TMP/cursor2" || fail "cursor-color accepts custom hex"
-pass "list-windows and cursor-color operator surfaces work"
+grep -q '#FF0000' "$TMP/gdbus.log" || fail "cursor-color did not reach WinRects helper"
+if PATH="$TMP/bin:$PATH" GDBUS_TEST_LOG="$TMP/gdbus.log" XDG_STATE_HOME="$TMP/state" "$SURFACE" cursor-color '#GG0000' >/dev/null 2>&1; then fail "cursor-color accepted invalid hex"; fi
+pass "list-windows and cursor-color operator surfaces work hermetically"
 
 grep -q '^## Maintaining this repository$' "$ROOT/AGENTS.md" || fail "repository guide lost maintenance routing"
 grep -q 'Persistent machine/user truth never belongs in AGENTS.md' "$ROOT/AGENTS.md" || fail "AGENTS permits machine truth"
