@@ -48,7 +48,7 @@ The installed Hermes skill owns `/computer-use` task dispatch:
 /computer-use send the message I drafted
 ```
 
-Reserved operator subcommands are developed local surfaces; the Hermes integration also publishes every one to slash completion:
+Reserved operators, all published to Hermes completion:
 
 ```text
 /computer-use status
@@ -64,9 +64,7 @@ Reserved operator subcommands are developed local surfaces; the Hermes integrati
 /computer-use help
 ```
 
-`status`, `doctor`, `truths`, and `consent` inspect state; `trace` and `present` expose the foreground contract; `list-windows` discovers exact targets; `cursor-color` controls the agent cursor; `background` and `managed` set standing preferences; `help` prints the surface.
-
-`computer-use.sh span` is internal composition, intentionally absent from `/computer-use` and Hermes `_SUBCOMMANDS`.
+`computer-use.sh span` is internal-only.
 
 ### Browser work is still computer use
 
