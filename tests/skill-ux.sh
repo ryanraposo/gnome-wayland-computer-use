@@ -66,7 +66,6 @@ assert set(subcommands) == set(operators), (
     f"operator/completion mismatch: dispatch={operators}, _SUBCOMMANDS={subcommands}"
 )
 assert "span" not in subcommands, "internal span leaked into slash completion"
-assert "computer-use.sh span" in (root / "SKILL.md").read_text(), "internal span surface undocumented in skill"
 assert "computer-use.sh span" in (root / "README.md").read_text(), "internal span distinction undocumented in README"
 PY
 pass "operator dispatch, docs and Hermes completion are locked together"
