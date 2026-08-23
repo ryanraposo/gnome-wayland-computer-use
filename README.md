@@ -10,7 +10,7 @@
 
 Agents have variable success using Linux. GWCU makes computer use dependable on Ubuntu 26 GNOME Wayland by putting one desktop actuator behind a small local world model.
 
-[Install](#install) · [Use it](#use-it) · [Control](#control) · [WORLDLINE](#why-worldline-exists) · [`.gwcu`](#gwcu) · [Invariants](#invariants)
+[Install](#install) · [Use it](#use-it) · [Hermes](#hermes-integration) · [Control](#control) · [WORLDLINE](#why-worldline-exists) · [`.gwcu`](#gwcu) · [Invariants](#invariants)
 
 ---
 
@@ -65,6 +65,51 @@ Reserved operators, all published to Hermes completion:
 ```
 
 `computer-use.sh span` is internal-only.
+
+## Hermes integration
+
+GWCU deliberately joins two different Hermes layers whose names are easy to confuse:
+
+```text
+computer-use          Hermes skill / /computer-use operating contract
+      │
+      ▼
+GWCU policy plugin    mechanical presentation + delivery policy
+      │
+      ▼
+computer_use          Hermes built-in tool/toolset
+      │
+      ▼
+Cua Driver            actuator
+```
+
+**GWCU replaces the `computer-use` skill; it does not replace the `computer_use` tool.** The skill tells the agent how computer use works. The enabled GWCU plugin receives Hermes' `tools.override` capability and wraps the existing `computer_use` tool so exact foreground presentation and delivery policy are enforced mechanically. Cua remains the actuator underneath.
+
+For each targeted Hermes home the installer:
+
+1. installs GWCU at `skills/computer-use`;
+2. archives an existing non-GWCU `computer-use` skill instead of deleting it;
+3. installs and enables only the GWCU policy plugin;
+4. clears stale disabled state and grants only `tools.override`;
+5. verifies that the plugin is actually enabled in that profile.
+
+The default Hermes home is integrated automatically. Additional existing profiles are explicit:
+
+```bash
+# default Hermes home + one profile
+curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh \
+  | bash -s -- --hermes-profile work
+
+# default Hermes home + every existing profile
+curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh \
+  | bash -s -- --hermes-all-profiles
+```
+
+`--hermes-profile NAME` is repeatable. A profile created after GWCU was installed is untouched until selected on a later installer run. A profile that intentionally contains no bundled skills stays that way: selecting it adds GWCU's single `computer-use` skill and policy plugin; the installer does not seed the Hermes skill library.
+
+GWCU does not disable Hermes' separate `browser` toolset globally. While `/computer-use` is active, the skill contract keeps browser actuation on Cua's typed-browser or native AX/PX routes. Other Hermes workflows remain free to use their own configured toolsets.
+
+Teardown is the inverse. Because the host runtime is shared, uninstall scans the default Hermes home and every existing profile, removes only directories carrying GWCU's managed marker, revokes GWCU's plugin enablement/override grant, and restores archived pre-GWCU components when their original destination is free. The built-in `computer_use` tool/toolset is untouched.
 
 ### Browser work is still computer use
 
@@ -154,11 +199,11 @@ Git worktrees add `/.gwcu` to the root `.gitignore` before managed truth is writ
 curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh | bash
 ```
 
-The installer qualifies Ubuntu 26.04 GNOME Wayland; repairs Git, portal, PipeWire, AT-SPI and Python GI dependencies; installs or reuses pinned Cua Driver `0.20.0` and its GNOME helper; establishes RemoteDesktop consent; deploys the skill; **enables the GWCU Hermes plugin and its single declared `tools.override` policy capability automatically** when Hermes is installed; configures `.gwcu` and background priority; enables WORLDLINE and the lazy observer; repairs known old GWCU artifacts; and live-proves Cua, exact presentation, WORLDLINE and observation before printing `READY // PROVED`.
+The installer qualifies Ubuntu 26.04 GNOME Wayland; repairs Git, portal, PipeWire, AT-SPI and Python GI dependencies; installs or reuses pinned Cua Driver `0.20.0` and its GNOME helper; establishes RemoteDesktop consent; deploys the skill; **replaces the targeted Hermes `computer-use` skill while preserving the built-in `computer_use` tool, enables the GWCU policy plugin and grants its single declared `tools.override` capability** when Hermes is installed; configures `.gwcu` and background priority; enables WORLDLINE and the lazy observer; repairs known old GWCU artifacts; and live-proves Cua, exact presentation, WORLDLINE and observation before printing `READY // PROVED`.
 
 If GNOME Shell has not loaded a newly installed helper yet, the installer says exactly that, asks for one sign-out/sign-in, and does **not** claim fully proved readiness. Rerunning the installer after login finishes the live presentation proof.
 
-Every run writes a private install log and a machine-readable receipt under `~/.local/state/gnome-wayland-computer-use/`.
+Every run writes a private install log and a machine-readable receipt under `~/.local/state/gnome-wayland-computer-use/`. The receipt records how many Hermes homes were integrated.
 
 Run it as the logged-in desktop user, not by wrapping it in `sudo`.
 
@@ -168,11 +213,13 @@ Run it as the logged-in desktop user, not by wrapping it in `sudo`.
 curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/uninstall.sh | bash
 ```
 
-Teardown removes only GWCU-owned integration and transient runtime state. Repo/workspace `.gwcu` content survives. Cua is preserved by default; `--remove-cua` removes only a GWCU-provisioned installation and `--purge-cua` is the explicit full purge.
+Teardown removes only GWCU-owned integration and transient runtime state. It cleans GWCU-managed skill/plugin integration from the default Hermes home and all existing profiles, restores archived components where possible, and leaves Hermes' built-in `computer_use` tool/toolset alone. Repo/workspace `.gwcu` content survives. Cua is preserved by default; `--remove-cua` removes only a GWCU-provisioned installation and `--purge-cua` is the explicit full purge.
 
 ## Invariants
 
 - **Cua is the only actuator.** Native apps and browser work share one control authority.
+- **GWCU owns the `computer-use` skill, not the `computer_use` tool.** Hermes keeps its built-in tool surface; GWCU wraps its policy while enabled.
+- **Profile integration is explicit; teardown is complete.** Install targets only selected Hermes homes; uninstall removes every GWCU-managed profile integration before the shared runtime disappears.
 - **Foreground means exact presentation first.** No exact `(pid, window_id)` proof, no focus-bound input.
 - **Visible requests end visibly.** Hidden success is not completion.
 - **Background OFF means visible takeover.** Missing intent metadata cannot reverse it.
@@ -194,6 +241,6 @@ scripts/truths.py         .gwcu scope and persistence
 scripts/observer.py       warm ScreenCast/PipeWire visual sensor
 scripts/computer-use.sh   developed operator subcommands
 runtimes/hermes/          enabled policy + completion integration
-install.sh                qualified install / upgrade / proof path
+install.sh                qualified install / upgrade / profile integration / proof
 uninstall.sh              safe removal entry point
 ```
