@@ -198,19 +198,20 @@ restore_hermes_backups(){
     fi
 }
 teardown_hermes_home(){
-    local target=$1 yaml name dir skill soul clean managed=false
+    local target=$1 yaml name dir skill soul clean preserve_plugin_config=false
     [ -d "$target" ] || return 0
 
-    # Remove every GWCU-owned plugin copy in this Hermes home. Unmanaged copies
-    # are preserved even if they use the same plugin name.
+    # Remove every GWCU-owned plugin copy in this Hermes home. An unmanaged
+    # same-name plugin is preserved together with its Hermes config.
     for yaml in "$target/plugins"/*/plugin.yaml; do
         [ -f "$yaml" ] || continue
         name=$(plugin_name_of "$yaml"); [ "$name" = "$NAME" ] || continue
         dir=$(dirname "$yaml")
         if [ -f "$dir/.gnome-wayland-computer-use-managed" ]; then
             HERMES_HOME="$target" NO_COLOR=1 hermes plugins disable "$NAME" >/dev/null 2>&1 || true
-            rm -rf "$dir"; ((removed++)) || true; managed=true
+            rm -rf "$dir"; ((removed++)) || true
         else
+            preserve_plugin_config=true
             info "Preserving user-managed Hermes plugin: ${dir/$HOME/\~}"
         fi
     done
@@ -224,7 +225,7 @@ teardown_hermes_home(){
             info "Preserving user-managed skill: ${skill/$HOME/\~}"
             continue
         fi
-        rm -rf "$skill"; ((removed++)) || true; managed=true
+        rm -rf "$skill"; ((removed++)) || true
     done
 
     # Historical GWCU releases could add routing text to SOUL.md. Clean it in
@@ -233,10 +234,13 @@ teardown_hermes_home(){
     if [ -f "$soul" ] && grep -Fxq '<!-- gnome-wayland-computer-use:start -->' "$soul"; then
         clean=$(mktemp)
         awk -v s='<!-- gnome-wayland-computer-use:start -->' -v e='<!-- gnome-wayland-computer-use:end -->' '$0==s{m=1;next}$0==e{m=0;next}!m{print}' "$soul" >"$clean"
-        chmod 600 "$clean"; mv "$clean" "$soul"; ((removed++)) || true; managed=true
+        chmod 600 "$clean"; mv "$clean" "$soul"; ((removed++)) || true
     fi
 
-    $managed && hermes_clean_config "$target"
+    # Clean stale enable/override state even when the managed files disappeared
+    # before uninstall. Preserve it only when an unmanaged same-name plugin
+    # proves that the config may belong to the user rather than GWCU.
+    $preserve_plugin_config || hermes_clean_config "$target"
     restore_hermes_backups "$target"
 }
 
