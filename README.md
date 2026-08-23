@@ -31,7 +31,7 @@ Observation is an interrupt, not a ritual RPC. Facts are valid until invalidated
 
 | Layer | Job |
 |---|---|
-| **Cua Driver** | The only desktop actuator: native windows, browser-backed surfaces, pointer/keyboard, semantics, pixels and verification. |
+| **Cua Driver** | The only desktop actuator: native windows, the user's browser-backed surfaces, pointer/keyboard, semantics, pixels and verification. |
 | **Cua GNOME helper** | Exact persistent presentation of a known `(pid, window_id)` before foreground input. |
 | **WORLDLINE** | Transient revisioned state, invalidation, predicates, waits, branches and conflicts. |
 | **`.gwcu`** | Durable repo/workspace truth worth reusing in another session. |
@@ -65,6 +65,17 @@ Reserved operators, all published to Hermes completion:
 ```
 
 `computer-use.sh span` is internal-only.
+
+### What GWCU owns
+
+GWCU is for **operating the user's actual desktop**. It does not claim every browser or terminal task merely because those tools happen to be involved.
+
+- **Web as information** — research, reading, search, retrieval, API/web navigation that does not depend on the user's visible browser session — can use normal browser/web tooling.
+- **The user's browser as a desktop surface** — existing login/session, tabs, browser chrome, placement, or a result the user must actually see — stays under Cua.
+- **Ordinary CLI/shell work** belongs to the terminal tool. Cua should operate a terminal window only when the terminal is itself being used physically as part of the desktop experience.
+- A mixed task can research through browser/web tooling and later cross into Cua when it needs to touch the user's actual machine.
+
+Terminal access is useful for GWCU's local operator/helper scripts, but it is not part of the skill's domain and is not required for ordinary `computer_use` capability.
 
 ## Hermes integration
 
@@ -107,29 +118,56 @@ curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh \
 
 `--hermes-profile NAME` is repeatable. A profile created after GWCU was installed is untouched until selected on a later installer run. A profile that intentionally contains no bundled skills stays that way: selecting it adds GWCU's single `computer-use` skill and policy plugin; the installer does not seed the Hermes skill library.
 
-GWCU also leaves the profile's toolset policy alone. Its skill declares `requires_toolsets: [computer_use, terminal]`, so Hermes exposes `/computer-use` only in sessions where those toolsets are available. Selecting a profile for integration does not silently broaden that profile's capabilities.
+GWCU also leaves the profile's toolset policy alone. Its skill requires only `computer_use`, so the desktop-control skill can remain available even in profiles where terminal access is intentionally absent. Terminal, when present, unlocks GWCU's local helper/operator mechanics rather than defining the skill's domain.
 
-GWCU does not disable Hermes' separate `browser` toolset globally. While `/computer-use` is active, the skill contract keeps browser actuation on Cua's typed-browser or native AX/PX routes. Other Hermes workflows remain free to use their own configured toolsets.
+GWCU does not disable Hermes' separate `browser` toolset globally. When a task is operating the user's actual browser session or browser UI, Cua remains the sole actuator. When the web is merely an information source, normal browser/web tooling remains available.
 
 Teardown is the inverse. Because the host runtime is shared, uninstall scans the default Hermes home and every existing profile, removes only directories carrying GWCU's managed marker, revokes GWCU's plugin enablement/override grant, and restores archived pre-GWCU components when their original destination is free. The built-in `computer_use` tool/toolset is untouched.
 
-### Browser work is still computer use
+### Browser boundary
 
-`/computer-use` never jumps to Hermes' separate browser automation plane. Cua remains the actuator.
+The important boundary is **the user's browser**, not “anything on the web.”
+
+```text
+web as information
+→ browser/web tooling
+
+user's real browser session / browser UI
+→ Cua
+```
+
+For the second case:
 
 - Supported Chromium/Electron page work uses Cua only after exact native `(pid, window_id)` binding.
 - Firefox, browser chrome and unsupported typed routes stay on Cua's native AX/PX path.
 - Typed page success does not imply that the browser window is visible.
 - A hidden/headless/managed browser success is failure when visibility is part of the request.
 
+This lets a task use the strongest information-retrieval surface without accidentally creating a second actuator for the user's real browser.
+
 ## Control
 
-`/computer-use background` toggles the standing delivery preference:
+GWCU has a **standing control preference**. A fresh interactive install explains it and asks the user; **exact visible takeover is the default choice**.
 
 ```text
-OFF  → exact visible takeover (default)
-ON   → background where Cua can deliver it safely
+FOREGROUND / background OFF  → exact visible takeover (default)
+BACKGROUND / background ON   → work in background where Cua supports it
 ```
+
+Foreground means GWCU resolves the exact target, brings that target visibly to the front, proves it is focused/visible/not minimized, then admits input. This is the most deterministic mode, and it can interrupt whatever the user currently has in front.
+
+Background means GWCU prefers Cua's supported background delivery so the user can keep another window in front. If background delivery is unavailable for a required action, GWCU can fall forward to exact foreground only through the same presentation gate. A request whose result is explicitly meant to be visible still finishes by presenting the exact result.
+
+The setting is easy to change later:
+
+```text
+/computer-use background on       prefer background work
+/computer-use background off      prefer exact visible takeover
+/computer-use background status   show the current preference
+/computer-use background          toggle the preference
+```
+
+The preference spreads to otherwise-unspecified native `computer_use` input through the GWCU Hermes policy shim and to GWCU action spans. Explicit user foreground/background wording wins over it. It does not turn unrelated web research or ordinary shell work into GWCU work.
 
 There is no confidence threshold. Missing foreground words never silently select background.
 
@@ -201,7 +239,18 @@ Git worktrees add `/.gwcu` to the root `.gitignore` before managed truth is writ
 curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh | bash
 ```
 
-The installer qualifies Ubuntu 26.04 GNOME Wayland; repairs Git, portal, PipeWire, AT-SPI and Python GI dependencies; installs or reuses pinned Cua Driver `0.20.0` and its GNOME helper; establishes RemoteDesktop consent; deploys the skill; **replaces the targeted Hermes `computer-use` skill while preserving the built-in `computer_use` tool, enables the GWCU policy plugin and grants its single declared `tools.override` capability** when Hermes is installed; configures `.gwcu` and background priority; enables WORLDLINE and the lazy observer; repairs known old GWCU artifacts; and live-proves Cua, exact presentation, WORLDLINE and observation before printing `READY // PROVED`.
+The installer qualifies Ubuntu 26.04 GNOME Wayland; repairs Git, portal, PipeWire, AT-SPI and Python GI dependencies; installs or reuses pinned Cua Driver `0.20.0` and its GNOME helper; establishes RemoteDesktop consent; deploys the skill; **replaces the targeted Hermes `computer-use` skill while preserving the built-in `computer_use` tool, enables the GWCU policy plugin and grants its single declared `tools.override` capability** when Hermes is installed; configures `.gwcu` and the foreground/background standing preference; enables WORLDLINE and the lazy observer; repairs known old GWCU artifacts; and live-proves Cua, exact presentation, WORLDLINE and observation before printing `READY // PROVED`.
+
+On a fresh interactive install, GWCU explains the control preference before asking:
+
+```text
+Foreground (default): exact target is presented and may take over your screen.
+Background: keeps your current window in front where Cua supports it.
+Visible-result requests still finish visibly.
+Change later: /computer-use background on|off|status
+```
+
+Choosing the default stores background priority **OFF**. Choosing background stores it **ON**. `--unattended` accepts the foreground default. The setting can be changed later without reinstalling.
 
 If GNOME Shell has not loaded a newly installed helper yet, the installer says exactly that, asks for one sign-out/sign-in, and does **not** claim fully proved readiness. Rerunning the installer after login finishes the live presentation proof.
 
@@ -219,13 +268,15 @@ Teardown removes only GWCU-owned integration and transient runtime state. It cle
 
 ## Invariants
 
-- **Cua is the only actuator.** Native apps and browser work share one control authority.
+- **Cua is the only desktop actuator.** Native apps and the user's real browser share one control authority.
+- **Web information is not desktop actuation.** Browser/web tooling remains free for research/retrieval that does not depend on the user's browser state.
+- **Terminal is a tool boundary, not a GWCU domain.** Ordinary shell work uses terminal; Cua operates a terminal only as an actual desktop surface.
 - **GWCU owns the `computer-use` skill, not the `computer_use` tool.** Hermes keeps its built-in tool surface; GWCU wraps its policy while enabled.
 - **Profile integration is explicit; teardown is complete.** Install targets only selected Hermes homes; uninstall removes every GWCU-managed profile integration before the shared runtime disappears.
-- **Profile capabilities stay profile-owned.** GWCU declares its required toolsets and never silently broadens a profile's tool surface.
+- **Profile capabilities stay profile-owned.** GWCU declares `computer_use` as its required toolset and never silently broadens a profile's tool surface.
 - **Foreground means exact presentation first.** No exact `(pid, window_id)` proof, no focus-bound input.
+- **Foreground remains the fresh-install default, by informed choice.** The installer explains takeover vs background and shows how to change it later.
 - **Visible requests end visibly.** Hidden success is not completion.
-- **Background OFF means visible takeover.** Missing intent metadata cannot reverse it.
 - **WORLDLINE is read-only knowledge machinery.** Events and predicates never gain input authority.
 - **Postconditions replace ritual observation.** Model calls happen at decision boundaries.
 - **`.gwcu` is durable only.** Runtime state stays transient.
