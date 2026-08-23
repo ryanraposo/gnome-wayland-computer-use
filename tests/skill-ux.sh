@@ -18,7 +18,7 @@ grep -Fq 'requires_toolsets: [computer_use]' "$ROOT/SKILL.md" || fail "computer-
 pass "runtime skills are identical, compact and computer-use scoped"
 
 for heading in \
-    'Invocation contract' 'Tool/domain boundary' "One actuator, including the user's browser" 'Core rule' 'Control priority' 'Visible-result contract' \
+    'Invocation contract' 'Choosing the path' 'Browser computer use' 'Core rule' 'Control priority' 'Visible-result contract' \
     'Call budget' 'Execution ladder' 'Known target' 'WORLDLINE postconditions' 'Whole screen' \
     '`.gwcu`: durable truth, not runtime state' 'Failure and refusal policy' 'Completion proof'
 do
@@ -35,9 +35,6 @@ import sys
 
 root = pathlib.Path(sys.argv[1])
 surface = (root / "scripts/computer-use.sh").read_text()
-
-# Four-space case arms are the top-level computer-use.sh dispatch. `span` is
-# intentionally an internal composition surface, not a slash operator.
 operators = []
 for line in surface.splitlines():
     match = re.match(r"^    ([a-z][a-z0-9-]*)(?:\|[^)]*)?\)$", line)
@@ -87,13 +84,14 @@ grep -q 'standing delivery preference' "$ROOT/SKILL.md" || fail "background comm
 grep -q 'documentation lives in `README.md`' "$ROOT/SKILL.md" || fail "skill points at retired docs"
 pass "skill teaches one Cua + WORLDLINE execution contract"
 
-# Tool-domain constitution: Cua owns actual desktop/browser actuation, while
-# information-only web work and ordinary shell work remain free to use their
-# purpose-built tool surfaces.
-grep -Fq "do not route browser work through Hermes' separate \`browser_*\` toolset" "$ROOT/SKILL.md" || fail "user-browser actuator split can recur"
-grep -Fq 'web is merely an information source' "$ROOT/SKILL.md" || fail "web-information boundary is missing"
-grep -Fq 'Ordinary command-line/shell work belongs to the terminal tool' "$ROOT/SKILL.md" || fail "terminal domain boundary is missing"
-grep -Fq 'loading this skill does not claim unrelated web or shell work' "$ROOT/SKILL.md" || fail "mixed-task boundary is missing"
+# Agent-routing constitution: choose the most direct surface from the state the
+# task depends on, while keeping one coherent Cua path for a specific browser
+# session once desktop/browser actuation begins.
+grep -Fq 'Route by the state the task depends on.' "$ROOT/SKILL.md" || fail "agent routing rule is missing"
+grep -Fq 'Research, reading, retrieval, search, or web navigation independent of the user' "$ROOT/SKILL.md" || fail "web-content route is missing"
+grep -Fq 'Shell or CLI state → terminal tool.' "$ROOT/SKILL.md" || fail "CLI route is missing"
+grep -Fq 'A mixed task may research through web tooling, use terminal for CLI work, then use Cua when it reaches the desktop.' "$ROOT/SKILL.md" || fail "mixed-task route is missing"
+grep -Fq 'Do not split the same browser session across Cua and a separate browser-automation actuator mid-task.' "$ROOT/SKILL.md" || fail "single-browser-session actuation invariant is missing"
 grep -Fq 'cua_browser_state / cua_browser_* actions' "$ROOT/SKILL.md" || fail "Cua browser route is not explicit"
 grep -Fq 'binding_quality:"exact"' "$ROOT/SKILL.md" || fail "typed browser route no longer requires exact native binding"
 grep -Fq 'mutation_allowed:true' "$ROOT/SKILL.md" || fail "typed browser mutation admission is incomplete"
@@ -107,7 +105,7 @@ grep -Fq 'exact_pid_window -> cua_gnome_present -> focused_visible_proof -> cua_
 grep -Fq 'exact_target_required_for_foreground' "$ROOT/scripts/action-span.py" || fail "targetless foreground can recur"
 grep -Fq 'presentation_not_proved' "$ROOT/scripts/action-span.py" || fail "presentation failure can leak into input"
 grep -Fq 'tools.override' "$ROOT/runtimes/hermes/plugin.yaml" || fail "Hermes policy override is not declared"
-pass "browser, terminal and exact foreground boundaries are constitutionally covered"
+pass "agent routing, browser continuity and exact foreground are constitutionally covered"
 
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 SURFACE="$ROOT/scripts/computer-use.sh"
@@ -124,10 +122,9 @@ grep -q 'Background computer use: OFF' "$TMP/off" || fail "bare background comma
 grep -q 'Default visible takeover is faster and deterministic' "$ROOT/install.sh" || fail "installer control explanation missing"
 grep -Fq 'Use exact visible takeover as your default? [Y/n]' "$ROOT/install.sh" || fail "installer does not ask the informed foreground-default choice"
 grep -Fq '/computer-use background on|off|status' "$ROOT/install.sh" || fail "installer does not teach later preference switching"
-grep -Fq 'The preference spreads to otherwise-unspecified native `computer_use` input' "$ROOT/README.md" || fail "README does not explain preference spread"
+grep -Fq 'If a native `computer_use` action does not specify delivery mode, GWCU applies this preference.' "$ROOT/README.md" || fail "README does not explain preference application"
 pass "default control path is visible, informed, switchable and deterministic"
 
-# Machine-bound operator surfaces must be hermetic in CI.
 mkdir -p "$TMP/bin"
 cat >"$TMP/bin/cua-driver" <<'PY'
 #!/usr/bin/env python3
