@@ -63,7 +63,7 @@ Environment:
   GWCU_CUA_DRIVER_RS_VERSION=<version>  deliberate Cua pin override
   GWCU_TRUTHS=off                       disable managed .gwcu at runtime
   GWCU_SCOPE_ROOT=<path>                explicit truth scope
-  GWCU_BACKGROUND_PRIORITY=on|off       prefer background computer use at runtime
+  GWCU_BACKGROUND_PRIORITY=on|off       standing background preference at runtime
   GWCU_SYSTEM_PYTHON=<absolute path>    Python used by installed runtime checks
   HERMES_HOME=<path>                    explicit default Hermes home to integrate
   NO_COLOR=1                            disable ANSI installer color
@@ -350,7 +350,22 @@ ok "Installed action-span.py + exact presentation gate + WORLDLINE runtime + ski
 info "[5/8] Configuring preferences and RemoteDesktop consent"
 PREF="$STATE/managed-truths"; if [ ! -s "$PREF" ]; then value=on; if ! $EXPLICIT_UNATTENDED && [ -r /dev/tty ]; then printf 'Enable managed .gwcu local truths? Git scopes add /.gwcu to .gitignore before storing machine/workspace facts [Y/n]: ' >/dev/tty; read -r reply </dev/tty || reply=""; [[ "$reply" =~ ^[nN] ]] && value=off; fi; printf '%s\n' "$value" >"$PREF"; chmod 600 "$PREF"; fi
 [ "${GWCU_TRUTHS:-}" = off ] && warn "GWCU_TRUTHS=off overrides managed truth at runtime"
-BACKGROUND_PREF="$STATE/background-priority"; if [ ! -s "$BACKGROUND_PREF" ]; then background=off; if ! $EXPLICIT_UNATTENDED && [ -r /dev/tty ]; then printf 'Prioritize background computer use when available? Default visible takeover is faster and deterministic [y/N]: ' >/dev/tty; read -r reply </dev/tty || reply=""; [[ "$reply" =~ ^[yY] ]] && background=on; fi; printf '%s\n' "$background" >"$BACKGROUND_PREF"; chmod 600 "$BACKGROUND_PREF"; fi
+BACKGROUND_PREF="$STATE/background-priority"
+if [ ! -s "$BACKGROUND_PREF" ]; then
+  background=off
+  if ! $EXPLICIT_UNATTENDED && [ -r /dev/tty ]; then
+    printf '\n%sComputer-use control preference%s\n' "$BOLD" "$RESET" >/dev/tty
+    printf '  Foreground (default): presents the exact target and may take over your screen.\n' >/dev/tty
+    printf '  Background: keeps your current window in front where Cua supports it.\n' >/dev/tty
+    printf '  Visible-result requests still finish visibly.\n' >/dev/tty
+    printf '  Change later: /computer-use background on|off|status  (bare command toggles)\n' >/dev/tty
+    printf '  Default visible takeover is faster and deterministic; background is less disruptive where supported.\n\n' >/dev/tty
+    printf 'Use exact visible takeover as your default? [Y/n]: ' >/dev/tty
+    read -r reply </dev/tty || reply=""
+    [[ "$reply" =~ ^[nN] ]] && background=on
+  fi
+  printf '%s\n' "$background" >"$BACKGROUND_PREF"; chmod 600 "$BACKGROUND_PREF"
+fi
 case "${GWCU_BACKGROUND_PRIORITY:-}" in on|yes|true|1) warn "GWCU_BACKGROUND_PRIORITY enables background priority at runtime";; off|no|false|0) warn "GWCU_BACKGROUND_PRIORITY disables background priority at runtime";; esac
 if ! $COMPAT; then
   set +e; PORTAL_STATUS=$("$PRIMARY/scripts/portal-control.py" --status 2>/dev/null); set -e
@@ -443,5 +458,5 @@ printf '  Observation:     %s\n' "$([ "$COMPAT" = true ] && printf installed || 
 printf '  .gwcu truths:    %s\n' "$MANAGED_VALUE"; printf '  Background pref: %s\n' "$BACKGROUND_VALUE"
 if $HERMES; then printf '  Hermes policy:   enabled in %s profile(s)\n' "$HERMES_TARGET_COUNT"; else printf '  Hermes:          not detected (agent skill still installed)\n'; fi
 printf '%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n' "$DIM" "$RESET"
-printf '\n/computer-use trace    exact foreground path\n/computer-use doctor   full machine proof\n'
+printf '\n/computer-use trace              exact foreground path\n/computer-use background status  current foreground/background preference\n/computer-use doctor             full machine proof\n'
 printf '\nUninstall: curl -fsSL %s/uninstall.sh | bash\n' "$BASE_URL"; printf 'Teardown:  %s/scripts/teardown.sh --help\n' "$PRIMARY"; printf 'Receipt:   %s\nLog:       %s\n' "$RECEIPT" "$INSTALL_LOG"
