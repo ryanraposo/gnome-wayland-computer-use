@@ -244,7 +244,7 @@ For an installed app, PWA, or user browser session, use the local route helper w
 "$ROOT/scripts/profile.sh" route --machine "<target name>"
 ```
 
-That route checks repo/workspace `.gwcu` before deterministic identity discovery. `.gwcu` accelerates stable identity; live Cua/WORLDLINE truth wins on contradiction.
+That route performs the repo/workspace .gwcu lookup before deterministic identity discovery. `.gwcu` accelerates stable identity; live Cua/WORLDLINE truth wins on contradiction.
 
 ## Host contradiction
 
