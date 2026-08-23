@@ -5,16 +5,16 @@ fail(){ printf 'not ok - %s\n' "$1" >&2; exit 1; }
 pass(){ printf 'ok - %s\n' "$1"; }
 
 for f in SKILL.md runtimes/openai/SKILL.md README.md; do
-    grep -qi 'Cua' "$ROOT/$f" || fail "$f lost Cua authority"
+    grep -qi 'Cua' "$ROOT/$f" || fail "$f lost Cua desktop path"
     grep -qi 'WORLDLINE' "$ROOT/$f" || fail "$f lost WORLDLINE architecture"
 done
-pass "runtime and README surfaces agree on authority"
+pass "runtime and README surfaces agree on architecture"
 
 for f in SKILL.md runtimes/openai/SKILL.md README.md; do
     grep -qi 'No X11' "$ROOT/$f" || fail "$f lost GNOME Wayland qualification"
     grep -qi 'Remote Desktop' "$ROOT/$f" || fail "$f lost local portal consent"
 done
-pass "GNOME Wayland authority contract is aligned"
+pass "GNOME Wayland control contract is aligned"
 
 grep -qi 'Observation is an interrupt' "$ROOT/README.md" || fail "README lost WORLDLINE inversion"
 grep -qi 'valid until invalidated' "$ROOT/README.md" || fail "README lost invalidation rule"
@@ -39,14 +39,14 @@ grep -Fq 'background:var(--bg)' "$site" || fail "landing page lost dark little-g
 grep -Fq 'mascot-card' "$site" || fail "landing page lost mascot panel"
 pass "little-guy landing page stays current and accessible"
 
-! grep -Eq 'ydotool|/dev/uinput' "$ROOT/scripts/worldline.py" || fail "WORLDLINE owns input"
+! grep -Eq 'ydotool|/dev/uinput' "$ROOT/scripts/worldline.py" || fail "WORLDLINE injects input"
 ! grep -Eq 'ExecStart=.*cua-driver.*serve' "$ROOT/install.sh" || fail "installer creates a Cua daemon"
-grep -q 'Cua Driver as the only control authority' "$ROOT/SKILL.md" || fail "skill lost single actuator"
-grep -q "do not route browser work through Hermes' separate" "$ROOT/SKILL.md" || fail "browser work can escape Cua authority"
+grep -Fq 'Use **Cua Driver for desktop actuation**' "$ROOT/SKILL.md" || fail "skill lost Cua desktop actuation path"
+grep -Fq 'Do not split the same browser session across Cua and a separate browser-automation actuator mid-task.' "$ROOT/SKILL.md" || fail "browser session can split across actuator planes"
 grep -q 'Never answer a Cua refusal with raw pointer/keyboard injection' "$ROOT/SKILL.md" || fail "refusal boundary missing"
 grep -Fq 'No exact `(pid, window_id)` proof, no focus-bound input.' "$ROOT/README.md" || fail "README lost exact presentation invariant"
 grep -Fq 'exact_target_required_for_foreground' "$ROOT/scripts/action-span.py" || fail "action-span no longer fails closed"
-pass "one exact control plane remains across native and browser work"
+pass "one exact desktop actuation path remains across native and user-browser work"
 
 for shipped in scripts/action-span.py scripts/worldline.py scripts/present-window.py; do grep -q "$shipped" "$ROOT/install.sh" || fail "installer omits $shipped"; done
 grep -q 'gnome-wayland-computer-use-worldline.socket' "$ROOT/install.sh" || fail "installer omits WORLDLINE unit"
