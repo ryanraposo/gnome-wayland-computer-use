@@ -107,6 +107,8 @@ curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh \
 
 `--hermes-profile NAME` is repeatable. A profile created after GWCU was installed is untouched until selected on a later installer run. A profile that intentionally contains no bundled skills stays that way: selecting it adds GWCU's single `computer-use` skill and policy plugin; the installer does not seed the Hermes skill library.
 
+GWCU also leaves the profile's toolset policy alone. Its skill declares `requires_toolsets: [computer_use, terminal]`, so Hermes exposes `/computer-use` only in sessions where those toolsets are available. Selecting a profile for integration does not silently broaden that profile's capabilities.
+
 GWCU does not disable Hermes' separate `browser` toolset globally. While `/computer-use` is active, the skill contract keeps browser actuation on Cua's typed-browser or native AX/PX routes. Other Hermes workflows remain free to use their own configured toolsets.
 
 Teardown is the inverse. Because the host runtime is shared, uninstall scans the default Hermes home and every existing profile, removes only directories carrying GWCU's managed marker, revokes GWCU's plugin enablement/override grant, and restores archived pre-GWCU components when their original destination is free. The built-in `computer_use` tool/toolset is untouched.
@@ -220,6 +222,7 @@ Teardown removes only GWCU-owned integration and transient runtime state. It cle
 - **Cua is the only actuator.** Native apps and browser work share one control authority.
 - **GWCU owns the `computer-use` skill, not the `computer_use` tool.** Hermes keeps its built-in tool surface; GWCU wraps its policy while enabled.
 - **Profile integration is explicit; teardown is complete.** Install targets only selected Hermes homes; uninstall removes every GWCU-managed profile integration before the shared runtime disappears.
+- **Profile capabilities stay profile-owned.** GWCU declares its required toolsets and never silently broadens a profile's tool surface.
 - **Foreground means exact presentation first.** No exact `(pid, window_id)` proof, no focus-bound input.
 - **Visible requests end visibly.** Hidden success is not completion.
 - **Background OFF means visible takeover.** Missing intent metadata cannot reverse it.
