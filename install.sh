@@ -124,10 +124,6 @@ printf '\n=== %s version=%s pid=%s ===\n' "$(date -Is 2>/dev/null || date)" "$VE
 log(){ printf '%s\n' "$*" >>"$INSTALL_LOG"; }
 run_logged(){ local label=$1; shift; log ">>> $label"; "$@" >>"$INSTALL_LOG" 2>&1; }
 
-# Read distro metadata in a subshell. /etc/os-release defines generic names such
-# as NAME=Ubuntu; sourcing it into this process once clobbered the installer's
-# application identity and simultaneously broke Hermes discovery + WORLDLINE's
-# expected socket path. Host metadata never gets to mutate installer state.
 read_os_release(){
   (
     set +u
@@ -213,7 +209,6 @@ try:v=json.loads(sys.argv[1])
 except Exception:v=[]
 item=sys.argv[2]
 out=[]
-for x in v if isinstance(v,list) and False else []: pass
 for x in v if isinstance(v,list) else []:
     if isinstance(x,str) and x not in out:out.append(x)
 if item not in out:out.append(item)
@@ -244,8 +239,6 @@ configure_hermes(){
   disabled=$(hermes_list_without "$(hermes_json_list plugins.disabled)" "$APP_ID")
   run_logged "Hermes enable GWCU [$HERMES_ACTIVE_HOME]" hermes_exec config set plugins.enabled "$enabled" --force || die "Hermes could not persist plugin enablement in $HERMES_ACTIVE_HOME"
   run_logged "Hermes un-disable GWCU [$HERMES_ACTIVE_HOME]" hermes_exec config set plugins.disabled "$disabled" --force || die "Hermes could not clear a stale GWCU disable in $HERMES_ACTIVE_HOME"
-  # The installer is itself the explicit installation action for this one
-  # first-party integration. Grant only the one capability declared by GWCU.
   run_logged "Hermes grant GWCU tools.override [$HERMES_ACTIVE_HOME]" hermes_exec config set "plugins.entries.$APP_ID.granted_capabilities" '["tools.override"]' --force || die "Hermes could not grant GWCU tools.override in $HERMES_ACTIVE_HOME"
   run_logged "Hermes bridge GWCU tool override [$HERMES_ACTIVE_HOME]" hermes_exec config set "plugins.entries.$APP_ID.allow_tool_override" true --force || die "Hermes could not persist GWCU tool override gate in $HERMES_ACTIVE_HOME"
   if hermes_plugin_enabled; then
@@ -342,9 +335,6 @@ install_hermes_target(){
   configure_hermes
   HERMES_TARGET_COUNT=$((HERMES_TARGET_COUNT + 1))
 }
-# The portable agent skill can itself predate GWCU ownership. Keep its backup
-# ledger in the default Hermes home exactly as historical installs did, even
-# when Hermes integration is skipped, then switch ledgers per targeted profile.
 BACKUPS="$HERMES_DEFAULT_HOME/backups/$APP_ID"
 MANIFEST="$BACKUPS/manifest.tsv"
 install_dir "$TMP/bundle" "$PRIMARY"
