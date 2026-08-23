@@ -141,7 +141,7 @@ click Save → document.dirty == false → predicate satisfied → continue
 
 WORLDLINE ingests authoritative facts from AT-SPI, filesystem/process state, D-Bus, settings, network/task watchers and visual evidence only when needed. It never injects input. Cua remains the sole actuator.
 
-WORLDLINE is a socket-activated user service. Health: `worldline.py request --json '{"op":"status"}'`. Recovery: restart `gnome-wayland-computer-use-worldline.socket` and `.service` with `systemctl --user`.
+WORLDLINE is socket-activated. Health: `worldline.py request --json '{"op":"status"}'`.
 
 ## `.gwcu`
 
@@ -155,7 +155,7 @@ Scope order: `GWCU_SCOPE_ROOT` → Git worktree root → nearest ancestor alread
 curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh | bash
 ```
 
-The installer qualifies Ubuntu 26.04 GNOME Wayland, installs/reuses pinned Cua Driver `0.20.0` plus its GNOME helper, establishes portal consent, installs the skill/runtime, enables the Hermes policy plugin when Hermes exists, configures `.gwcu` and control preference, enables WORLDLINE/observation, repairs older GWCU artifacts, and live-proves the installed path before printing `READY // PROVED`.
+The installer qualifies Ubuntu 26.04 GNOME Wayland, installs/reuses Cua Driver `0.20.0` plus its helper, establishes portal consent, installs the skill/runtime and Hermes policy, configures preferences, enables WORLDLINE/observation, repairs older GWCU artifacts, and live-proves readiness.
 
 On a fresh interactive install it explains:
 
@@ -168,7 +168,7 @@ Change later: /computer-use background on|off|status
 
 Then it asks `Use exact visible takeover as your default? [Y/n]`. `--unattended` accepts foreground. The setting changes later without reinstalling.
 
-If the new GNOME helper needs a session reload, the installer asks for one sign-out/sign-in and does not claim fully proved readiness until rerun.
+If the GNOME helper needs a session reload, the installer asks for one sign-out/sign-in and does not claim fully proved readiness until rerun.
 
 ## Uninstall
 
@@ -176,7 +176,7 @@ If the new GNOME helper needs a session reload, the installer asks for one sign-
 curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/uninstall.sh | bash
 ```
 
-Teardown removes GWCU-owned integration and transient runtime state, restores archived components where possible, preserves repo/workspace `.gwcu`, and leaves the built-in `computer_use` tool alone. Cua is preserved by default; `--remove-cua` removes a GWCU-provisioned copy and `--purge-cua` is explicit full purge.
+Teardown removes GWCU-owned integration/transient state, restores archives where possible, preserves workspace `.gwcu`, and leaves built-in `computer_use` alone. Cua is preserved by default; `--remove-cua` removes a GWCU-provisioned copy and `--purge-cua` is explicit full purge.
 
 ## Invariants
 
@@ -189,18 +189,3 @@ Teardown removes GWCU-owned integration and transient runtime state, restores ar
 - WORLDLINE knows; it never acts.
 - Direct truth beats pixels; model calls happen at decision boundaries.
 - `.gwcu` stores durable truth only.
-
-## Project map
-
-```text
-SKILL.md                  runtime behavior contract
-scripts/present-window.py exact GNOME presentation gate
-scripts/action-span.py    one-session Cua spans
-scripts/worldline.py      revision store + predicates
-scripts/profile.sh        identity/truth/recovery
-scripts/truths.py         .gwcu persistence
-scripts/observer.py       ScreenCast/PipeWire sensor
-scripts/computer-use.sh   operator surface
-runtimes/hermes/          tool policy + completion integration
-install.sh / uninstall.sh qualified lifecycle
-```
