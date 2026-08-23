@@ -1,6 +1,6 @@
 ---
 name: computer-use
-description: Operate Ubuntu GNOME through Cua Driver.
+description: Use for Ubuntu GNOME desktop control via Cua Driver.
 version: 2.3.0
 author: Ryan Raposo
 license: MIT
@@ -10,12 +10,12 @@ metadata:
     tags: [computer-use, cua, desktop, automation, gui, gnome, wayland, accessibility]
     category: desktop
     related_skills: [gnome-wayland-reload]
-    requires_toolsets: [computer_use, terminal]
+    requires_toolsets: [computer_use]
 ---
 
 # Computer Use on Ubuntu GNOME
 
-Use **Cua Driver as the only control authority**. WORLDLINE owns transient revisioned truth and postconditions. `.gwcu` owns durable local facts.
+Use **Cua Driver as the only control authority** for the user's actual desktop. WORLDLINE owns transient revisioned truth and postconditions. `.gwcu` owns durable local facts.
 
 > **Resolve exactly. Present exactly. Cua acts. Verify reality.**
 
@@ -25,7 +25,7 @@ Use **Cua Driver as the only control authority**. WORLDLINE owns transient revis
 
 `status`, `trace`, `present`, `list-windows`, `cursor-color`, `background`, `managed`, `truths`, `consent`, `doctor`, and `help`.
 
-For a reserved form, your first tool call MUST execute the installed operator surface once; return its result without reinterpretation:
+For a reserved form, your first tool call MUST execute the installed operator surface once; return its result without reinterpretation. These operator/helper surfaces use the terminal tool when it is available; ordinary desktop control does not require terminal access.
 
 ```text
 /computer-use status
@@ -43,9 +43,20 @@ For a reserved form, your first tool call MUST execute the installed operator su
 
 Everything else is a task. `/computer-use open YouTube and play something` means do the task; `open` is not a subcommand.
 
-## One actuator, including the browser
+## Tool/domain boundary
 
-While this skill is active, **do not route browser work through Hermes' separate `browser_*` toolset**. Browser work remains Cua work:
+GWCU owns **physical computer use**, not every task that happens to involve a browser or shell.
+
+- If the web is merely an information source — research, retrieval, reading, search, API/web navigation with no dependency on the user's visible browser session — browser/web tools remain free to do that work.
+- If the task depends on the user's actual browser session, login, tabs, browser chrome, placement, or visible browser experience, that browser is part of the desktop and Cua owns its actuation.
+- Ordinary command-line/shell work belongs to the terminal tool. Use Cua to operate a terminal window only when the user actually wants the terminal manipulated as a visible desktop surface, or the terminal UI itself is the target.
+- Terminal availability may unlock GWCU's local operator/helper scripts, but it is not part of the skill's domain and is not required for the skill to be relevant.
+
+A mixed task can cross these boundaries. Using web tooling to research something does not prevent later Cua desktop work, and loading this skill does not claim unrelated web or shell work.
+
+## One actuator, including the user's browser
+
+While this skill is active, **when the task is operating the user's actual browser, do not route browser work through Hermes' separate `browser_*` toolset**. Browser actuation remains Cua work. This restriction does not apply when the web is merely an information source as defined above.
 
 ```text
 Chromium/Electron exact route available
@@ -87,13 +98,18 @@ model decides
 
 ## Control priority
 
-`/computer-use background` **toggles the standing delivery preference**.
+`/computer-use background` controls the **standing delivery preference**. The installer explains this choice and asks once on a fresh install; exact visible takeover remains the default.
 
-- OFF is the default: **exact visible takeover**.
-- ON explicitly prefers background delivery where Cua supports it.
-- Explicit user foreground/background wording wins.
-- A requested visible result always finishes with exact visible presentation.
+- OFF is the default: **exact visible takeover**. GWCU may bring the exact target to the front while acting.
+- ON explicitly prefers background delivery where Cua supports it, helping the user keep working in the current foreground window.
+- `/computer-use background on` prefers background work.
+- `/computer-use background off` restores exact visible takeover.
+- `/computer-use background status` reports the current preference; bare `/computer-use background` toggles it.
+- Explicit user foreground/background wording wins over the standing preference.
+- A requested visible result always finishes with exact visible presentation, even when intermediate work is background.
 - Cua runtime truth remains authoritative.
+
+The standing preference applies to otherwise-unspecified Cua native input and GWCU action spans. It is a default, not an interpretation of every task.
 
 There is deliberately **no floating confidence threshold**. Missing foreground words do not imply background intent. Legacy `foreground_confidence` remains parse-compatible and non-authoritative.
 
@@ -173,11 +189,13 @@ Do not use generic compositor guessing or title-only focus as a substitute.
 ```text
 durable known fact            → .gwcu / current context
 current transient fact        → WORLDLINE
-stable recurring mechanics    → repository script
+web used only as information  → browser/web tooling
+ordinary shell/CLI work       → terminal tool
+stable recurring mechanics    → repository script (when terminal is available)
 one-off mechanical fan-out    → execute_code
 predetermined GUI sequence    → one Cua action span
-browser page work             → exact-bound Cua browser route
-browser/native fallback       → Cua native AX/PX route
+user's browser page work      → exact-bound Cua browser route
+user's browser/native fallback→ Cua native AX/PX route
 explicit visual uncertainty   → WORLDLINE visual / observe.sh
 independent reasoning         → delegate_task
 real user choice              → clarify
@@ -187,6 +205,8 @@ unresolved desktop conflict   → parent Cua/model loop
 ## Known target
 
 Two or more fully determined actions on the same current evidence **MUST cross the model/tool boundary exactly once**.
+
+When the terminal tool is available, the installed span runner is the preferred local composition surface:
 
 ```bash
 ROOT="$HOME/.agents/skills/gnome-wayland-computer-use"
@@ -201,42 +221,48 @@ ROOT="$HOME/.agents/skills/gnome-wayland-computer-use"
 }'
 ```
 
-The runner keeps one Cua MCP session open. For every foreground-capable mutation it locally proves exact presentation before sending `tools/call`. Split only when fresh state changes the decision, target identity changes, a branch is undeclared, Cua refuses/fails, or a real user choice appears.
+The runner keeps one Cua MCP session open. For every foreground-capable mutation it locally proves exact presentation before sending `tools/call`. Split only when fresh state changes the decision, target identity changes, a branch is undeclared, Cua refuses/fails, or a real user choice appears. Without terminal access, keep using the built-in `computer_use` tool directly and preserve the same decision boundaries.
 
 ## WORLDLINE postconditions
 
-Use WORLDLINE when the executor can state what must become true.
+Use WORLDLINE when the executor can state what must become true and its local helper surface is available.
 
 ```bash
 "$ROOT/scripts/worldline-capture.sh" --trigger action:save --expect-json '[{"path":"task.document.saved","op":"eq","value":true}]'
 ```
 
-Prefer direct truth: AT-SPI, filesystem, process, D-Bus, settings, network and task watchers before pixels. WORLDLINE never injects input.
+Prefer direct truth: AT-SPI, filesystem, process, D-Bus, settings, network and task watchers before pixels. WORLDLINE never injects input. If the local helper cannot be invoked, verify through available `computer_use` evidence instead of treating terminal access as a requirement for desktop control.
 
 ## Unknown or browser-backed target
+
+When the local helper surface is available:
 
 ```bash
 "$ROOT/scripts/profile.sh" route --machine "<target name>"
 ```
 
-That one route performs the repo/workspace .gwcu lookup before deterministic identity discovery. `.gwcu` accelerates stable identity; live Cua/WORLDLINE truth wins on contradiction. Route discovery never authorizes a switch to Hermes' separate browser automation plane.
+That one route performs the repo/workspace .gwcu lookup before deterministic identity discovery. `.gwcu` accelerates stable identity; live Cua/WORLDLINE truth wins on contradiction. Route discovery does not claim web-only research; use browser/web tooling freely when the web is merely an information source.
 
 ## Host contradiction
+
+When the local helper surface is available:
 
 ```bash
 "$ROOT/scripts/profile.sh" recover --machine
 ```
 
-Do not make the model perform `read → refresh → diagnose` as separate turns.
+Do not make the model perform `read → refresh → diagnose` as separate turns when deterministic recovery is available.
 
 ## Whole screen
+
+When the local helper surface is available:
 
 ```bash
 "$ROOT/scripts/observe.sh" --machine --screen /tmp/screen.png
 "$ROOT/scripts/observe.sh" --media --screen
 ```
 
-Use visual escalation only when direct evidence is insufficient.
+Use visual escalation only when direct evidence is insufficient. Without the helper surface, use the built-in `computer_use` observation path.
 
 ## `.gwcu`: durable truth, not runtime state
 
@@ -244,7 +270,7 @@ Persistent machine/workspace truth belongs in one `.gwcu`, **never in `AGENTS.md
 
 ## Failure and refusal policy
 
-**Never answer a Cua refusal with raw pointer/keyboard injection. Never switch silently to Hermes' separate browser toolset. Never guess focus.**
+**Never answer a Cua refusal with raw pointer/keyboard injection. Never switch silently to Hermes' separate browser toolset while actuating the user's browser. Never guess focus.**
 
 A foreground presentation failure is an actuation boundary: do not send the input. Re-resolve exact identity or report the failure. A background→foreground retry is legal only after Cua explicitly says background delivery is unavailable and the exact presentation gate succeeds.
 
@@ -277,7 +303,7 @@ A task is incomplete when the requested visible result is not actually on the us
 /computer-use help
 ```
 
-`trace` prints the exact default control path. `present` is the deterministic exact-window presentation primitive. `list-windows` is read-only discovery (no presentation gate, works in both background modes). `cursor-color` sets the agent cursor fill color via Cua WinRects helper (default green, visual aid only).
+`trace` prints the exact default control path. `present` is the deterministic exact-window presentation primitive. `list-windows` is read-only discovery (no presentation gate, works in both background modes). `cursor-color` sets the agent cursor fill color via Cua WinRects helper (default green, visual aid only). Operator forms require the local helper/terminal surface; their absence does not remove ordinary `computer_use` capability.
 
 ## WORLDLINE socket lifecycle
 
