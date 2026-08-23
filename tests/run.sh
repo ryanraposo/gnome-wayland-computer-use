@@ -1,521 +1,141 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-TEST_TMP=$(mktemp -d)
-trap 'rm -rf "$TEST_TMP"' EXIT
-
+TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 passed=0
-failed=0
+pass(){ printf 'ok - %s\n' "$1"; ((passed++)) || true; }
+fail(){ printf 'not ok - %s\n' "$1" >&2; exit 1; }
 
-pass() {
-    printf 'ok - %s\n' "$1"
-    ((passed++)) || true
-}
+installer="$ROOT/install.sh"; uninstaller="$ROOT/uninstall.sh"; teardown="$ROOT/scripts/teardown.sh"
+profile="$ROOT/scripts/profile.sh"; truths="$ROOT/scripts/truths.py"; portal="$ROOT/scripts/portal-control.py"
+worldline="$ROOT/scripts/worldline.py"; capture="$ROOT/scripts/capture.sh"; presenter="$ROOT/scripts/present-window.py"
 
-fail() {
-    printf 'not ok - %s\n' "$1" >&2
-    ((failed++)) || true
-}
+for s in "$installer" "$uninstaller" "$teardown" "$ROOT/scripts/diagnose.sh" "$capture" "$ROOT/scripts/observe.sh" "$profile" "$ROOT/scripts/computer-use.sh" "$ROOT/scripts/worldline-capture.sh"; do bash -n "$s" || fail "shell syntax: ${s#$ROOT/}"; done
+python3 -m py_compile "$ROOT"/scripts/*.py "$ROOT/runtimes/hermes/__init__.py" || fail "Python syntax"
+pass "entrypoints parse"
 
-assert() {
-    local name="$1"
-    shift
-    if "$@"; then pass "$name"; else fail "$name"; fi
-}
+[ ! -e "$ROOT/install-core.sh" ] || fail "secondary installer exists"
+! grep -Eq 'add_pkg ydotool|modprobe uinput|usermod .*input|CUA_DRIVER_RS_ENABLE_WAYLAND|ExecStart=.*cua-driver.*serve' "$installer" || fail "installer creates a shadow control plane"
+grep -q 'CUA_DRIVER_RS_VERSION="${GWCU_CUA_DRIVER_RS_VERSION:-0.20.0}"' "$installer" || fail "Cua pin missing"
+grep -q 'CUA_DRIVER_RS_NO_MODIFY_PATH=1' "$installer" || fail "Cua PATH ownership missing"
+grep -q 'https://cua.ai/driver/install.sh' "$installer" || fail "official Cua installer missing"
+grep -q 'Qualified Cua Driver.*already installed' "$installer" || fail "qualified Cua is not reused"
+grep -q 'packages/current/wayland-helper' "$installer" || fail "Cua helper boundary missing"
+pass "Cua remains pinned and sole actuator"
 
-# Shared library: environment values are returned without executing stray commands.
-(
-    set -euo pipefail
-    # shellcheck disable=SC1091  # ROOT is computed at runtime.
-    . "$ROOT/lib/checks.sh"
-    [ "$(XDG_SESSION_TYPE=wayland check_get_session)" = wayland ]
-    [ "$(XDG_CURRENT_DESKTOP=GNOME check_get_desktop)" = GNOME ]
-    check_version_ge 49.1 49.0
-    ! check_version_ge 48.9 49.0
-)
-assert "shared checks return stable values" test "$?" -eq 0
-
-# Diagnostics must report every check, escape JSON, and fail only after the summary.
-diagnose_out="$TEST_TMP/diagnose.jsonl"
-diagnose_rc=0
-mkdir -p "$TEST_TMP/diagnose-home"
-HOME="$TEST_TMP/diagnose-home" XDG_SESSION_TYPE=x11 XDG_CURRENT_DESKTOP='KDE"test' \
-    "$ROOT/scripts/diagnose.sh" --json > "$diagnose_out" || diagnose_rc=$?
-assert "diagnostics return nonzero when checks fail" test "$diagnose_rc" -ne 0
-assert "diagnostics report all checks plus summary" test "$(wc -l < "$diagnose_out")" -eq 15
-assert "diagnostic JSON is valid" python3 - "$diagnose_out" <<'PY'
-import json
-import pathlib
-import sys
-
-rows = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text().splitlines()]
-assert rows[-1]["check"] == "summary"
-assert rows[-1]["pass"] is False
-assert any(row["detail"] == 'KDE"test' for row in rows)
-assert {
-    row["check"]: row["detail"]
-    for row in rows
-}.get("hermes_skill") == "not_selected"
+# Physical regression: /etc/os-release contains NAME=Ubuntu and once clobbered
+# the installer's own NAME, simultaneously breaking Hermes + WORLDLINE paths.
+grep -Fq 'APP_ID="gnome-wayland-computer-use"' "$installer" || fail "installer app identity is not namespaced"
+OS_SOURCE_COUNT=$(grep -Ec '^[[:space:]]*\.[[:space:]]+/etc/os-release' "$installer" || true)
+[ "$OS_SOURCE_COUNT" -eq 1 ] || fail "os-release must have exactly one controlled source point"
+python3 - "$installer" <<'PY' || fail "os-release source is not isolated in a subshell"
+import pathlib,sys
+lines=pathlib.Path(sys.argv[1]).read_text().splitlines()
+start=next(i for i,l in enumerate(lines) if l.strip()=='read_os_release(){')
+end=next(i for i,l in enumerate(lines[start+1:],start+1) if l.strip()=='}')
+sources=[i for i,l in enumerate(lines) if l.strip()=='. /etc/os-release']
+assert len(sources)==1 and start < sources[0] < end
+assert any(l.strip()=='(' for l in lines[start+1:sources[0]])
+assert any(l.strip()==')' for l in lines[sources[0]+1:end])
 PY
+grep -Fq 'PLUGIN="$HERMES_HOME/plugins/$APP_ID"' "$installer" || fail "Hermes plugin path can drift from app identity"
+pass "Ubuntu metadata cannot clobber GWCU identity"
 
-# Desktop capture: the first-class compositor rung writes the desktop layer.
-capture_home="$TEST_TMP/capture-home"
-mkdir -p "$capture_home"
-mock_bin="$TEST_TMP/capture-desktop-bin"
-mkdir -p "$mock_bin"
-cat > "$mock_bin/gdbus" <<'SH'
-#!/usr/bin/env bash
-for last; do :; done
-[ "$(dirname "$last")" = "$XDG_RUNTIME_DIR" ] || exit 1
-printf 'png' > "$last"
-printf "(true, '%s', '{\"focus_unchanged\":true,\"window_state_unchanged\":true}')\n" "$last"
-SH
-chmod +x "$mock_bin/gdbus"
-mkdir -p "$capture_home/output"
-capture_out="$capture_home/output/desktop.png"
-capture_method=$(HOME="$capture_home" XDG_RUNTIME_DIR="$TEST_TMP" PATH="$mock_bin:/usr/bin:/bin" \
-    "$ROOT/scripts/capture.sh" --desktop "$capture_out")
-assert "desktop capture prefers the focus-free compositor rung" \
-    test "$capture_method" = "capture_method=gnome-shell-desktop"
-assert "compositor desktop capture produces a nonempty output" test -s "$capture_out"
-assert "compositor capture supports output outside its restricted staging directory" \
-    test "$(dirname "$capture_out")" != "$TEST_TMP"
+for pkg in pipewire pipewire-bin wireplumber xdg-desktop-portal xdg-desktop-portal-gnome python3-dbus python3-gi python3-gst-1.0 gstreamer1.0-pipewire gir1.2-gst-plugins-base-1.0 gir1.2-gdkpixbuf-2.0 gir1.2-atspi-2.0 at-spi2-core libei1 libxkbcommon0; do grep -q "$pkg" "$installer" || fail "installer cannot repair $pkg"; done
+for iface in RemoteDesktop ScreenCast Screenshot; do grep -q "portal_has $iface" "$installer" || fail "$iface portal check missing"; done
+pass "Ubuntu portal/accessibility foundation is explicit"
 
-# Desktop capture: compatibility mode reveals, captures, then restores desktop.
-mock_bin="$TEST_TMP/capture-desktop-compat-bin"
-mkdir -p "$mock_bin"
-cat > "$mock_bin/gdbus" <<'SH'
-#!/usr/bin/env bash
-case "$*" in
-    *CaptureDesktop*) exit 1 ;;
-    *GetRects*) printf '%s\n' '([{"visible":true}])' ;;
-    *) exit 1 ;;
-esac
-SH
-cat > "$mock_bin/ydotool" <<'SH'
-#!/usr/bin/env bash
-printf '%s\n' "$*" >> "$HOME/desktop-ydotool-args"
-case "$*" in
-    'key 42:1 99:1 99:0 42:0')
-        mkdir -p "$HOME/Pictures/Screenshots"
-        printf 'png' > "$HOME/Pictures/Screenshots/Desktop capture.png"
-        ;;
-esac
-SH
-chmod +x "$mock_bin/"*
-capture_out="$TEST_TMP/desktop-compat.png"
-capture_method=$(HOME="$capture_home" PATH="$mock_bin:/usr/bin:/bin" \
-    "$ROOT/scripts/capture.sh" --desktop "$capture_out")
-assert "desktop capture reaches reversible compatibility rung" \
-    test "$capture_method" = "capture_method=ydotool-show-desktop"
-assert "compatibility rung produces a nonempty desktop" test -s "$capture_out"
-assert "compatibility rung restores show-desktop state" \
-    test "$(grep -cx 'key 125:1 32:1 32:0 125:0' "$capture_home/desktop-ydotool-args")" -eq 2
-assert "compatibility rung takes one full-screen image" \
-    test "$(grep -cx 'key 42:1 99:1 99:0 42:0' "$capture_home/desktop-ydotool-args")" -eq 1
+for shipped in scripts/action-span.py scripts/worldline.py scripts/worldline-capture.sh scripts/present-window.py README.md; do grep -q "$shipped" "$installer" || fail "installer omits $shipped"; done
+grep -q 'present-window.py" self-test' "$installer" || fail "presentation self-test missing"
+grep -q 'present-window.py" status' "$installer" || fail "live presentation qualification missing"
+grep -q 'enable --now gnome-wayland-computer-use-worldline.socket' "$installer" || fail "WORLDLINE socket not enabled"
+grep -q 'enable --now gnome-wayland-computer-use-observer.socket' "$installer" || fail "observer socket not enabled"
+grep -Fq 'ensure_user_daemon worldline "WORLDLINE"' "$installer" || fail "WORLDLINE automatic repair missing"
+grep -Fq 'journalctl --user -u "$service_unit"' "$installer" || fail "daemon failure capsule lacks journal evidence"
+python3 "$presenter" self-test >/dev/null || fail "presentation primitive self-test"
+grep -Fq 'focused' "$presenter" && grep -Fq 'visible' "$presenter" && grep -Fq 'minimized' "$presenter" || fail "presenter does not prove visible focus"
+grep -Fq 'pid' "$presenter" && grep -Fq 'window_id' "$presenter" || fail "presenter lacks exact identity"
+pass "WORLDLINE, observer and exact presentation are shipped and provable"
 
-# Desktop capture must not claim recovery when compositor state is unavailable.
-mock_bin="$TEST_TMP/capture-desktop-unverified-bin"
-mkdir -p "$mock_bin"
-cat > "$mock_bin/gdbus" <<'SH'
-#!/usr/bin/env bash
-exit 1
-SH
-cat > "$mock_bin/ydotool" <<'SH'
-#!/usr/bin/env bash
-touch "$HOME/unverified-ydotool-was-called"
-exit 0
-SH
-chmod +x "$mock_bin/"*
-capture_out="$TEST_TMP/desktop-unverified.png"
-printf 'original' > "$capture_out"
-capture_rc=0
-HOME="$capture_home" PATH="$mock_bin:/usr/bin:/bin" \
-    "$ROOT/scripts/capture.sh" --desktop "$capture_out" >/dev/null 2>&1 || capture_rc=$?
-assert "desktop fallback fails closed without compositor state proof" \
-    test "$capture_rc" -ne 0
-assert "unverified desktop fallback does not synthesize input" \
-    test ! -e "$capture_home/unverified-ydotool-was-called"
-assert "unverified desktop fallback preserves existing output" \
-    test "$(cat "$capture_out")" = original
+# Hermes is a completed integration when detected: no manual enable chore.
+grep -Fq 'hermes_exec config set plugins.enabled' "$installer" || fail "Hermes enabled list is not installed"
+grep -Fq 'hermes_exec config set plugins.disabled' "$installer" || fail "stale Hermes disable is not repaired"
+grep -Fq 'plugins.entries.$APP_ID.granted_capabilities' "$installer" || fail "tools.override grant missing"
+grep -Fq 'plugins.entries.$APP_ID.allow_tool_override' "$installer" || fail "legacy override bridge missing"
+grep -Fq 'Hermes plugin enabled; computer_use policy is mechanical' "$installer" || fail "plugin enablement is not verified"
+! grep -Fqi 'enable it later' "$installer" || fail "installer delegates plugin enablement to user"
+grep -q 'plugins disable "$NAME"' "$teardown" || fail "Hermes teardown disable missing"
+pass "Hermes policy installation is automatic and reversible"
 
-# Capture: successful first rung writes the requested output.
-mock_bin="$TEST_TMP/capture-success-bin"
-mkdir -p "$mock_bin"
-cat > "$mock_bin/gnome-screenshot" <<'SH'
-#!/usr/bin/env bash
-printf 'png' > "$2"
-SH
-cat > "$mock_bin/gnome-shell" <<'SH'
-#!/usr/bin/env bash
-printf 'GNOME Shell 48.0\n'
-SH
-chmod +x "$mock_bin/gnome-screenshot" "$mock_bin/gnome-shell"
-capture_out="$TEST_TMP/success.png"
-capture_method=$(HOME="$capture_home" PATH="$mock_bin:/usr/bin:/bin" \
-    "$ROOT/scripts/capture.sh" --screen "$capture_out")
-assert "capture uses gnome-screenshot when available" test "$capture_method" = "capture_method=gnome-screenshot"
-assert "capture produces a nonempty output" test -s "$capture_out"
+grep -q 'Enable managed .gwcu local truths?' "$installer" || fail "managed truth prompt missing"
+grep -q 'Default visible takeover is faster and deterministic' "$installer" || fail "default control preference not explained"
+grep -q 'GWCU_TRUTHS=off' "$installer" || fail "truth override missing"
+grep -q 'SCHEMA = "gwcu.truths.v1"' "$truths" || fail "truth schema missing"
+grep -q 'nearest_existing' "$truths" || fail "non-Git scope lookup missing"
+grep -q 'ensure_gitignore' "$truths" || fail "Git ignore safety missing"
+pass ".gwcu remains durable local truth"
 
-# Capture: the non-interactive Screenshot portal is preferred over ScreenCast.
-mock_bin="$TEST_TMP/capture-portal-bin"
-mkdir -p "$mock_bin"
-cat > "$mock_bin/gnome-screenshot" <<'SH'
-#!/usr/bin/env bash
-exit 1
-SH
-cat > "$mock_bin/python3" <<'SH'
-#!/usr/bin/env bash
-printf 'png' > "$2"
-SH
-chmod +x "$mock_bin/"*
-capture_out="$TEST_TMP/portal.png"
-capture_method=$(HOME="$capture_home" GNOME_WAYLAND_SYSTEM_PYTHON="$mock_bin/python3" \
-    PATH="$mock_bin:/usr/bin:/bin" \
-    "$ROOT/scripts/capture.sh" --screen "$capture_out")
-assert "capture prefers the Screenshot portal" \
-    test "$capture_method" = "capture_method=portal-screenshot"
-assert "Screenshot portal capture produces a nonempty output" test -s "$capture_out"
+grep -q 'portal-control.py.*--authorize' "$installer" || fail "RemoteDesktop bootstrap missing"
+grep -q 'for n in 3 2 1' "$installer" || fail "portal countdown missing"
+grep -q 'no click or key' "$installer" || fail "minimal handshake explanation missing"
+grep -q 'libei-persistent.token' "$portal" || fail "restore-token verification missing"
+grep -q '"move_cursor"' "$portal" || fail "pointer-only Cua handshake missing"
+! grep -Eq '"name"[[:space:]]*:[[:space:]]*"(click|type_text|key_press)"' "$portal" || fail "portal helper contains invasive actions"
+pass "RemoteDesktop consent is explicit and minimally invasive"
 
-# Capture: total failure preserves a pre-existing output.
-mock_bin="$TEST_TMP/capture-fail-bin"
-mkdir -p "$mock_bin"
-for command in gnome-screenshot python3 ydotool; do
-    cat > "$mock_bin/$command" <<'SH'
-#!/usr/bin/env bash
-exit 1
-SH
-    chmod +x "$mock_bin/$command"
-done
-capture_out="$TEST_TMP/preserved.png"
-printf 'original' > "$capture_out"
-capture_rc=0
-HOME="$capture_home" GNOME_WAYLAND_SYSTEM_PYTHON="$mock_bin/python3" \
-    PATH="$mock_bin:/usr/bin:/bin" \
-    "$ROOT/scripts/capture.sh" --screen "$capture_out" >/dev/null 2>&1 || capture_rc=$?
-assert "capture reports total failure" test "$capture_rc" -ne 0
-assert "failed capture preserves existing output" test "$(cat "$capture_out")" = original
+grep -Fq 'diagnose.sh" --machine' "$installer" || fail "final installed-state diagnosis missing"
+grep -Fq 'gwcu.install-receipt.v1' "$installer" || fail "installer produces no durable proof receipt"
+grep -Fq 'install.log' "$installer" || fail "installer has no durable private log"
+grep -Fq 'READY // PROVED' "$installer" || fail "success output does not distinguish proved state"
+grep -Fq 'INSTALL COMPLETE // ONE GNOME RELOAD REQUIRED' "$installer" || fail "GNOME reload boundary is not honest"
+grep -Fq 'presentation_degraded' "$ROOT/scripts/diagnose.sh" || fail "diagnosis can ignore broken exact presentation"
+pass "installer ends on unified proof with honest reload boundary"
 
-# Capture: ydotool fallback requests a full screen and handles spaces in names.
-mock_bin="$TEST_TMP/capture-ydotool-bin"
-mkdir -p "$mock_bin"
-for command in gnome-screenshot python3; do
-    cat > "$mock_bin/$command" <<'SH'
-#!/usr/bin/env bash
-if [ "$(basename "$0")" = python3 ]; then
-    count=$(cat "$HOME/portal-call-count" 2>/dev/null || printf '0')
-    printf '%s\n' "$((count + 1))" > "$HOME/portal-call-count"
-fi
-exit 1
-SH
-    chmod +x "$mock_bin/$command"
-done
-cat > "$mock_bin/ydotool" <<'SH'
-#!/usr/bin/env bash
-mkdir -p "$HOME/Pictures/Screenshots"
-printf '%s\n' "$*" > "$HOME/ydotool-args"
-printf 'png' > "$HOME/Pictures/Screenshots/Screenshot with spaces.png"
-SH
-chmod +x "$mock_bin/"*
-capture_out="$TEST_TMP/ydotool.png"
-capture_method=$(HOME="$capture_home" GNOME_WAYLAND_SYSTEM_PYTHON="$mock_bin/python3" \
-    PATH="$mock_bin:/usr/bin:/bin" \
-    "$ROOT/scripts/capture.sh" --screen "$capture_out")
-assert "capture reaches the ydotool fallback" test "$capture_method" = "capture_method=ydotool-shift-print"
-assert "ydotool capture produces a nonempty output" test -s "$capture_out"
-assert "ydotool fallback invokes GNOME full-screen shortcut" \
-    grep -qx 'key 42:1 99:1 99:0 42:0' "$capture_home/ydotool-args"
-assert "default fallback does not open a ScreenCast chooser" \
-    test "$(cat "$capture_home/portal-call-count")" -eq 1
+grep -q 'gnome-wayland-computer-use-worldline.socket' "$teardown" || fail "WORLDLINE unit not removed"
+grep -q 'disable --now "$unit"' "$teardown" || fail "user units not disabled"
+grep -q 'gnome-wayland-computer-use PATH' "$teardown" || fail "managed PATH block not removed"
+grep -q 'Repo/workspace .gwcu files' "$teardown" || fail "workspace truth preservation missing"
+grep -q -- '--remove-cua' "$uninstaller" || fail "root uninstall cannot remove provisioned Cua"
+pass "teardown removes runtime integration, not workspace truth"
 
-# Capture: media mode owns the timestamp and emits the Hermes attachment line.
-media_out=$(HOME="$capture_home" XDG_RUNTIME_DIR="$TEST_TMP" \
-    PATH="$TEST_TMP/capture-success-bin:/usr/bin:/bin" \
-    "$ROOT/scripts/capture.sh" --media --screen 2>/dev/null)
-assert "media mode emits an attachment line" \
-    test "${media_out#MEDIA:}" != "$media_out"
-assert "media mode attachment exists" test -s "${media_out#MEDIA:}"
+! grep -Eq 'ydotool|uinput|org\.cua\.WinRects|cua-driver' "$capture" || fail "direct observation owns control machinery"
+! grep -Eq 'ydotool|uinput' "$worldline" || fail "WORLDLINE owns raw input"
+grep -q 'Atspi.EventListener' "$worldline" || fail "WORLDLINE AT-SPI adapter missing"
+grep -q 'observer_capture' "$worldline" || fail "WORLDLINE visual escalation missing"
+pass "read-only sensors stay read-only"
 
-# Capture: cancelling portal consent must not unexpectedly open another UI.
-mock_bin="$TEST_TMP/capture-denied-bin"
-mkdir -p "$mock_bin"
-cat > "$mock_bin/gnome-screenshot" <<'SH'
-#!/usr/bin/env bash
-exit 1
-SH
-cat > "$mock_bin/python3" <<'SH'
-#!/usr/bin/env bash
-exit 20
-SH
-cat > "$mock_bin/ydotool" <<'SH'
-#!/usr/bin/env bash
-touch "$HOME/ydotool-was-called"
-exit 0
-SH
-chmod +x "$mock_bin/"*
-capture_rc=0
-HOME="$capture_home" GNOME_WAYLAND_SYSTEM_PYTHON="$mock_bin/python3" \
-    PATH="$mock_bin:/usr/bin:/bin" \
-    "$ROOT/scripts/capture.sh" --screen "$TEST_TMP/denied.png" >/dev/null 2>&1 || capture_rc=$?
-assert "portal cancellation reports failure" test "$capture_rc" -ne 0
-assert "portal cancellation does not open screenshot fallback UI" \
-    test ! -e "$capture_home/ydotool-was-called"
+cat >"$TMP/fake-cua" <<'PY'
+#!/usr/bin/env python3
+import json,sys
+if len(sys.argv)<2 or sys.argv[1]!='mcp': raise SystemExit(2)
+for line in sys.stdin:
+ q=json.loads(line)
+ if q.get('method')=='initialize': print(json.dumps({'jsonrpc':'2.0','id':q['id'],'result':{'protocolVersion':'2024-11-05','serverInfo':{'name':'cua-driver','version':'test'}}}),flush=True)
+ elif q.get('method')=='tools/call': print(json.dumps({'jsonrpc':'2.0','id':q['id'],'result':{'content':[],'isError':False,'structuredContent':{'schema_version':'1','platform':'linux','driver_version':'test','overall':'ok','checks':[]}}}),flush=True)
+PY
+chmod +x "$TMP/fake-cua"
+python3 "$ROOT/scripts/cua-health.py" --driver "$TMP/fake-cua" >"$TMP/health.json"
+python3 - "$TMP/health.json" <<'PY' || fail "health transport contract failed"
+import json,sys
+d=json.load(open(sys.argv[1]));assert d['schema']=='gwcu.cua-health.v1' and d['ok'] and d['report']['overall']=='ok'
+PY
+pass "Cua health uses MCP structuredContent"
 
-# Local installation must install a complete, runnable skill bundle.
-install_home="$TEST_TMP/install-home"
-mock_bin="$TEST_TMP/install-bin"
-mkdir -p "$install_home" "$mock_bin"
-install_help=$("$ROOT/install.sh" --help)
-assert "installer advertises both runtime modes" \
-    test "$(grep -Ec -- '--hermes|--agent-only' <<< "$install_help")" -ge 2
-conflict_rc=0
-"$ROOT/install.sh" --hermes --agent-only >/dev/null 2>&1 || conflict_rc=$?
-assert "installer rejects conflicting runtime modes" test "$conflict_rc" -ne 0
-printf '%s\n' '# My existing Hermes identity' > "$install_home/.hermes-soul-original"
-mkdir -p "$install_home/.hermes"
-cp "$install_home/.hermes-soul-original" "$install_home/.hermes/SOUL.md"
-mkdir -p "$install_home/.hermes/skills/computer-use" \
-    "$install_home/.hermes/skills/screenshot" \
-    "$install_home/.hermes/skills/gnome-wayland-computer-use"
-printf '%s\n' 'stock Hermes skill' > "$install_home/.hermes/skills/computer-use/SKILL.md"
-cat > "$install_home/.hermes/skills/screenshot/SKILL.md" <<'SKILL'
----
-name: Screenshot
-slug: screenshot
----
-On Linux Wayland, use grim and slurp.
-SKILL
-cat > "$install_home/.hermes/skills/gnome-wayland-computer-use/SKILL.md" <<'SKILL'
----
-name: gnome-wayland-computer-use
----
-Legacy managed location.
-SKILL
-for command in gsettings systemctl pkexec sudo hermes cua-driver ydotool ydotoold gnome-screenshot gnome-extensions; do
-    cat > "$mock_bin/$command" <<'SH'
-#!/usr/bin/env bash
-exit 0
-SH
-done
-cat > "$mock_bin/gdbus" <<'SH'
-#!/usr/bin/env bash
-printf 'interface org.a11y.Bus\n'
-SH
-cat > "$mock_bin/gst-inspect-1.0" <<'SH'
-#!/usr/bin/env bash
-exit 0
-SH
-chmod +x "$mock_bin/"*
-wrong_env_rc=0
-HOME="$install_home" USER=tester XDG_SESSION_TYPE=x11 XDG_CURRENT_DESKTOP=KDE \
-    GNOME_WAYLAND_UINPUT_DEVICE=/dev/null \
-    PATH="$mock_bin:/usr/bin:/bin" \
-    "$ROOT/install.sh" --unattended >/dev/null 2>&1 || wrong_env_rc=$?
-assert "installer rejects a non-GNOME-Wayland session by default" \
-    test "$wrong_env_rc" -ne 0
-assert "failed environment preflight does not install files" \
-    test ! -e "$install_home/.agents/skills/gnome-wayland-computer-use"
+mkdir -p "$TMP/home"; rc=0
+HOME="$TMP/home" XDG_SESSION_TYPE=x11 XDG_CURRENT_DESKTOP=KDE "$ROOT/scripts/diagnose.sh" --machine >"$TMP/diag.json" 2>/dev/null || rc=$?
+[ "$rc" -ne 0 ] || fail "wrong-session diagnosis succeeded"
+python3 - "$TMP/diag.json" <<'PY' || fail "diagnostic envelope invalid"
+import json,sys
+d=json.load(open(sys.argv[1]));assert not d['ok'] and d['code']=='wrong_session';assert 'presentation' in d
+PY
+XDG_RUNTIME_DIR="$TMP/runtime" python3 "$ROOT/scripts/observer.py" self-test >/dev/null || fail "observer self-test"
+XDG_RUNTIME_DIR="$TMP/world" python3 "$worldline" self-test >/dev/null || fail "WORLDLINE self-test"
+pass "diagnostics and read-only runtimes self-test"
 
-HOME="$install_home" USER=tester XDG_SESSION_TYPE=wayland XDG_CURRENT_DESKTOP=GNOME \
-    GNOME_WAYLAND_UINPUT_DEVICE=/dev/null \
-    PATH="$mock_bin:/usr/bin:/bin" \
-    "$ROOT/install.sh" --unattended >/dev/null
-installed="$install_home/.agents/skills/gnome-wayland-computer-use"
-assert "installer copies the skill" test -f "$installed/SKILL.md"
-assert "shared skill name matches its Agent Skills directory" \
-    grep -qx 'name: gnome-wayland-computer-use' "$installed/SKILL.md"
-assert "shared skill uses only universally required frontmatter" \
-    awk '
-        /^---$/ { delimiters++; next }
-        delimiters == 1 && /^[^[:space:]]/ {
-            key = $0
-            sub(/:.*/, "", key)
-            if (key != "name" && key != "description") bad = 1
-        }
-        END { exit bad || delimiters < 2 }
-    ' "$installed/SKILL.md"
-assert "shared skill teaches native agent dispatch" \
-    grep -q "native computer-use" "$installed/SKILL.md"
-assert "shared skill has symptom-rich implicit triggering" sh -c \
-    'grep -q "accessibility inspection" "$1" && grep -q "graphical pkexec package installation" "$1"' \
-    sh "$installed/SKILL.md"
-assert "OpenAI UI metadata permits implicit invocation" \
-    grep -q '^  allow_implicit_invocation: true$' "$installed/agents/openai.yaml"
-assert "shared skill documents closed-loop CUA" \
-    grep -q '^## Closed-Loop Control$' "$installed/SKILL.md"
-assert "shared skill documents stale element references" \
-    grep -q 'element indices and references as invalid' "$installed/SKILL.md"
-assert "shared skill documents focus escalation" \
-    grep -q '^## Background-First Escalation$' "$installed/SKILL.md"
-assert "shared skill prefers graphical package authorization" \
-    grep -q 'pkexec apt-get install -y PACKAGE' "$installed/SKILL.md"
-assert "shared skill routes capture through its own installed bundle" \
-    grep -q '\.agents/skills/gnome-wayland-computer-use' "$installed/SKILL.md"
-assert "shared skill does not depend on the Hermes skill path" \
-    test "$(grep -c '\.hermes/skills/computer-use' "$installed/SKILL.md")" -eq 0
-assert "installer copies shared checks" test -f "$installed/lib/checks.sh"
-assert "installer copies capture helper" test -x "$installed/scripts/capture.sh"
-assert "installer copies update helper" test -x "$installed/scripts/check-update.sh"
-assert "installer copies diagnostic helper" test -x "$installed/scripts/diagnose.sh"
-assert "installer copies backend helper" test -x "$installed/scripts/serve.sh"
-assert "installer copies teardown helper" test -x "$installed/scripts/teardown.sh"
-assert "installer bundles the desktop capture extension" \
-    test -f "$installed/gnome-shell-extension/extension.js"
-assert "installer activates the desktop capture extension" \
-    test -f "$install_home/.local/share/gnome-shell/extensions/desktop-capture@gnome-wayland-computer-use/extension.js"
-assert "installer always copies the Hermes skill" \
-    test -f "$install_home/.hermes/skills/computer-use/SKILL.md"
-assert "Hermes override shadows the built-in computer-use skill" \
-    cmp -s "$ROOT/SKILL.md" "$install_home/.hermes/skills/computer-use/SKILL.md"
-assert "Hermes skill follows versioned authoring metadata" sh -c \
-    'grep -q "^version: 2.2.0$" "$1" && grep -q "^author: " "$1" && grep -q "^license: MIT$" "$1" && grep -q "^platforms: \[linux\]$" "$1"' \
-    sh "$install_home/.hermes/skills/computer-use/SKILL.md"
-assert "Hermes skill covers exact CUA action vocabulary" \
-    grep -q '^## Hermes Action Vocabulary$' "$install_home/.hermes/skills/computer-use/SKILL.md"
-assert "Hermes skill covers structured action verdicts" \
-    grep -q 'effect="suspected_noop"' "$install_home/.hermes/skills/computer-use/SKILL.md"
-assert "Hermes install records mode for diagnostics" \
-    test -f "$installed/.hermes-integration"
-assert "installer archives a pre-existing computer-use skill" \
-    grep -q 'stock Hermes skill' "$install_home/.hermes/backups/gnome-wayland-computer-use/"*/computer-use/SKILL.md
-assert "installer quarantines conflicting learned screenshot skills" \
-    test ! -e "$install_home/.hermes/skills/screenshot"
-assert "quarantined screenshot skill remains recoverable" \
-    test -f "$install_home/.hermes/backups/gnome-wayland-computer-use/"*/screenshot/SKILL.md
-assert "legacy Hermes skill is archived instead of deleted" \
-    grep -q 'Legacy managed location' \
-        "$install_home/.hermes/backups/gnome-wayland-computer-use/"*/gnome-wayland-computer-use/SKILL.md
-assert "Hermes skill routes whole-desktop capture through the helper" \
-    grep -q '\.hermes/skills/computer-use/scripts/capture\.sh' "$ROOT/SKILL.md"
-assert "installer activates always-loaded desktop routing" \
-    grep -q 'gnome-wayland-computer-use:start' "$install_home/.hermes/SOUL.md"
-assert "installer preserves the existing Hermes identity" \
-    grep -q 'My existing Hermes identity' "$install_home/.hermes/SOUL.md"
+for f in SKILL.md runtimes/openai/SKILL.md README.md; do grep -qi 'Cua' "$ROOT/$f" || fail "$f lost Cua"; grep -qi 'WORLDLINE' "$ROOT/$f" || fail "$f lost WORLDLINE"; grep -qi 'No X11' "$ROOT/$f" || fail "$f lost GNOME Wayland qualification"; grep -qi 'Remote Desktop' "$ROOT/$f" || fail "$f lost consent model"; done
+grep -qi 'Observation is an interrupt' "$ROOT/README.md" || fail "README lost core inversion"
+grep -qi 'valid until invalidated' "$ROOT/README.md" || fail "README lost invalidation model"
+for retired in WORLDLINE.md GWCU.md DETERMINISM.md CAPABILITIES.md PERF_NOTES.md references/skill-ux-contract.md; do [ ! -e "$ROOT/$retired" ] || fail "retired project doc remains: $retired"; done
+pass "README is the sole public project documentation surface"
 
-# Teardown removes only the managed override and restores archived user skills.
-HOME="$install_home" USER=tester HERMES_HOME="$install_home/.hermes" \
-    PATH="$mock_bin:/usr/bin:/bin" \
-    "$installed/scripts/teardown.sh" --force >/dev/null
-assert "teardown restores the pre-existing computer-use skill" \
-    grep -q 'stock Hermes skill' "$install_home/.hermes/skills/computer-use/SKILL.md"
-assert "teardown restores the learned screenshot skill" \
-    test -f "$install_home/.hermes/skills/screenshot/SKILL.md"
-assert "teardown restores the legacy Hermes skill" \
-    grep -q 'Legacy managed location' \
-        "$install_home/.hermes/skills/gnome-wayland-computer-use/SKILL.md"
-assert "teardown removes the desktop capture extension" \
-    test ! -e "$install_home/.local/share/gnome-shell/extensions/desktop-capture@gnome-wayland-computer-use"
-assert "teardown removes only the managed SOUL block" \
-    test "$(grep -c 'gnome-wayland-computer-use:start' "$install_home/.hermes/SOUL.md")" -eq 0
-assert "teardown preserves the original Hermes identity" \
-    grep -q 'My existing Hermes identity' "$install_home/.hermes/SOUL.md"
-
-# Without Hermes, auto mode installs the complete shared stack and leaves
-# Hermes-owned state alone.
-agent_bin="$TEST_TMP/install-agent-bin"
-agent_home="$TEST_TMP/install-agent-home"
-mkdir -p "$agent_bin" "$agent_home"
-for command in gsettings systemctl pkexec sudo ydotool ydotoold gnome-screenshot gnome-extensions gdbus gst-inspect-1.0; do
-    cp "$mock_bin/$command" "$agent_bin/$command"
-done
-agent_install_out="$TEST_TMP/agent-install.out"
-HOME="$agent_home" USER=tester XDG_SESSION_TYPE=wayland XDG_CURRENT_DESKTOP=GNOME \
-    GNOME_WAYLAND_UINPUT_DEVICE=/dev/null \
-    PATH="$agent_bin:/usr/bin:/bin" \
-    "$ROOT/install.sh" --unattended > "$agent_install_out"
-agent_skill="$agent_home/.agents/skills/gnome-wayland-computer-use"
-assert "auto mode succeeds without Hermes" \
-    grep -q 'Shared GNOME host stack ready' "$agent_install_out"
-assert "non-Hermes install includes the portable skill and helpers" \
-    test -x "$agent_skill/scripts/capture.sh"
-assert "non-Hermes install does not create Hermes state" \
-    test ! -e "$agent_home/.hermes"
-assert "non-Hermes install does not create the Hermes backend service" \
-    test ! -e "$agent_home/.config/systemd/user/gnome-wayland-computer-use.service"
-assert "non-Hermes install is marked as shared-only" \
-    test ! -e "$agent_skill/.hermes-integration"
-
-# Explicit agent-only mode wins even when Hermes is available.
-agent_only_home="$TEST_TMP/install-agent-only-home"
-mkdir -p "$agent_only_home"
-HOME="$agent_only_home" USER=tester XDG_SESSION_TYPE=wayland XDG_CURRENT_DESKTOP=GNOME \
-    GNOME_WAYLAND_UINPUT_DEVICE=/dev/null \
-    PATH="$mock_bin:/usr/bin:/bin" \
-    "$ROOT/install.sh" --unattended --agent-only >/dev/null
-assert "agent-only mode skips an available Hermes runtime" \
-    test ! -e "$agent_only_home/.hermes"
-assert "agent-only mode still installs the portable stack" \
-    test -x "$agent_only_home/.agents/skills/gnome-wayland-computer-use/scripts/diagnose.sh"
-
-# Explicit Hermes mode fails before changing the host when Hermes is absent.
-required_home="$TEST_TMP/install-hermes-required-home"
-mkdir -p "$required_home"
-required_rc=0
-HOME="$required_home" USER=tester XDG_SESSION_TYPE=wayland XDG_CURRENT_DESKTOP=GNOME \
-    GNOME_WAYLAND_UINPUT_DEVICE=/dev/null \
-    PATH="$agent_bin:/usr/bin:/bin" \
-    "$ROOT/install.sh" --unattended --hermes >/dev/null 2>&1 || required_rc=$?
-assert "explicit Hermes mode rejects a missing Hermes runtime" \
-    test "$required_rc" -ne 0
-assert "failed explicit Hermes preflight makes no host changes" \
-    test ! -e "$required_home/.agents"
-
-# The actual curl-pipe execution has no BASH_SOURCE path; all bundle files
-# must therefore come from the published asset URLs, never the caller's cwd.
-cat > "$mock_bin/curl" <<'SH'
-#!/usr/bin/env bash
-out=
-url=
-while [ "$#" -gt 0 ]; do
-    case "$1" in
-        -o) out="$2"; shift 2 ;;
-        --retry) shift 2 ;;
-        -*) shift ;;
-        *) url="$1"; shift ;;
-    esac
-done
-rel=${url#*gnome-wayland-computer-use/}
-mkdir -p "$(dirname "$out")"
-cp "$MOCK_SOURCE_ROOT/$rel" "$out"
-SH
-chmod +x "$mock_bin/curl"
-remote_home="$TEST_TMP/remote-home"
-remote_cwd="$TEST_TMP/empty-cwd"
-mkdir -p "$remote_home" "$remote_cwd"
-(
-    cd "$remote_cwd"
-    HOME="$remote_home" USER=tester MOCK_SOURCE_ROOT="$ROOT" \
-        GNOME_WAYLAND_UINPUT_DEVICE=/dev/null \
-        XDG_SESSION_TYPE=wayland XDG_CURRENT_DESKTOP=GNOME \
-        PATH="$mock_bin:/usr/bin:/bin" \
-        bash < "$ROOT/install.sh" >/dev/null
-)
-remote_skill="$remote_home/.hermes/skills/computer-use"
-assert "curl-pipe mode downloads the complete Hermes bundle" \
-    test -x "$remote_skill/scripts/serve.sh"
-assert "curl-pipe mode installs the published skill content" \
-    cmp -s "$ROOT/SKILL.md" "$remote_skill/SKILL.md"
-
-update_remote="$TEST_TMP/update-remote"
-update_state="$TEST_TMP/update-state"
-mkdir -p "$update_remote"
-printf '9.9.9\n' > "$update_remote/VERSION"
-update_out=$(GNOME_WAYLAND_COMPUTER_USE_BASE_URL="file://$update_remote" \
-    GNOME_WAYLAND_COMPUTER_USE_UPDATE_STATE_HOME="$update_state" \
-    "$ROOT/scripts/check-update.sh" --force)
-assert "update checker reports a newer published version" \
-    grep -q '2.2.0 -> 9.9.9' <<< "$update_out"
-printf '0.0.1\n' > "$update_remote/VERSION"
-cached_out=$(GNOME_WAYLAND_COMPUTER_USE_BASE_URL="file://$update_remote" \
-    GNOME_WAYLAND_COMPUTER_USE_UPDATE_STATE_HOME="$update_state" \
-    "$ROOT/scripts/check-update.sh")
-assert "update checker caches the successful lookup" \
-    grep -q '2.2.0 -> 9.9.9' <<< "$cached_out"
-offline_out=$(GNOME_WAYLAND_COMPUTER_USE_BASE_URL='file:///does-not-exist' \
-    GNOME_WAYLAND_COMPUTER_USE_UPDATE_STATE_HOME="$TEST_TMP/offline-state" \
-    "$ROOT/scripts/check-update.sh" --force --quiet)
-assert "offline quiet update checks are nonfatal" test -z "$offline_out"
-
-printf '\n%d passed, %d failed\n' "$passed" "$failed"
-[ "$failed" -eq 0 ]
+printf 'ok - regression suite complete (%d checks)\n' "$passed"

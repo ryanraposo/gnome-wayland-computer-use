@@ -1,90 +1,146 @@
 #!/usr/bin/env bash
-# diagnose.sh — full-stack diagnostic for gnome-wayland-computer-use
+# diagnose.sh — one compact verdict: presentation + observation + WORLDLINE + Cua health.
 set -euo pipefail
-
-SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-# shellcheck disable=SC1091  # Resolved from the installed bundle at runtime.
-. "$SCRIPT_DIR/lib/checks.sh"
-
-JSON=false
-FAILED=0
+MACHINE=false
 for arg in "$@"; do
-    [ "$arg" = "--json" ] && JSON=true
+    case "$arg" in
+        --machine|--json) MACHINE=true ;;
+        --help|-h) echo "usage: $0 [--machine|--json]"; exit 0 ;;
+        *) echo "unknown option: $arg" >&2; exit 2 ;;
+    esac
 done
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+PYTHON="${GWCU_SYSTEM_PYTHON:-${GNOME_WAYLAND_SYSTEM_PYTHON:-/usr/bin/python3}}"
+[ -x "$PYTHON" ] || PYTHON="$(command -v python3 2>/dev/null || true)"
+[ -n "$PYTHON" ] || { echo "python3 is required" >&2; exit 30; }
+HEALTH="$ROOT/scripts/cua-health.py"
+WORLDLINE="$ROOT/scripts/worldline.py"
+PRESENTER="$ROOT/scripts/present-window.py"
 
-json_escape() {
-    local value="$1"
-    value=${value//\\/\\\\}
-    value=${value//\"/\\\"}
-    value=${value//$'\n'/\\n}
-    value=${value//$'\r'/\\r}
-    value=${value//$'\t'/\\t}
-    printf '%s' "$value"
+set +e
+OUTPUT=$(
+"$PYTHON" - "$HEALTH" "$WORLDLINE" "$PRESENTER" <<'PY'
+import json, os, pathlib, shutil, subprocess, sys
+health_script,worldline_script,presenter_script=sys.argv[1:4]
+
+def run(argv, timeout=8):
+    try:
+        p=subprocess.run(argv,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,timeout=timeout)
+        return p.returncode,p.stdout.strip(),p.stderr.strip()
+    except (OSError,subprocess.TimeoutExpired) as e:
+        return 127,"",str(e)
+
+def portal(name):
+    if not shutil.which("gdbus"): return False
+    rc,out,_=run(["gdbus","introspect","--session","--dest","org.freedesktop.portal.Desktop","--object-path","/org/freedesktop/portal/desktop"],4)
+    return rc==0 and f"interface org.freedesktop.portal.{name}" in out
+
+def active_unit(name):
+    if not shutil.which("systemctl"): return False
+    return run(["systemctl","--user","is-active","--quiet",name],3)[0]==0
+
+def extension_active(uuid):
+    if not shutil.which("gnome-extensions"): return False
+    rc,out,_=run(["gnome-extensions","info",uuid],3)
+    return rc==0 and "State:" in out and "ACTIVE" in out
+
+session=os.environ.get("XDG_SESSION_TYPE") or "unknown"
+desktop=os.environ.get("XDG_CURRENT_DESKTOP") or "unknown"
+host_ok=session=="wayland" and "GNOME" in desktop
+pw=run(["pw-cli","info","0"],3)[0]==0 if shutil.which("pw-cli") else False
+wp=active_unit("wireplumber.service")
+gst_pipewire=run(["gst-inspect-1.0","pipewiresrc"],3)[0]==0 if shutil.which("gst-inspect-1.0") else False
+gst_png=run(["gst-inspect-1.0","pngenc"],3)[0]==0 if shutil.which("gst-inspect-1.0") else False
+screen=portal("ScreenCast"); screenshot=portal("Screenshot")
+observer=active_unit("gnome-wayland-computer-use-observer.socket")
+observation_ok=all((pw,wp,gst_pipewire,gst_png,screen,observer))
+
+worldline_socket=active_unit("gnome-wayland-computer-use-worldline.socket")
+worldline_rc,worldline_out,worldline_err=run([sys.executable,worldline_script,"request","--json",'{"op":"status"}'],5)
+try: worldline=json.loads(worldline_out) if worldline_out else None
+except Exception: worldline={"ok":False,"code":"invalid_output","detail":worldline_out[:1024]}
+worldline_ok=worldline_socket and worldline_rc==0 and isinstance(worldline,dict) and bool(worldline.get("ok"))
+
+winrects_dir=pathlib.Path(os.environ.get("XDG_DATA_HOME",str(pathlib.Path.home()/".local/share")))/"gnome-shell/extensions/winrects@cua"
+winrects_installed=winrects_dir.is_dir(); winrects_active=extension_active("winrects@cua")
+presentation_rc,presentation_out,presentation_err=run([sys.executable,presenter_script,"status"],5) if winrects_active else (30,"","")
+try: presentation=json.loads(presentation_out) if presentation_out else None
+except Exception: presentation={"ok":False,"code":"invalid_output","detail":presentation_out[:1024]}
+presentation_ok=winrects_active and presentation_rc==0 and isinstance(presentation,dict) and bool(presentation.get("ok"))
+
+cua=shutil.which("cua-driver")
+if not cua:
+    candidate=pathlib.Path.home()/".local/bin/cua-driver"
+    if candidate.is_file() and os.access(candidate,os.X_OK): cua=str(candidate)
+health=None; health_rc=50; doctor=None; doctor_rc=127
+if cua:
+    health_rc,out,_=run([sys.executable,health_script,"--driver",cua],20)
+    if out:
+        try: health=json.loads(out)
+        except Exception: health={"schema":"gwcu.cua-health.v1","ok":False,"code":"invalid_output","detail":out[:4096]}
+    doctor_rc,out,_=run([cua,"doctor","--json"],15)
+    if out:
+        try: doctor=json.loads(out)
+        except Exception: doctor={"raw":out[:4096]}
+
+health_code=(health or {}).get("code","unavailable")
+if winrects_installed and not winrects_active and host_ok:
+    cua_status="reload_required"
+elif health_rc==0 and winrects_active:
+    cua_status="ready"
+elif health_code=="failed":
+    cua_status="failed"
+else:
+    cua_status="degraded"
+
+ready=host_ok and observation_ok and worldline_ok and presentation_ok and cua_status=="ready"
+if ready:
+    code="ready"; nxt=None
+elif cua_status=="reload_required" and observation_ok and worldline_ok:
+    code="reload_required"; nxt={"action":"logout_login","reason":"activate_cua_gnome_helper"}
+elif not host_ok:
+    code="wrong_session"; nxt={"action":"start_gnome_wayland_session"}
+elif not presentation_ok and winrects_active:
+    code="presentation_degraded"; nxt={"action":"inspect_cua_gnome_helper"}
+elif not worldline_ok:
+    code="worldline_degraded"; nxt={"action":"restart_worldline"}
+elif not observation_ok:
+    code="observation_degraded"; nxt={"action":"rerun_installer","scope":"observation"}
+else:
+    code="cua_degraded"; nxt={"action":"inspect_cua_health"}
+
+payload={
+    "schema":"gwcu.diagnose.v3","ok":ready,"code":code,
+    "host":{"session":session,"desktop":desktop,"ok":host_ok},
+    "presentation":{"status":"ready" if presentation_ok else ("reload_required" if winrects_installed and not winrects_active else "degraded"),"exact_target_required":True,"winrects_installed":winrects_installed,"winrects_active":winrects_active,"response":presentation,"stderr":presentation_err[:1024] if presentation_err else None},
+    "observation":{"status":"ready" if observation_ok else "degraded","pipewire":pw,"wireplumber":wp,"screencast_portal":screen,"screenshot_portal":screenshot,"gstreamer_pipewire":gst_pipewire,"gstreamer_png":gst_png,"observer_socket":observer},
+    "worldline":{"status":"ready" if worldline_ok else "degraded","socket":worldline_socket,"response":worldline,"stderr":worldline_err[:1024] if worldline_err else None},
+    "cua":{"status":cua_status,"binary":cua,"health":health,"doctor_exit":doctor_rc,"doctor":doctor,"winrects_installed":winrects_installed,"winrects_active":winrects_active},
+    "next":nxt,
 }
+print(json.dumps(payload,separators=(",",":")))
+raise SystemExit(0 if ready else 30)
+PY
+)
+RC=$?
+set -e
 
-check_and_report() {
-    local name="$1" detail="${2:-}"; shift 2
-    local rc=0
-    if $JSON; then
-        "$@" > /dev/null 2>&1 || rc=$?
-        printf '{"check":"%s","pass":%s,"detail":"%s"}\n' \
-            "$(json_escape "$name")" \
-            "$([ "$rc" -eq 0 ] && echo true || echo false)" \
-            "$(json_escape "$detail")"
-    else
-        "$@" || rc=$?
-    fi
-    if [ "$rc" -ne 0 ]; then
-        ((FAILED++)) || true
-    fi
-    return 0
-}
-
-if ! $JSON; then
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "  gnome-wayland-computer-use diagnose"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo ""
+if $MACHINE; then
+    printf '%s\n' "$OUTPUT"
+else
+    "$PYTHON" - "$OUTPUT" <<'PY'
+import json,sys
+d=json.loads(sys.argv[1])
+print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+print("  gnome-wayland-computer-use")
+print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+print(f"  Session:       {'READY' if d['host']['ok'] else 'DEGRADED'}  ({d['host']['session']} / {d['host']['desktop']})")
+print(f"  Presentation:  {d['presentation']['status'].upper()}")
+print(f"  Observation:   {d['observation']['status'].upper()}")
+print(f"  WORLDLINE:     {d['worldline']['status'].upper()}")
+print(f"  Cua control:   {d['cua']['status'].upper()}")
+if d.get('next'): print(f"  Next:          {d['next']['action']}")
+print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+PY
 fi
-
-# ── 1. Display server ──────────────────────────────────────────────────
-$JSON || { check_hr; echo "── 1. Display server"; }
-check_and_report session "$(check_get_session)" check_session
-check_and_report desktop "$(check_get_desktop)" check_desktop
-check_and_report gnome_shell "" check_gnome_shell
-check_and_report xwayland "" check_xwayland
-
-# ── 2. Accessibility ───────────────────────────────────────────────────
-$JSON || { echo ""; check_hr; echo "── 2. Accessibility"; }
-check_and_report toolkit_accessibility "" check_toolkit_accessibility
-check_and_report atspi_bus "" check_atspi_bus
-check_and_report atspi_socket "" check_atspi_socket
-
-# ── 3. Skill ───────────────────────────────────────────────────────────
-$JSON || { echo ""; check_hr; echo "── 3. Skill"; }
-HERMES_DETAIL=not_selected
-if check_is_hermes_integration_enabled; then
-    HERMES_DETAIL=selected
-fi
-check_and_report skill "" check_skill
-check_and_report hermes_skill "$HERMES_DETAIL" check_hermes_skill
-check_and_report desktop_capture_extension "" check_desktop_capture_extension
-check_and_report cua_driver "$HERMES_DETAIL" check_cua_driver
-
-# ── 4. Input Permissions ───────────────────────────────────────────────
-$JSON || { echo ""; check_hr; echo "── 4. Input"; }
-check_and_report uinput "" check_uinput
-check_and_report input_group "" check_input_group
-check_and_report ydotoold "" check_ydotoold
-
-# ── Summary ────────────────────────────────────────────────────────────
-if ! $JSON; then
-    check_print_summary
-    echo ""
-fi
-if $JSON; then
-    printf '{"check":"summary","pass":%s,"detail":"%d/%d"}\n' \
-        "$([ "$FAILED" -eq 0 ] && echo true || echo false)" "$CK_SCORE" "$CK_TOTAL"
-fi
-
-[ "$FAILED" -eq 0 ]
+exit "$RC"
