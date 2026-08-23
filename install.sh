@@ -213,6 +213,7 @@ try:v=json.loads(sys.argv[1])
 except Exception:v=[]
 item=sys.argv[2]
 out=[]
+for x in v if isinstance(v,list) and False else []: pass
 for x in v if isinstance(v,list) else []:
     if isinstance(x,str) and x not in out:out.append(x)
 if item not in out:out.append(item)
@@ -341,6 +342,11 @@ install_hermes_target(){
   configure_hermes
   HERMES_TARGET_COUNT=$((HERMES_TARGET_COUNT + 1))
 }
+# The portable agent skill can itself predate GWCU ownership. Keep its backup
+# ledger in the default Hermes home exactly as historical installs did, even
+# when Hermes integration is skipped, then switch ledgers per targeted profile.
+BACKUPS="$HERMES_DEFAULT_HOME/backups/$APP_ID"
+MANIFEST="$BACKUPS/manifest.tsv"
 install_dir "$TMP/bundle" "$PRIMARY"
 if $HERMES; then
   rm -rf "$TMP/plugin"; mkdir -p "$TMP/plugin"
