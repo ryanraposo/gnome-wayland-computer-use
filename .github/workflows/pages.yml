@@ -17,13 +17,29 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Shell syntax check
-        run: bash -n install.sh lib/*.sh scripts/*.sh tests/*.sh
+        run: bash -n install.sh uninstall.sh scripts/*.sh tests/*.sh
+      - name: Python syntax check
+        run: python3 -m py_compile scripts/*.py runtimes/hermes/__init__.py
       - name: Skill UX contract
         run: bash ./tests/skill-ux.sh
       - name: End-to-end latency and routing guards
         run: bash ./tests/latency-routing.sh
+      - name: Truth scope isolation
+        run: bash ./tests/truth-scope.sh
+      - name: One-call action spans
+        run: bash ./tests/action-span.sh
+      - name: WORLDLINE revision runtime
+        run: bash ./tests/worldline.sh
+      - name: Published-main migration
+        run: bash ./tests/main-migration.sh
+      - name: Lifecycle and security seams
+        run: bash ./tests/lifecycle-safety.sh
+      - name: Determinism contract
+        run: bash ./tests/determinism.sh
+      - name: Hermes policy integration
+        run: bash ./tests/hermes.sh
       - name: Regression suite
         run: ./tests/run.sh
   deploy:
@@ -39,7 +55,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
