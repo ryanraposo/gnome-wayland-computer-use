@@ -1,6 +1,6 @@
 ---
 name: computer-use
-description: Use for Ubuntu GNOME desktop control via Cua Driver.
+description: Use for reliable Ubuntu GNOME desktop control with Cua.
 version: 2.3.0
 author: Ryan Raposo
 license: MIT
@@ -15,7 +15,7 @@ metadata:
 
 # Computer Use on Ubuntu GNOME
 
-Use **Cua Driver as the only control authority** for the user's actual desktop. WORLDLINE owns transient revisioned truth and postconditions. `.gwcu` owns durable local facts.
+Use **Cua Driver for desktop actuation**. WORLDLINE tracks transient revisioned truth and postconditions. `.gwcu` stores durable local facts.
 
 > **Resolve exactly. Present exactly. Cua acts. Verify reality.**
 
@@ -43,20 +43,21 @@ For a reserved form, your first tool call MUST execute the installed operator su
 
 Everything else is a task. `/computer-use open YouTube and play something` means do the task; `open` is not a subcommand.
 
-## Tool/domain boundary
+## Choosing the path
 
-GWCU owns **physical computer use**, not every task that happens to involve a browser or shell.
+Route by the state the task depends on. Use the most direct capable surface, and switch surfaces when the target changes.
 
-- If the web is merely an information source — research, retrieval, reading, search, API/web navigation with no dependency on the user's visible browser session — browser/web tools remain free to do that work.
-- If the task depends on the user's actual browser session, login, tabs, browser chrome, placement, or visible browser experience, that browser is part of the desktop and Cua owns its actuation.
-- Ordinary command-line/shell work belongs to the terminal tool. Use Cua to operate a terminal window only when the user actually wants the terminal manipulated as a visible desktop surface, or the terminal UI itself is the target.
-- Terminal availability may unlock GWCU's local operator/helper scripts, but it is not part of the skill's domain and is not required for the skill to be relevant.
+- Desktop/native-app state or a result the user must actually see → Cua.
+- The user's browser session, login, tabs, browser chrome, placement, or visible page state → Cua browser/native routes.
+- Research, reading, retrieval, search, or web navigation independent of the user's browser session → browser/web tooling.
+- Shell or CLI state → terminal tool.
+- A terminal window that must itself be operated as visible desktop UI → Cua.
 
-A mixed task can cross these boundaries. Using web tooling to research something does not prevent later Cua desktop work, and loading this skill does not claim unrelated web or shell work.
+A mixed task may research through web tooling, use terminal for CLI work, then use Cua when it reaches the desktop.
 
-## One actuator, including the user's browser
+## Browser computer use
 
-While this skill is active, **when the task is operating the user's actual browser, do not route browser work through Hermes' separate `browser_*` toolset**. Browser actuation remains Cua work. This restriction does not apply when the web is merely an information source as defined above.
+When a task targets a specific browser window or session, keep that session's UI mutations on Cua so native window identity, tab/page state, visibility, and completion evidence stay coherent. Do not split the same browser session across Cua and a separate browser-automation actuator mid-task.
 
 ```text
 Chromium/Electron exact route available
@@ -76,6 +77,8 @@ The typed route is admitted by proof:
 6. Every mutation invalidates refs. Snapshot again before the next ref-based action and at completion.
 
 Never actuate from a title-only match. Firefox has no typed page-mutation route. An unselected tab may still be fully addressable. Typed page success does not prove the browser window or tab is visibly presented. A hidden/headless/managed browser success is a failure when the requested result is meant to be visible.
+
+For web work that does not depend on the user's browser session, use the available browser/web tooling directly.
 
 ## GNOME portal contract
 
@@ -109,7 +112,7 @@ model decides
 - A requested visible result always finishes with exact visible presentation, even when intermediate work is background.
 - Cua runtime truth remains authoritative.
 
-The standing preference applies to otherwise-unspecified Cua native input and GWCU action spans. It is a default, not an interpretation of every task.
+The standing preference applies to otherwise-unspecified Cua native input and GWCU action spans. It is a default, not a task classifier.
 
 There is deliberately **no floating confidence threshold**. Missing foreground words do not imply background intent. Legacy `foreground_confidence` remains parse-compatible and non-authoritative.
 
@@ -187,19 +190,19 @@ Do not use generic compositor guessing or title-only focus as a substitute.
 ## Execution ladder
 
 ```text
-durable known fact            → .gwcu / current context
-current transient fact        → WORLDLINE
-web used only as information  → browser/web tooling
-ordinary shell/CLI work       → terminal tool
-stable recurring mechanics    → repository script (when terminal is available)
-one-off mechanical fan-out    → execute_code
-predetermined GUI sequence    → one Cua action span
-user's browser page work      → exact-bound Cua browser route
-user's browser/native fallback→ Cua native AX/PX route
-explicit visual uncertainty   → WORLDLINE visual / observe.sh
-independent reasoning         → delegate_task
-real user choice              → clarify
-unresolved desktop conflict   → parent Cua/model loop
+durable known fact             → .gwcu / current context
+current transient fact         → WORLDLINE
+web content/research           → browser/web tooling
+shell/CLI state                → terminal tool
+stable recurring mechanics     → repository script (when terminal is available)
+one-off mechanical fan-out     → execute_code
+predetermined GUI sequence     → one Cua action span
+user browser session/page      → exact-bound Cua browser route
+user browser native fallback   → Cua native AX/PX route
+explicit visual uncertainty    → WORLDLINE visual / observe.sh
+independent reasoning          → delegate_task
+real user choice               → clarify
+unresolved desktop conflict    → parent Cua/model loop
 ```
 
 ## Known target
@@ -235,13 +238,13 @@ Prefer direct truth: AT-SPI, filesystem, process, D-Bus, settings, network and t
 
 ## Unknown or browser-backed target
 
-When the local helper surface is available:
+For an installed app, PWA, or user browser session, use the local route helper when available:
 
 ```bash
 "$ROOT/scripts/profile.sh" route --machine "<target name>"
 ```
 
-That one route performs the repo/workspace .gwcu lookup before deterministic identity discovery. `.gwcu` accelerates stable identity; live Cua/WORLDLINE truth wins on contradiction. Route discovery does not claim web-only research; use browser/web tooling freely when the web is merely an information source.
+That route checks repo/workspace `.gwcu` before deterministic identity discovery. `.gwcu` accelerates stable identity; live Cua/WORLDLINE truth wins on contradiction.
 
 ## Host contradiction
 
@@ -270,7 +273,9 @@ Persistent machine/workspace truth belongs in one `.gwcu`, **never in `AGENTS.md
 
 ## Failure and refusal policy
 
-**Never answer a Cua refusal with raw pointer/keyboard injection. Never switch silently to Hermes' separate browser toolset while actuating the user's browser. Never guess focus.**
+**Never answer a Cua refusal with raw pointer/keyboard injection. Never guess focus.**
+
+When operating a specific user browser session, keep its mutations on Cua; switching actuator planes invalidates the target and evidence assumptions already established for that session.
 
 A foreground presentation failure is an actuation boundary: do not send the input. Re-resolve exact identity or report the failure. A background→foreground retry is legal only after Cua explicitly says background delivery is unavailable and the exact presentation gate succeeds.
 
