@@ -13,10 +13,12 @@ b=$(skill_description "$ROOT/runtimes/openai/SKILL.md")
 [ -n "$a" ] && [ "${#a}" -lt 60 ] || fail "Hermes description is compact"
 [ "$a" = "$b" ] || fail "runtime descriptions differ"
 cmp -s "$ROOT/SKILL.md" "$ROOT/runtimes/openai/SKILL.md" || fail "runtime skill payloads drifted"
-pass "runtime skills are identical and compact"
+grep -Fq 'requires_toolsets: [computer_use]' "$ROOT/SKILL.md" || fail "computer-use is not the sole required toolset"
+! grep -Fq 'requires_toolsets: [computer_use, terminal]' "$ROOT/SKILL.md" || fail "terminal still gates skill discovery"
+pass "runtime skills are identical, compact and computer-use scoped"
 
 for heading in \
-    'Invocation contract' 'One actuator, including the browser' 'Core rule' 'Control priority' 'Visible-result contract' \
+    'Invocation contract' 'Tool/domain boundary' "One actuator, including the user's browser" 'Core rule' 'Control priority' 'Visible-result contract' \
     'Call budget' 'Execution ladder' 'Known target' 'WORLDLINE postconditions' 'Whole screen' \
     '`.gwcu`: durable truth, not runtime state' 'Failure and refusal policy' 'Completion proof'
 do
@@ -81,12 +83,17 @@ grep -q 'computer-use.sh" span --actions-json' "$ROOT/SKILL.md" || fail "span su
 grep -q 'worldline-capture.sh' "$ROOT/SKILL.md" || fail "WORLDLINE surface missing"
 grep -q 'Never answer a Cua refusal with raw pointer/keyboard injection' "$ROOT/SKILL.md" || fail "refusal boundary missing"
 grep -q 'No X11 or XWayland session is required' "$ROOT/SKILL.md" || fail "GNOME Wayland contract missing"
-grep -q 'toggles the standing delivery preference' "$ROOT/SKILL.md" || fail "background command contract missing"
+grep -q 'standing delivery preference' "$ROOT/SKILL.md" || fail "background command contract missing"
 grep -q 'documentation lives in `README.md`' "$ROOT/SKILL.md" || fail "skill points at retired docs"
 pass "skill teaches one Cua + WORLDLINE execution contract"
 
-# Invisible-control regression constitution.
-grep -Fq "do not route browser work through Hermes' separate \`browser_*\` toolset" "$ROOT/SKILL.md" || fail "browser actuator split can recur"
+# Tool-domain constitution: Cua owns actual desktop/browser actuation, while
+# information-only web work and ordinary shell work remain free to use their
+# purpose-built tool surfaces.
+grep -Fq "do not route browser work through Hermes' separate \`browser_*\` toolset" "$ROOT/SKILL.md" || fail "user-browser actuator split can recur"
+grep -Fq 'web is merely an information source' "$ROOT/SKILL.md" || fail "web-information boundary is missing"
+grep -Fq 'Ordinary command-line/shell work belongs to the terminal tool' "$ROOT/SKILL.md" || fail "terminal domain boundary is missing"
+grep -Fq 'loading this skill does not claim unrelated web or shell work' "$ROOT/SKILL.md" || fail "mixed-task boundary is missing"
 grep -Fq 'cua_browser_state / cua_browser_* actions' "$ROOT/SKILL.md" || fail "Cua browser route is not explicit"
 grep -Fq 'binding_quality:"exact"' "$ROOT/SKILL.md" || fail "typed browser route no longer requires exact native binding"
 grep -Fq 'mutation_allowed:true' "$ROOT/SKILL.md" || fail "typed browser mutation admission is incomplete"
@@ -100,7 +107,7 @@ grep -Fq 'exact_pid_window -> cua_gnome_present -> focused_visible_proof -> cua_
 grep -Fq 'exact_target_required_for_foreground' "$ROOT/scripts/action-span.py" || fail "targetless foreground can recur"
 grep -Fq 'presentation_not_proved' "$ROOT/scripts/action-span.py" || fail "presentation failure can leak into input"
 grep -Fq 'tools.override' "$ROOT/runtimes/hermes/plugin.yaml" || fail "Hermes policy override is not declared"
-pass "browser and exact foreground presentation are constitutionally covered"
+pass "browser, terminal and exact foreground boundaries are constitutionally covered"
 
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 SURFACE="$ROOT/scripts/computer-use.sh"
@@ -114,8 +121,11 @@ XDG_STATE_HOME="$TMP/state" "$SURFACE" background >"$TMP/on"
 grep -q 'Background computer use: ON' "$TMP/on" || fail "bare background command did not toggle on"
 XDG_STATE_HOME="$TMP/state" "$SURFACE" background >"$TMP/off"
 grep -q 'Background computer use: OFF' "$TMP/off" || fail "bare background command did not toggle off"
-grep -q 'Default visible takeover is faster and deterministic' "$ROOT/install.sh" || fail "installer background choice missing"
-pass "default control path is visible, pre-traced and deterministic"
+grep -q 'Default visible takeover is faster and deterministic' "$ROOT/install.sh" || fail "installer control explanation missing"
+grep -Fq 'Use exact visible takeover as your default? [Y/n]' "$ROOT/install.sh" || fail "installer does not ask the informed foreground-default choice"
+grep -Fq '/computer-use background on|off|status' "$ROOT/install.sh" || fail "installer does not teach later preference switching"
+grep -Fq 'The preference spreads to otherwise-unspecified native `computer_use` input' "$ROOT/README.md" || fail "README does not explain preference spread"
+pass "default control path is visible, informed, switchable and deterministic"
 
 # Machine-bound operator surfaces must be hermetic in CI.
 mkdir -p "$TMP/bin"
