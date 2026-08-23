@@ -4,8 +4,9 @@ set -euo pipefail
 
 NAME=gnome-wayland-computer-use
 STATE="${XDG_STATE_HOME:-$HOME/.local/state}/$NAME"
-HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
-DEFAULT_CUA_VERSION="0.19.3"
+HERMES_DEFAULT_HOME="${HERMES_HOME:-$HOME/.hermes}"
+HERMES_PROFILE_ROOT="${GWCU_HERMES_ROOT:-$HOME/.hermes}"
+DEFAULT_CUA_VERSION="0.20.0"
 LOGIN_USER="${USER:-$(id -un)}"
 FORCE=false
 REMOVE_CUA=false
@@ -20,7 +21,10 @@ Usage: teardown.sh [--force] [--remove-cua] [--purge-cua]
   --purge-cua   remove/purge Cua even if it predated GWCU
 
 WORLDLINE/observer services and transient runtime state are removed.
-Repo/workspace .gwcu files are preserved.
+GWCU-managed Hermes skill/plugin integration is removed from the default Hermes
+home and every existing profile. Archived pre-GWCU `computer-use` skills/plugins
+are restored when their destination is free. The built-in `computer_use` tool is
+untouched. Repo/workspace .gwcu files are preserved.
 HELP
 }
 
@@ -72,9 +76,9 @@ import json,sys
 try:
     c=json.load(open(sys.argv[1])).get("upstream",{}).get("cua_driver",{})
     print("true" if c.get("provisioned") else "false")
-    print(c.get("version") or "0.19.3")
+    print(c.get("version") or "0.20.0")
 except Exception:
-    print("false"); print("0.19.3")
+    print("false"); print("0.20.0")
 PY
 )
     CUA_PROVISIONED="${values[0]:-false}"
@@ -150,47 +154,33 @@ if [ -f "$STATE/video-group-added" ]; then
     rm -f "$STATE/video-group-added"
 fi
 
-# Remove every GWCU-owned Hermes plugin copy. A stale duplicate (same
-# plugin.yaml name, different directory) would otherwise keep /computer-use
-# registered after teardown.
 plugin_name_of(){ awk -F': *' '/^name:[[:space:]]*/{gsub(/^[[:space:]]+|[[:space:]]+$|["'\'']/,"",$2); print $2; exit}' "$1"; }
-for yaml in "$HERMES_HOME/plugins"/*/plugin.yaml; do
-    [ -f "$yaml" ] || continue
-    name=$(plugin_name_of "$yaml"); [ "$name" = "$NAME" ] || continue
-    dir=$(dirname "$yaml")
-    if [ -f "$dir/.gnome-wayland-computer-use-managed" ]; then
-        command -v hermes >/dev/null 2>&1 && hermes plugins disable "$NAME" >/dev/null 2>&1 || true
-        rm -rf "$dir"; ((removed++)) || true
-    else
-        info "Preserving user-managed Hermes plugin: ${dir/$HOME/\~}"
-    fi
-done
-
-for dir in \
-    "$HOME/.agents/skills/$NAME" \
-    "$HERMES_HOME/skills/computer-use" \
-    "$HERMES_HOME/skills/$NAME"
-do
-    [ -d "$dir" ] || continue
-    if [ ! -f "$dir/.gnome-wayland-computer-use-managed" ]; then
-        info "Preserving user-managed skill: ${dir/$HOME/\~}"
-        continue
-    fi
-    rm -rf "$dir"; ((removed++)) || true
-done
-
-SOUL="$HERMES_HOME/SOUL.md"
-START='<!-- gnome-wayland-computer-use:start -->'
-END='<!-- gnome-wayland-computer-use:end -->'
-if [ -f "$SOUL" ] && grep -Fxq "$START" "$SOUL"; then
-    clean=$(mktemp)
-    awk -v s="$START" -v e="$END" '$0==s{m=1;next}$0==e{m=0;next}!m{print}' "$SOUL" >"$clean"
-    chmod 600 "$clean"; mv "$clean" "$SOUL"; ((removed++)) || true
-fi
-
-BACKUPT="$HERMES_HOME/backups/$NAME"
-MANIFEST="$BACKUPT/manifest.tsv"
-if [ -f "$MANIFEST" ]; then
+hermes_list_without(){
+    local raw=$1 item=$2
+    python3 - "$raw" "$item" <<'PY'
+import json,sys
+try:v=json.loads(sys.argv[1])
+except Exception:v=[]
+item=sys.argv[2]
+print(json.dumps([x for x in v if isinstance(x,str) and x!=item],separators=(",",":")))
+PY
+}
+hermes_clean_config(){
+    local target=$1 raw enabled disabled
+    command -v hermes >/dev/null 2>&1 || return 0
+    command -v python3 >/dev/null 2>&1 || return 0
+    raw=$(HERMES_HOME="$target" NO_COLOR=1 hermes config get plugins.enabled --json 2>/dev/null || printf '[]')
+    enabled=$(hermes_list_without "$raw" "$NAME")
+    raw=$(HERMES_HOME="$target" NO_COLOR=1 hermes config get plugins.disabled --json 2>/dev/null || printf '[]')
+    disabled=$(hermes_list_without "$raw" "$NAME")
+    HERMES_HOME="$target" NO_COLOR=1 hermes config set plugins.enabled "$enabled" --force >/dev/null 2>&1 || true
+    HERMES_HOME="$target" NO_COLOR=1 hermes config set plugins.disabled "$disabled" --force >/dev/null 2>&1 || true
+    HERMES_HOME="$target" NO_COLOR=1 hermes config set "plugins.entries.$NAME.granted_capabilities" '[]' --force >/dev/null 2>&1 || true
+    HERMES_HOME="$target" NO_COLOR=1 hermes config set "plugins.entries.$NAME.allow_tool_override" false --force >/dev/null 2>&1 || true
+}
+restore_hermes_backups(){
+    local target=$1 backupt="$1/backups/$NAME" manifest="$1/backups/$NAME/manifest.tsv" remaining original backup
+    [ -f "$manifest" ] || return 0
     remaining=$(mktemp)
     while IFS=$'\t' read -r original backup; do
         [ -n "$original" ] && [ -e "$backup" ] || continue
@@ -202,9 +192,72 @@ if [ -f "$MANIFEST" ]; then
         else
             printf '%s\t%s\n' "$original" "$backup" >>"$remaining"
         fi
-    done <"$MANIFEST"
-    if [ -s "$remaining" ]; then mv "$remaining" "$MANIFEST"
-    else rm -f "$remaining" "$MANIFEST"
+    done <"$manifest"
+    if [ -s "$remaining" ]; then mv "$remaining" "$manifest"
+    else rm -f "$remaining" "$manifest"; rmdir "$backupt" 2>/dev/null || true
+    fi
+}
+teardown_hermes_home(){
+    local target=$1 yaml name dir skill soul clean managed=false
+    [ -d "$target" ] || return 0
+
+    # Remove every GWCU-owned plugin copy in this Hermes home. Unmanaged copies
+    # are preserved even if they use the same plugin name.
+    for yaml in "$target/plugins"/*/plugin.yaml; do
+        [ -f "$yaml" ] || continue
+        name=$(plugin_name_of "$yaml"); [ "$name" = "$NAME" ] || continue
+        dir=$(dirname "$yaml")
+        if [ -f "$dir/.gnome-wayland-computer-use-managed" ]; then
+            HERMES_HOME="$target" NO_COLOR=1 hermes plugins disable "$NAME" >/dev/null 2>&1 || true
+            rm -rf "$dir"; ((removed++)) || true; managed=true
+        else
+            info "Preserving user-managed Hermes plugin: ${dir/$HOME/\~}"
+        fi
+    done
+
+    for skill in \
+        "$target/skills/computer-use" \
+        "$target/skills/$NAME"
+    do
+        [ -d "$skill" ] || continue
+        if [ ! -f "$skill/.gnome-wayland-computer-use-managed" ]; then
+            info "Preserving user-managed skill: ${skill/$HOME/\~}"
+            continue
+        fi
+        rm -rf "$skill"; ((removed++)) || true; managed=true
+    done
+
+    # Historical GWCU releases could add routing text to SOUL.md. Clean it in
+    # every targeted profile without touching unrelated content.
+    soul="$target/SOUL.md"
+    if [ -f "$soul" ] && grep -Fxq '<!-- gnome-wayland-computer-use:start -->' "$soul"; then
+        clean=$(mktemp)
+        awk -v s='<!-- gnome-wayland-computer-use:start -->' -v e='<!-- gnome-wayland-computer-use:end -->' '$0==s{m=1;next}$0==e{m=0;next}!m{print}' "$soul" >"$clean"
+        chmod 600 "$clean"; mv "$clean" "$soul"; ((removed++)) || true; managed=true
+    fi
+
+    $managed && hermes_clean_config "$target"
+    restore_hermes_backups "$target"
+}
+
+# GWCU's host runtime is shared, so a full teardown removes every managed
+# profile integration that could otherwise point at the removed runtime.
+HERMES_HOMES=("$HERMES_DEFAULT_HOME")
+for dir in "$HERMES_PROFILE_ROOT/profiles"/*; do [ -d "$dir" ] && HERMES_HOMES+=("$dir"); done
+seen='|'
+for dir in "${HERMES_HOMES[@]}"; do
+    case "$seen" in *"|$dir|"*) continue ;; esac
+    seen+="$dir|"
+    teardown_hermes_home "$dir"
+done
+
+# The portable agent skill is shared outside Hermes profiles.
+AGENT_SKILL="$HOME/.agents/skills/$NAME"
+if [ -d "$AGENT_SKILL" ]; then
+    if [ -f "$AGENT_SKILL/.gnome-wayland-computer-use-managed" ]; then
+        rm -rf "$AGENT_SKILL"; ((removed++)) || true
+    else
+        info "Preserving user-managed skill: ${AGENT_SKILL/$HOME/\~}"
     fi
 fi
 
@@ -234,6 +287,8 @@ rmdir "$STATE" 2>/dev/null || true
 
 printf '\n'; ok "Teardown complete ($removed project component(s) removed)"
 info "WORLDLINE and observer runtime state were removed."
+info "GWCU-managed Hermes skill/plugin integration was removed across existing profiles; archived prior components were restored where possible."
+info "Hermes' built-in computer_use tool/toolset was untouched."
 info "Ubuntu PipeWire/portal packages and GNOME portal permission state were preserved."
 info "Repo/workspace .gwcu files and their .gitignore protection were preserved as local workspace content."
 if ! $REMOVE_CUA; then info "Cua Driver and Cua WinRects were preserved."; fi
