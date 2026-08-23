@@ -127,6 +127,7 @@ and move it to Downloads</pre>
     </button>
   </div>
   <div class="note">Run as the logged-in desktop user. GNOME may show a “Remote Desktop” prompt for local EIS/libei control. Whole-screen observation has its own ScreenCast consent boundary.</div>
+  <div class="note">With Hermes, GWCU owns the <code>computer-use</code> skill and its policy plugin wraps Hermes' existing <code>computer_use</code> tool — it does not replace that tool. The default Hermes home is integrated automatically; additional existing profiles are explicit installer choices. Existing skills are archived before replacement and teardown restores them when possible.</div>
 </section>
 
 <section id="diagnose">
@@ -143,7 +144,7 @@ and move it to Downloads</pre>
   <div class="command">
     <code>curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/uninstall.sh | bash</code>
   </div>
-  <div class="note">Teardown removes GWCU-owned integration and transient runtime state while preserving repo/workspace <code>.gwcu</code>. Cua is preserved by default.</div>
+  <div class="note">Teardown removes GWCU-owned integration across existing Hermes profiles and transient runtime state while preserving Hermes' built-in <code>computer_use</code> tool, unmanaged components and repo/workspace <code>.gwcu</code>. Cua is preserved by default.</div>
 </section>
 </main>
 
