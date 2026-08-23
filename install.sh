@@ -27,17 +27,37 @@ get_file(){ local r=$1 d=$2; mkdir -p "$(dirname "$d")"; if [ -n "$SELF" ] && [ 
 portal_has(){ gdbus introspect --session --dest org.freedesktop.portal.Desktop --object-path /org/freedesktop/portal/desktop 2>/dev/null | grep -q "interface org.freedesktop.portal.$1"; }
 resolve_cua(){ command -v cua-driver 2>/dev/null || { [ -x "$HOME/.local/bin/cua-driver" ] && printf '%s\n' "$HOME/.local/bin/cua-driver"; }; }
 
-COMPAT=false; EXPLICIT_UNATTENDED=false; HERMES_MODE=auto
-for arg in "$@"; do case "$arg" in
-  --compat) COMPAT=true;; --unattended) EXPLICIT_UNATTENDED=true;;
-  --hermes) HERMES_MODE=require;; --agent-only) HERMES_MODE=skip;;
-  --help|-h)
-    cat <<'HELP'
+COMPAT=false
+EXPLICIT_UNATTENDED=false
+HERMES_MODE=auto
+HERMES_ALL_PROFILES=false
+HERMES_PROFILE_NAMES=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --compat) COMPAT=true ;;
+    --unattended) EXPLICIT_UNATTENDED=true ;;
+    --hermes) HERMES_MODE=require ;;
+    --agent-only) HERMES_MODE=skip ;;
+    --hermes-all-profiles) HERMES_ALL_PROFILES=true ;;
+    --hermes-profile)
+      [ $# -ge 2 ] || die "--hermes-profile requires a profile name"
+      HERMES_PROFILE_NAMES+=("$2"); shift ;;
+    --hermes-profile=*) HERMES_PROFILE_NAMES+=("${1#*=}") ;;
+    --help|-h)
+      cat <<'HELP'
 Usage: install.sh [--compat] [--unattended] [--hermes|--agent-only]
-  --compat       install files without requiring a live GNOME Wayland session
-  --unattended   accept GWCU defaults without preference prompts
-  --hermes       require Hermes integration
-  --agent-only   skip Hermes integration
+                  [--hermes-profile NAME ...] [--hermes-all-profiles]
+  --compat                install files without requiring a live GNOME Wayland session
+  --unattended            accept GWCU defaults without preference prompts
+  --hermes                require Hermes integration
+  --agent-only            skip Hermes integration
+  --hermes-profile NAME   also integrate one existing Hermes profile; repeatable
+  --hermes-all-profiles   also integrate every existing Hermes profile
+
+Hermes integration replaces the targeted profile's `computer-use` skill with
+GWCU's skill and enables GWCU's policy plugin. It does not replace Hermes'
+built-in `computer_use` tool/toolset; the plugin wraps that tool while enabled.
+Existing non-GWCU `computer-use` skills are archived for teardown restoration.
 
 Environment:
   GWCU_CUA_DRIVER_RS_VERSION=<version>  deliberate Cua pin override
@@ -45,21 +65,58 @@ Environment:
   GWCU_SCOPE_ROOT=<path>                explicit truth scope
   GWCU_BACKGROUND_PRIORITY=on|off       prefer background computer use at runtime
   GWCU_SYSTEM_PYTHON=<absolute path>    Python used by installed runtime checks
+  HERMES_HOME=<path>                    explicit default Hermes home to integrate
   NO_COLOR=1                            disable ANSI installer color
 HELP
-    exit 0;;
-  *) die "unknown option: $arg";; esac; done
+      exit 0 ;;
+    *) die "unknown option: $1" ;;
+  esac
+  shift
+done
+
+if [ "$HERMES_MODE" = skip ] && { $HERMES_ALL_PROFILES || [ ${#HERMES_PROFILE_NAMES[@]} -gt 0 ]; }; then
+  die "Hermes profile options cannot be combined with --agent-only"
+fi
+if $HERMES_ALL_PROFILES || [ ${#HERMES_PROFILE_NAMES[@]} -gt 0 ]; then
+  [ "$HERMES_MODE" = auto ] && HERMES_MODE=require
+fi
 
 [ "$EUID" -ne 0 ] || die "Run as the logged-in desktop user, not sudo"
 [ -x "$PYTHON" ] || die "Configured Python is not executable: $PYTHON"
 LOGIN_USER="${USER:-$(id -un)}"
 HERMES=false; HERMES_BIN=""
 case "$HERMES_MODE" in
-  auto) HERMES_BIN=$(command -v hermes 2>/dev/null || true); [ -n "$HERMES_BIN" ] && HERMES=true || true;;
-  require) HERMES_BIN=$(command -v hermes 2>/dev/null || true); [ -n "$HERMES_BIN" ] || die "Hermes requested but not found"; HERMES=true;;
-  skip) :;;
+  auto) HERMES_BIN=$(command -v hermes 2>/dev/null || true); [ -n "$HERMES_BIN" ] && HERMES=true || true ;;
+  require) HERMES_BIN=$(command -v hermes 2>/dev/null || true); [ -n "$HERMES_BIN" ] || die "Hermes requested but not found"; HERMES=true ;;
+  skip) : ;;
 esac
-HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
+HERMES_DEFAULT_HOME="${HERMES_HOME:-$HOME/.hermes}"
+HERMES_PROFILE_ROOT="${GWCU_HERMES_ROOT:-$HOME/.hermes}"
+HERMES_ACTIVE_HOME="$HERMES_DEFAULT_HOME"
+HERMES_TARGET_HOMES=()
+HERMES_TARGET_COUNT=0
+add_hermes_target(){
+  local target=$1 existing
+  [ -n "$target" ] || return 0
+  for existing in "${HERMES_TARGET_HOMES[@]:-}"; do [ "$existing" = "$target" ] && return 0; done
+  HERMES_TARGET_HOMES+=("$target")
+}
+validate_profile_name(){
+  case "$1" in ''|.|..|*/*) die "invalid Hermes profile name: $1" ;; esac
+}
+if $HERMES; then
+  add_hermes_target "$HERMES_DEFAULT_HOME"
+  if $HERMES_ALL_PROFILES; then
+    for d in "$HERMES_PROFILE_ROOT/profiles"/*; do [ -d "$d" ] && add_hermes_target "$d"; done
+  fi
+  for profile in "${HERMES_PROFILE_NAMES[@]:-}"; do
+    validate_profile_name "$profile"
+    target="$HERMES_PROFILE_ROOT/profiles/$profile"
+    [ -d "$target" ] || die "Hermes profile does not exist: $profile"
+    add_hermes_target "$target"
+  done
+fi
+
 STATE="${XDG_STATE_HOME:-$HOME/.local/state}/$APP_ID"; mkdir -p "$STATE"; chmod 700 "$STATE"
 PRIMARY="$HOME/.agents/skills/$APP_ID"
 INSTALL_LOG="$STATE/install.log"; touch "$INSTALL_LOG"; chmod 600 "$INSTALL_LOG"
@@ -137,7 +194,7 @@ ensure_user_daemon(){
   daemon_failure_capsule "$key" "$label" "$socket_unit" "$service_unit"; return 1
 }
 
-hermes_exec(){ ( cd "$HOME" && HERMES_HOME="$HERMES_HOME" NO_COLOR=1 "$HERMES_BIN" "$@" ); }
+hermes_exec(){ ( cd "$HOME" && HERMES_HOME="$HERMES_ACTIVE_HOME" NO_COLOR=1 "$HERMES_BIN" "$@" ); }
 hermes_json_list(){
   local key=$1 out
   out=$(hermes_exec config get "$key" --json 2>>"$INSTALL_LOG" || true)
@@ -181,22 +238,20 @@ hermes_plugin_enabled(){
 HERMES_POLICY_STATUS="not-detected"
 configure_hermes(){
   local enabled disabled
-  info "Enabling GWCU's Hermes integration"
+  info "Enabling GWCU's Hermes integration in ${HERMES_ACTIVE_HOME/$HOME/\~}"
   enabled=$(hermes_list_with "$(hermes_json_list plugins.enabled)" "$APP_ID")
   disabled=$(hermes_list_without "$(hermes_json_list plugins.disabled)" "$APP_ID")
-  run_logged "Hermes enable GWCU" hermes_exec config set plugins.enabled "$enabled" --force || die "Hermes could not persist plugin enablement"
-  run_logged "Hermes un-disable GWCU" hermes_exec config set plugins.disabled "$disabled" --force || die "Hermes could not clear a stale GWCU disable"
+  run_logged "Hermes enable GWCU [$HERMES_ACTIVE_HOME]" hermes_exec config set plugins.enabled "$enabled" --force || die "Hermes could not persist plugin enablement in $HERMES_ACTIVE_HOME"
+  run_logged "Hermes un-disable GWCU [$HERMES_ACTIVE_HOME]" hermes_exec config set plugins.disabled "$disabled" --force || die "Hermes could not clear a stale GWCU disable in $HERMES_ACTIVE_HOME"
   # The installer is itself the explicit installation action for this one
   # first-party integration. Grant only the one capability declared by GWCU.
-  run_logged "Hermes grant GWCU tools.override" hermes_exec config set "plugins.entries.$APP_ID.granted_capabilities" '["tools.override"]' --force || die "Hermes could not grant GWCU tools.override"
-  run_logged "Hermes bridge GWCU tool override" hermes_exec config set "plugins.entries.$APP_ID.allow_tool_override" true --force || die "Hermes could not persist GWCU tool override gate"
+  run_logged "Hermes grant GWCU tools.override [$HERMES_ACTIVE_HOME]" hermes_exec config set "plugins.entries.$APP_ID.granted_capabilities" '["tools.override"]' --force || die "Hermes could not grant GWCU tools.override in $HERMES_ACTIVE_HOME"
+  run_logged "Hermes bridge GWCU tool override [$HERMES_ACTIVE_HOME]" hermes_exec config set "plugins.entries.$APP_ID.allow_tool_override" true --force || die "Hermes could not persist GWCU tool override gate in $HERMES_ACTIVE_HOME"
   if hermes_plugin_enabled; then
-    HERMES_POLICY_STATUS="enabled"
-    ok "Hermes plugin enabled; computer_use policy is mechanical"
+    ok "Hermes plugin enabled; computer_use policy is mechanical (${HERMES_ACTIVE_HOME/$HOME/\~})"
   else
     HERMES_POLICY_STATUS="enable-failed"
-    [ "$HERMES_MODE" = require ] && die "Hermes integration was required but could not be verified"
-    die "Hermes is installed but the exact GWCU plugin could not be enabled"
+    die "Hermes is installed but the exact GWCU plugin could not be enabled in $HERMES_ACTIVE_HOME"
   fi
 }
 
@@ -258,24 +313,41 @@ rm -rf "$TMP/bundle"; mkdir -p "$TMP/bundle"
 for f in "${FILES[@]}"; do get_file "$f" "$TMP/bundle/$f"; done
 get_file SKILL.md "$TMP/bundle/SKILL.md"
 for f in "$TMP/bundle/scripts"/*.sh "$TMP/bundle/scripts"/*.py; do chmod +x "$f"; done
-BACKUPS="$HERMES_HOME/backups/$APP_ID"; MANIFEST="$BACKUPS/manifest.tsv"
 plugin_name_of(){ awk -F': *' '/^name:[[:space:]]*/{gsub(/^[[:space:]]+|[[:space:]]+$|["'\'']/,"",$2); print $2; exit}' "$1"; }
 manifest_backup(){ local dst=$1 backup; mkdir -p "$BACKUPS"; backup="$BACKUPS/$(date +%s%N)-$(basename "$dst")"; mv "$dst" "$backup"; printf '%s\t%s\n' "$dst" "$backup" >>"$MANIFEST"; }
 install_dir(){ local src=$1 dst=$2; if [ -e "$dst" ] && [ ! -f "$dst/.gnome-wayland-computer-use-managed" ]; then manifest_backup "$dst"; fi; rm -rf "$dst"; mkdir -p "$(dirname "$dst")"; cp -a "$src" "$dst"; : >"$dst/.gnome-wayland-computer-use-managed"; }
 retire_duplicate_plugins(){
-  local canonical=$1 dir name yaml; [ -d "$HERMES_HOME/plugins" ] || return 0
-  for yaml in "$HERMES_HOME/plugins"/*/plugin.yaml; do
+  local canonical=$1 dir name yaml; [ -d "$HERMES_ACTIVE_HOME/plugins" ] || return 0
+  for yaml in "$HERMES_ACTIVE_HOME/plugins"/*/plugin.yaml; do
     [ -f "$yaml" ] || continue; name=$(plugin_name_of "$yaml"); [ "$name" = "$APP_ID" ] || continue; dir=$(dirname "$yaml"); [ "$dir" != "$canonical" ] || continue
     if [ -f "$dir/.gnome-wayland-computer-use-managed" ]; then rm -rf "$dir"; ok "Retired stale duplicate Hermes plugin ${dir/$HOME/\~}"; else warn "Archiving unmanaged duplicate Hermes plugin ${dir/$HOME/\~}; restored on uninstall"; manifest_backup "$dir"; fi
   done
 }
+install_hermes_target(){
+  local target=$1 HSKILL PLUGIN
+  local HERMES_HOME="$target"
+  HERMES_ACTIVE_HOME="$HERMES_HOME"
+  BACKUPS="$HERMES_ACTIVE_HOME/backups/$APP_ID"
+  MANIFEST="$BACKUPS/manifest.tsv"
+  mkdir -p "$HERMES_ACTIVE_HOME/skills" "$HERMES_ACTIVE_HOME/plugins"
+  HSKILL="$HERMES_ACTIVE_HOME/skills/computer-use"
+  if [ -e "$HSKILL" ] && [ ! -f "$HSKILL/.gnome-wayland-computer-use-managed" ]; then
+    warn "Replacing existing computer-use skill at ${HSKILL/$HOME/\~}; archived for teardown"
+  fi
+  install_dir "$TMP/bundle" "$HSKILL"
+  PLUGIN="$HERMES_HOME/plugins/$APP_ID"
+  install_dir "$TMP/plugin" "$PLUGIN"
+  retire_duplicate_plugins "$PLUGIN"
+  configure_hermes
+  HERMES_TARGET_COUNT=$((HERMES_TARGET_COUNT + 1))
+}
 install_dir "$TMP/bundle" "$PRIMARY"
 if $HERMES; then
-  HSKILL="$HERMES_HOME/skills/computer-use"
-  if [ -e "$HSKILL" ] && [ ! -f "$HSKILL/.gnome-wayland-computer-use-managed" ]; then warn "Replacing existing computer-use skill at ${HSKILL/$HOME/\~}; archived for teardown"; fi
-  install_dir "$TMP/bundle" "$HSKILL"
-  PLUGIN="$HERMES_HOME/plugins/$APP_ID"; mkdir -p "$TMP/plugin"; get_file runtimes/hermes/plugin.yaml "$TMP/plugin/plugin.yaml"; get_file runtimes/hermes/__init__.py "$TMP/plugin/__init__.py"; install_dir "$TMP/plugin" "$PLUGIN"
-  retire_duplicate_plugins "$PLUGIN"; configure_hermes
+  rm -rf "$TMP/plugin"; mkdir -p "$TMP/plugin"
+  get_file runtimes/hermes/plugin.yaml "$TMP/plugin/plugin.yaml"
+  get_file runtimes/hermes/__init__.py "$TMP/plugin/__init__.py"
+  for target in "${HERMES_TARGET_HOMES[@]}"; do install_hermes_target "$target"; done
+  HERMES_POLICY_STATUS="enabled:$HERMES_TARGET_COUNT"
 fi
 ok "Installed action-span.py + exact presentation gate + WORLDLINE runtime + skill"
 
@@ -326,14 +398,14 @@ ok "WORLDLINE + observer protocols proved; presentation gate qualified"
 info "[8/8] Proving the complete installed state"
 PREV_ACCESS=$(gsettings get org.gnome.desktop.interface toolkit-accessibility 2>/dev/null || printf unknown); ACCESS_CHANGED=false
 if [ "$PREV_ACCESS" = false ]; then gsettings set org.gnome.desktop.interface toolkit-accessibility true 2>/dev/null && ACCESS_CHANGED=true || true; fi
-"$PYTHON" - "$STATE/ownership.json" "$PREV_ACCESS" "$ACCESS_CHANGED" "$CUA_DRIVER_RS_VERSION" "$HERMES" "$COMPAT" <<'PY'
+"$PYTHON" - "$STATE/ownership.json" "$PREV_ACCESS" "$ACCESS_CHANGED" "$CUA_DRIVER_RS_VERSION" "$HERMES" "$COMPAT" "$HERMES_TARGET_COUNT" <<'PY'
 import json,os,pathlib,sys
 p=pathlib.Path(sys.argv[1])
 try:d=json.loads(p.read_text())
 except Exception:d={}
 d["schema"]="gwcu.ownership.v3";d["toolkit_accessibility"]={"previous":sys.argv[2],"changed":sys.argv[3]=="true"}
 u=d.setdefault("upstream",{});c=u.setdefault("cua_driver",{});c["version"]=sys.argv[4];c["owned"]=bool(c.get("provisioned") or c.get("owned"));u.setdefault("winrects",{"owned":False})
-enabled=sys.argv[6]!="true";d["user_units"]={"observer_socket":enabled,"observer_service":enabled,"worldline_socket":enabled,"worldline_service":enabled};d["hermes_plugin"]={"managed":sys.argv[5]=="true","name":"gnome-wayland-computer-use"};d["distro_foundation_owned"]=False
+enabled=sys.argv[6]!="true";d["user_units"]={"observer_socket":enabled,"observer_service":enabled,"worldline_socket":enabled,"worldline_service":enabled};d["hermes_plugin"]={"managed":sys.argv[5]=="true","name":"gnome-wayland-computer-use","profiles":int(sys.argv[7])};d["distro_foundation_owned"]=False
 p.write_text(json.dumps(d,separators=(",",":"))+"\n");os.chmod(p,0o600)
 PY
 DIAG_CODE="compat"
@@ -360,9 +432,9 @@ PY
 fi
 MANAGED_VALUE=$(cat "$PREF" 2>/dev/null || printf unknown); BACKGROUND_VALUE=$(cat "$BACKGROUND_PREF" 2>/dev/null || printf unknown)
 RECEIPT="$STATE/install-receipt.json"
-"$PYTHON" - "$RECEIPT" "$VERSION" "$CUA_DRIVER_RS_VERSION" "$DIAG_CODE" "$RELOAD_REQUIRED" "$HERMES" "$HERMES_POLICY_STATUS" "$MANAGED_VALUE" "$BACKGROUND_VALUE" <<'PY'
+"$PYTHON" - "$RECEIPT" "$VERSION" "$CUA_DRIVER_RS_VERSION" "$DIAG_CODE" "$RELOAD_REQUIRED" "$HERMES" "$HERMES_POLICY_STATUS" "$MANAGED_VALUE" "$BACKGROUND_VALUE" "$HERMES_TARGET_COUNT" <<'PY'
 import json,os,pathlib,sys,time
-p=pathlib.Path(sys.argv[1]);d={"schema":"gwcu.install-receipt.v1","version":sys.argv[2],"cua_driver":sys.argv[3],"diagnosis":sys.argv[4],"reload_required":sys.argv[5]=="true","hermes_detected":sys.argv[6]=="true","hermes_policy":sys.argv[7],"managed_truths":sys.argv[8],"background_priority":sys.argv[9],"installed_at_unix":int(time.time())};p.write_text(json.dumps(d,separators=(",",":"))+"\n");os.chmod(p,0o600)
+p=pathlib.Path(sys.argv[1]);d={"schema":"gwcu.install-receipt.v1","version":sys.argv[2],"cua_driver":sys.argv[3],"diagnosis":sys.argv[4],"reload_required":sys.argv[5]=="true","hermes_detected":sys.argv[6]=="true","hermes_policy":sys.argv[7],"managed_truths":sys.argv[8],"background_priority":sys.argv[9],"hermes_profiles":int(sys.argv[10]),"installed_at_unix":int(time.time())};p.write_text(json.dumps(d,separators=(",",":"))+"\n");os.chmod(p,0o600)
 PY
 ok "Installed state proved; receipt written"
 
@@ -373,7 +445,7 @@ printf '  Visible takeover:%s\n' "$([ "$RELOAD_REQUIRED" = true ] && printf ' pe
 printf '  WORLDLINE:       %s\n' "$([ "$COMPAT" = true ] && printf installed || printf ready)"
 printf '  Observation:     %s\n' "$([ "$COMPAT" = true ] && printf installed || printf ready)"
 printf '  .gwcu truths:    %s\n' "$MANAGED_VALUE"; printf '  Background pref: %s\n' "$BACKGROUND_VALUE"
-if $HERMES; then printf '  Hermes policy:   %s\n' "$HERMES_POLICY_STATUS"; else printf '  Hermes:          not detected (agent skill still installed)\n'; fi
+if $HERMES; then printf '  Hermes policy:   enabled in %s profile(s)\n' "$HERMES_TARGET_COUNT"; else printf '  Hermes:          not detected (agent skill still installed)\n'; fi
 printf '%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n' "$DIM" "$RESET"
 printf '\n/computer-use trace    exact foreground path\n/computer-use doctor   full machine proof\n'
 printf '\nUninstall: curl -fsSL %s/uninstall.sh | bash\n' "$BASE_URL"; printf 'Teardown:  %s/scripts/teardown.sh --help\n' "$PRIMARY"; printf 'Receipt:   %s\nLog:       %s\n' "$RECEIPT" "$INSTALL_LOG"
