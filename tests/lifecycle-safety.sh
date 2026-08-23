@@ -29,12 +29,18 @@ chmod +x "$TMP/bin/curl"
 [ -e "$TMP/safe" ] || fail "curl-pipe uninstaller did not use fetched teardown"
 pass "curl-pipe uninstall ignores planted caller-local scripts"
 
-# Teardown must preserve every unmarked skill directory, regardless of location.
+# Teardown must preserve every unmarked skill directory, including profiles.
 mkdir -p "$TMP/home/.agents/skills/gnome-wayland-computer-use" \
          "$TMP/home/.hermes/skills/computer-use" \
          "$TMP/home/.hermes/skills/gnome-wayland-computer-use" \
+         "$TMP/home/.hermes/profiles/work/skills/computer-use" \
          "$TMP/bin2"
-for d in "$TMP/home/.agents/skills/gnome-wayland-computer-use" "$TMP/home/.hermes/skills/computer-use" "$TMP/home/.hermes/skills/gnome-wayland-computer-use"; do echo user-owned >"$d/KEEP"; done
+for d in \
+  "$TMP/home/.agents/skills/gnome-wayland-computer-use" \
+  "$TMP/home/.hermes/skills/computer-use" \
+  "$TMP/home/.hermes/skills/gnome-wayland-computer-use" \
+  "$TMP/home/.hermes/profiles/work/skills/computer-use"
+do echo user-owned >"$d/KEEP"; done
 cat >"$TMP/bin2/systemctl" <<'SH'
 #!/usr/bin/env bash
 exit 0
@@ -46,8 +52,35 @@ SH
 chmod +x "$TMP/bin2/"*
 HOME="$TMP/home" HERMES_HOME="$TMP/home/.hermes" XDG_STATE_HOME="$TMP/state" PATH="$TMP/bin2:/usr/bin:/bin" \
   bash "$ROOT/scripts/teardown.sh" --force >/dev/null
-for d in "$TMP/home/.agents/skills/gnome-wayland-computer-use" "$TMP/home/.hermes/skills/computer-use" "$TMP/home/.hermes/skills/gnome-wayland-computer-use"; do [ -f "$d/KEEP" ] || fail "teardown deleted unmanaged $d"; done
-pass "teardown preserves all unmanaged skill directories"
+for d in \
+  "$TMP/home/.agents/skills/gnome-wayland-computer-use" \
+  "$TMP/home/.hermes/skills/computer-use" \
+  "$TMP/home/.hermes/skills/gnome-wayland-computer-use" \
+  "$TMP/home/.hermes/profiles/work/skills/computer-use"
+do [ -f "$d/KEEP" ] || fail "teardown deleted unmanaged $d"; done
+pass "teardown preserves unmanaged default/profile skill directories"
+
+# Managed profile integration is removed everywhere and archived prior skills are
+# restored independently in each Hermes home.
+rm -rf "$TMP/home" "$TMP/state"; mkdir -p "$TMP/bin2"
+for target in "$TMP/home/.hermes" "$TMP/home/.hermes/profiles/work"; do
+  mkdir -p "$target/skills/computer-use" "$target/plugins/gnome-wayland-computer-use" \
+           "$target/backups/gnome-wayland-computer-use" "$TMP/archive"
+  : >"$target/skills/computer-use/.gnome-wayland-computer-use-managed"
+  : >"$target/plugins/gnome-wayland-computer-use/.gnome-wayland-computer-use-managed"
+  printf 'name: gnome-wayland-computer-use\n' >"$target/plugins/gnome-wayland-computer-use/plugin.yaml"
+  backup="$TMP/archive/$(printf '%s' "$target" | tr '/' '_')-computer-use"
+  mkdir -p "$backup"; echo restored >"$backup/KEEP"
+  printf '%s\t%s\n' "$target/skills/computer-use" "$backup" >"$target/backups/gnome-wayland-computer-use/manifest.tsv"
+done
+HOME="$TMP/home" HERMES_HOME="$TMP/home/.hermes" XDG_STATE_HOME="$TMP/state" PATH="$TMP/bin2:/usr/bin:/bin" \
+  bash "$ROOT/scripts/teardown.sh" --force >/dev/null
+for target in "$TMP/home/.hermes" "$TMP/home/.hermes/profiles/work"; do
+  [ -f "$target/skills/computer-use/KEEP" ] || fail "profile backup restoration failed for $target"
+  [ ! -e "$target/plugins/gnome-wayland-computer-use" ] || fail "managed plugin survived teardown in $target"
+  [ ! -e "$target/backups/gnome-wayland-computer-use/manifest.tsv" ] || fail "completed profile restoration left manifest in $target"
+done
+pass "teardown removes managed integration and restores archives across profiles"
 
 # A completed backup restoration must remove the manifest cleanly and exit zero.
 rm -rf "$TMP/home" "$TMP/state"; mkdir -p "$TMP/home/.hermes/backups/gnome-wayland-computer-use" "$TMP/home/archive" "$TMP/bin2"
@@ -93,4 +126,9 @@ grep -Fq 'gnome-wayland-computer-use:start' "$ROOT/scripts/migrate-main.sh" || f
 grep -q 'write_cua_ownership' "$ROOT/install.sh" || fail "Cua ownership is not persisted immediately"
 grep -q 'agents/openai.yaml' "$ROOT/install.sh" || fail "OpenAI metadata is not deployed"
 grep -q 'worldline_degraded' "$ROOT/scripts/diagnose.sh" || fail "diagnosis can ignore dead WORLDLINE"
-pass "upgrade and installed-runtime contracts cover published-main lifecycle seams"
+grep -Fq -- '--hermes-profile NAME' "$ROOT/install.sh" || fail "installer lacks explicit Hermes profile targeting"
+grep -Fq -- '--hermes-all-profiles' "$ROOT/install.sh" || fail "installer lacks all-profile opt-in"
+grep -Fq 'HERMES_TARGET_HOMES' "$ROOT/install.sh" || fail "installer does not resolve Hermes homes explicitly"
+grep -Fq 'HERMES_PROFILE_ROOT/profiles' "$ROOT/scripts/teardown.sh" || fail "teardown does not scan Hermes profiles"
+grep -Fq 'built-in `computer_use` tool' "$ROOT/scripts/teardown.sh" || fail "teardown does not state computer_use ownership boundary"
+pass "upgrade and installed-runtime contracts cover published-main and Hermes-profile lifecycle seams"
