@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+python3 - "$ROOT" <<'PY'
+import ast
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+policy = root / "runtimes/hermes/__init__.py"
+skill = (root / "SKILL.md").read_text()
+readme = (root / "README.md").read_text()
+span = (root / "scripts/action-span.py").read_text()
+
+# Derive the direct-Hermes foreground action set from the policy itself so docs
+# cannot silently omit a newly-added native input action.
+tree = ast.parse(policy.read_text())
+input_actions = None
+for node in tree.body:
+    if isinstance(node, ast.Assign):
+        for target in node.targets:
+            if isinstance(target, ast.Name) and target.id == "_INPUT_ACTIONS":
+                call = node.value
+                assert isinstance(call, ast.Call) and isinstance(call.func, ast.Name) and call.func.id == "frozenset"
+                input_actions = set(ast.literal_eval(call.args[0]))
+                break
+    if input_actions is not None:
+        break
+assert input_actions, "Hermes _INPUT_ACTIONS missing"
+
+for doc_name, text in (("SKILL.md", skill), ("README.md", readme)):
+    assert "Foreground action coverage" in text, f"{doc_name} lacks foreground action coverage"
+    missing = sorted(action for action in input_actions if f"`{action}`" not in text)
+    assert not missing, f"{doc_name} omits native foreground actions: {missing}"
+    for token in (
+        "`launch_app`",
+        "`focus_app`",
+        "`set_value`",
+        "`cua_browser_state`",
+        "`cua_browser_*`",
+        "`delivery_mode`",
+        "exact `(pid, window_id)`",
+    ):
+        assert token in text, f"{doc_name} lacks foreground-adjacent contract: {token}"
+
+# Spans deliberately discover delivery capability from Cua's runtime schema.
+assert '"delivery_mode" in props' in span, "action-span no longer discovers delivery-mode tools"
+assert "every tool exposing `delivery_mode`" in skill, "skill no longer documents dynamic span coverage"
+assert "every Cua MCP tool whose runtime schema exposes `delivery_mode`" in readme, "README no longer documents dynamic span coverage"
+
+# Runtime skill mirror remains byte-identical to the canonical skill.
+assert (root / "runtimes/openai/SKILL.md").read_bytes() == (root / "SKILL.md").read_bytes(), "runtime skill mirror drifted"
+
+print("ok - foreground action documentation covers policy + dynamic Cua span surface")
+PY
