@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Hermes integration checks: skill task dispatch + completion enrichment +
-# mechanically enforced exact foreground presentation.
+# mechanically enforced exact foreground presentation and ACQUIRE.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
@@ -39,6 +39,8 @@ grep -Fq '/computer-use <task>' "$ROOT/SKILL.md" || fail "skill-native task invo
 grep -Fq 'Everything else is a task.' "$ROOT/SKILL.md" || fail "skill task/subcommand dispatch rule missing"
 grep -Fq 'tools.override' "$ROOT/runtimes/hermes/plugin.yaml" || fail "Hermes tool override capability is undeclared"
 ! grep -Fq 'provides_tools:' "$ROOT/runtimes/hermes/plugin.yaml" || fail "conditional override is advertised as unconditional"
+grep -Fq '"launch_app"' "$ROOT/runtimes/hermes/__init__.py" || fail "Hermes computer_use does not expose ACQUIRE"
+grep -Fq 'new_window_ambiguous' "$ROOT/runtimes/hermes/__init__.py" || fail "ACQUIRE does not fail closed on ambiguity"
 pass "skill owns task dispatch while plugin declares one policy capability"
 
 cat >"$TMP/presenter.py" <<'PY'
@@ -50,22 +52,38 @@ print(json.dumps({'schema':'gwcu.presentation.v1','ok':ok,'code':'presented' if 
 raise SystemExit(0 if ok else 30)
 PY
 chmod +x "$TMP/presenter.py"
+cat >"$TMP/resolver.sh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' '{"schema":"gwcu.identity.v1","ok":true,"code":"resolved","result":{"display_name":"Calculator","desktop_id":"org.gnome.Calculator.desktop","app_id":"org.gnome.Calculator","kind":"native-app","exec":"gnome-calculator"}}'
+SH
+chmod +x "$TMP/resolver.sh"
 
-python3 - "$ROOT/runtimes/hermes/__init__.py" "$TMP/state" "$TMP/presenter.py" "$TMP/present.log" <<'PY' || fail "Hermes policy/completion regression"
-import importlib.util, os, pathlib, sys, types
-plugin_path,state,presenter,present_log=sys.argv[1:]
+python3 - "$ROOT/runtimes/hermes/__init__.py" "$TMP/state" "$TMP/presenter.py" "$TMP/present.log" "$TMP/resolver.sh" <<'PY' || fail "Hermes policy/completion/ACQUIRE regression"
+import importlib.util, json, os, pathlib, sys, types
+plugin_path,state,presenter,present_log,resolver=sys.argv[1:]
 os.environ['XDG_STATE_HOME']=state
 os.environ['GWCU_PRESENTER']=presenter
+os.environ['GWCU_APP_RESOLVER']=resolver
 os.environ['PRESENT_LOG']=present_log
 pathlib.Path(state).mkdir(parents=True,exist_ok=True)
 
-# Fake built-in computer_use surface.
+# Fake built-in computer_use surface plus one Cua backend session.
 schema_mod=types.ModuleType('tools.computer_use.schema')
 schema_mod.COMPUTER_USE_SCHEMA={'name':'computer_use','description':'builtin','parameters':{'type':'object'}}
 tool_mod=types.ModuleType('tools.computer_use.tool')
 seen=[]
 def builtin(args,**kwargs):seen.append(dict(args));return dict(args)
 tool_mod.handle_computer_use=builtin
+class Backend:
+    def __init__(self):self.launched=False;self.launch_names=[]
+    def list_windows(self):
+        return [{'pid':4242,'window_id':77,'title':'Calculator'}] if self.launched else []
+    def launch_app(self,**kwargs):
+        self.launch_names.append(kwargs.get('name'));self.launched=True
+        return {'pid':4242,'name':'Calculator','windows':[]}
+backend=Backend()
+tool_mod._get_backend=lambda session_id: backend
+tool_mod._request_approval=lambda scope,args: None
 sys.modules['tools']=types.ModuleType('tools')
 sys.modules['tools.computer_use']=types.ModuleType('tools.computer_use')
 sys.modules['tools.computer_use.schema']=schema_mod
@@ -90,9 +108,16 @@ class Ctx:
 
 ctx=Ctx();mod.register(ctx)
 assert ctx.registration and ctx.registration['name']=='computer_use' and ctx.registration['override'] is True
+assert 'launch_app' in ctx.registration['schema']['parameters']['properties']['action']['enum']
 assert commands.SUBCOMMANDS['/computer-use']==list(mod._SUBCOMMANDS)
 c=Completer();assert c._is_skill_command('/computer-use') is False;assert c._is_skill_command('/other-skill') is True
 wrapped=ctx.registration['handler']
+
+# ACQUIRE is resolved locally, launched through Cua, and returns one exact NEW target.
+raw=wrapped({'action':'launch_app','app':'Calculator'},session_id='cold')
+acq=json.loads(raw)
+assert acq['ok'] is True and acq['phase']=='ACQUIRE' and acq['target']=={'pid':4242,'window_id':77}
+assert backend.launch_names==['Calculator'] and len(seen)==0
 
 # OFF/default = exact foreground presentation BEFORE builtin actuation.
 out=wrapped({'action':'click','pid':123,'window_id':9,'coordinate':[1,2]})
@@ -134,7 +159,7 @@ class LegacyCtx:
     def register_tool(self,**kwargs):self.registration=kwargs
 legacy=LegacyCtx();mod.register(legacy);assert legacy.registration and legacy.registration['override'] is True
 PY
-pass "Hermes foreground input is exact/presented and /computer-use verbs complete"
+pass "Hermes ACQUIRE launches through Cua, binds exact new window, and foreground input stays exact/presented"
 
 HOME_A="$TMP/hermes-a";make_home "$HOME_A"
 [ -f "$HOME_A/skills/computer-use/SKILL.md" ] || fail "Hermes skill bundle missing"
