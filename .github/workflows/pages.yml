@@ -24,6 +24,8 @@ jobs:
         run: python3 -m py_compile scripts/*.py runtimes/hermes/__init__.py
       - name: Skill UX contract
         run: bash ./tests/skill-ux.sh
+      - name: Foreground action documentation
+        run: bash ./tests/foreground-docs.sh
       - name: End-to-end latency and routing guards
         run: bash ./tests/latency-routing.sh
       - name: Truth scope isolation
