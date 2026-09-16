@@ -18,6 +18,12 @@ KEYS = (
     "XDG_CURRENT_DESKTOP",
     "XDG_RUNTIME_DIR",
 )
+_GATEWAY_MARKERS = (
+    "hermes gateway run",
+    "gateway.run",
+    "gateway/run.py",
+    "hermes-gateway",
+)
 
 
 def run(argv: list[str], *, env=None, timeout=8) -> tuple[int, str, str]:
@@ -96,33 +102,73 @@ def proc_environment(pid: int) -> dict[str, str]:
     return env
 
 
-def gateway_attestations() -> list[dict]:
+def running_gateway_pids() -> list[int]:
+    """Discover this user's live Hermes gateway processes without trusting status text."""
+    found: list[int] = []
+    uid = os.getuid()
+    for proc in pathlib.Path("/proc").iterdir():
+        if not proc.name.isdigit():
+            continue
+        try:
+            if proc.stat().st_uid != uid:
+                continue
+            cmdline = proc.joinpath("cmdline").read_bytes().replace(b"\0", b" ").decode(errors="replace").casefold()
+        except OSError:
+            continue
+        if any(marker in cmdline for marker in _GATEWAY_MARKERS):
+            found.append(int(proc.name))
+    return sorted(set(found))
+
+
+def _attestation_map() -> dict[int, dict]:
     state = pathlib.Path(os.getenv("XDG_STATE_HOME", str(pathlib.Path.home() / ".local/state"))) / "gnome-wayland-computer-use"
-    rows: list[dict] = []
+    rows: dict[int, dict] = {}
     for path in sorted(state.glob("hermes-gateway-identity-*.json")):
         try:
             attested = json.loads(path.read_text())
             pid = int(attested.get("pid") or 0)
-            if pid <= 0 or not pathlib.Path(f"/proc/{pid}").exists():
+            if pid <= 0:
                 continue
-            live = proc_environment(pid)
+            attested["_path"] = str(path)
+            rows[pid] = attested
         except (OSError, ValueError, TypeError, json.JSONDecodeError):
             continue
+    return rows
+
+
+def gateway_attestations() -> list[dict]:
+    attestations = _attestation_map()
+    pids = set(running_gateway_pids())
+    # An attested process is also a gateway authority when still alive, even if
+    # a packaging wrapper makes its cmdline unfamiliar to this GWCU release.
+    for pid in attestations:
+        if pathlib.Path(f"/proc/{pid}").exists():
+            pids.add(pid)
+
+    rows: list[dict] = []
+    for pid in sorted(pids):
+        try:
+            live = proc_environment(pid)
+        except OSError:
+            continue
+        attested = attestations.get(pid) or {}
         attested_env = attested.get("environment") if isinstance(attested.get("environment"), dict) else {}
         live_subset = subset(live)
-        env_match = all(live_subset.get(key) == attested_env.get(key) for key in KEYS)
-        selected_override = live.get("HERMES_CUA_DRIVER_CMD")
-        selected = attested.get("hermes_selected") if isinstance(attested.get("hermes_selected"), dict) else {}
+        has_attestation = bool(attested)
+        env_match = has_attestation and all(live_subset.get(key) == attested_env.get(key) for key in KEYS)
+        selected = attested.get("hermes_selected") if isinstance(attested.get("hermes_selected"), dict) else None
+        backend = attested.get("gateway_backend") if isinstance(attested.get("gateway_backend"), dict) else None
         rows.append({
             "pid": pid,
-            "hermes_home": attested.get("hermes_home"),
+            "hermes_home": live.get("HERMES_HOME") or attested.get("hermes_home"),
             "environment": live_subset,
             "attested_environment": {key: attested_env.get(key) for key in KEYS},
             "environment_attestation_ok": env_match,
-            "hermes_cua_driver_cmd": selected_override,
+            "attested": has_attestation,
+            "hermes_cua_driver_cmd": live.get("HERMES_CUA_DRIVER_CMD"),
             "hermes_selected": selected,
-            "gateway_backend": attested.get("gateway_backend"),
-            "attestation": str(path),
+            "gateway_backend": backend,
+            "attestation": attested.get("_path"),
         })
     return rows
 
