@@ -102,6 +102,8 @@ The installer also pins the exact Cua identity used by integrated Hermes profile
 
 Foreground is the informed fresh-install default. `/computer-use background on|off|status` changes the standing preference; explicit task intent wins.
 
+If a native `computer_use` action does not specify delivery mode, GWCU applies this preference. Action spans use the same setting.
+
 The high-level foreground path is:
 
 ```text
