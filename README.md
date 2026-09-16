@@ -115,7 +115,8 @@ If a native `computer_use` action does not specify delivery mode, GWCU applies t
 Background OFF pre-traces:
 
 ```text
-DISCOVER   Cua list_windows → exact (pid, window_id)
+ACQUIRE    closed local app → Cua launch_app → bind one exact NEW (pid, window_id)
+DISCOVER   running app → Cua list_windows → exact (pid, window_id)
 PRESENT    GNOME helper → Activate(window_id) → focused+visible proof
 ACT        same exact target → delivery_mode="foreground"
 REVALIDATE if native identity changes
@@ -125,6 +126,22 @@ COMPLETE   present and verify the final visible result when required
 **No exact `(pid, window_id)` proof, no focus-bound input.** Direct Hermes calls and multi-action spans fail closed before foreground input if exact presentation cannot be proved.
 
 If background delivery is explicitly unavailable, GWCU may fall forward once through the same presentation gate. There is no floating confidence threshold.
+
+### Foreground action coverage
+
+Foreground is a delivery/presentation contract, not a synonym for every mutation. The current surfaces are documented explicitly so adding a new action does not silently weaken the contract.
+
+| Kind | Actions / surface | Foreground contract |
+|---|---|---|
+| Pointer input | `click`, `double_click`, `right_click`, `middle_click`, `drag`, `scroll` | Exact `(pid, window_id)` → PRESENT → `delivery_mode="foreground"` → act on the same target. |
+| Text / keyboard input | `type`, `key` | Same exact-target PRESENT gate before foreground delivery. Cua's lower-level span vocabulary may expose these as `type_text`, `press_key`, or `hotkey`. |
+| Closed local app | `launch_app` | **ACQUIRE**, not foreground input: resolve the local app, launch through Cua, then bind exactly one new `(pid, window_id)` before later PRESENT/ACT. No terminal/search launch substitute. |
+| Persistent window presentation | `/computer-use present` / GWCU presentation gate | Makes one exact native target persistently focused + visible and proves it. A raw `focus_app`/raise request is not a substitute for this proof when persistent foreground is required. |
+| Exact-bound browser work | `cua_browser_state` + `cua_browser_*` mutations | Bind the browser to exact native `(pid, window_id)`; PRESENT that native target for foreground/visible work; page mutation success alone does not prove visibility. |
+| Direct AX value mutation | `set_value` | Direct semantic mutation, not a `delivery_mode` foreground action. It never substitutes for PRESENT when the requested result must be visible. |
+| Observation / waits | `capture`, `wait`, `list_apps`, `list_windows` | Read/discovery only. They do not need foreground delivery and do not themselves prove persistent presentation. |
+
+The Hermes policy mechanically covers every native foreground action in its `_INPUT_ACTIONS` set. `action-span.py` is broader: it discovers every Cua MCP tool whose runtime schema exposes `delivery_mode`, then applies the same exact-target presentation gate. That keeps foreground span coverage capability-driven instead of freezing it to a hand-maintained action list.
 
 ## WORLDLINE
 
@@ -185,6 +202,7 @@ Teardown removes GWCU-managed integration/transient state, restores archives whe
 - All GWCU desktop GUI input goes through Cua.
 - A specific user browser session stays on one Cua actuation path while it is being manipulated.
 - Foreground is the informed fresh-install default; `/computer-use background` changes the standing preference.
+- Every native foreground action is covered by the exact-target PRESENT gate; action spans discover `delivery_mode` support from Cua at runtime.
 - Visible requests end visibly.
 - No exact target/presentation proof means no focus-bound input.
 - WORLDLINE knows; it never acts.
