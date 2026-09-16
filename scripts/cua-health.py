@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import re
 import subprocess
 import sys
 
 from mcp_client import recv_for, resolve_driver, send
 
-SCHEMA = "gwcu.cua-health.v1"
+SCHEMA = "gwcu.cua-health.v2"
 PROTOCOL = "2024-11-05"
+_SEMVER = re.compile(r"\b(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)\b")
 
 
 def envelope(ok: bool, code: str, report=None, detail: str | None = None):
@@ -18,6 +21,31 @@ def envelope(ok: bool, code: str, report=None, detail: str | None = None):
     if detail:
         out["detail"] = detail
     return out
+
+
+def reported_version(report) -> str | None:
+    if not isinstance(report, dict):
+        return None
+    for entry in report.get("checks") or []:
+        if not isinstance(entry, dict) or entry.get("name") != "binary_version":
+            continue
+        text = " ".join(str(entry.get(k) or "") for k in ("message", "detail", "summary"))
+        if match := _SEMVER.search(text):
+            return match.group(1)
+    return None
+
+
+def executable_version(driver: str) -> str | None:
+    try:
+        proc = subprocess.run(
+            [driver, "--version"], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, encoding="utf-8", errors="replace", timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    text = (proc.stdout or "") + "\n" + (proc.stderr or "")
+    match = _SEMVER.search(text)
+    return match.group(1) if match else None
 
 
 def run(driver: str, timeout: float) -> tuple[dict, int]:
@@ -94,6 +122,19 @@ def main() -> int:
         print(json.dumps(envelope(False, "driver_missing"), separators=(",", ":")))
         return 50
     payload, rc = run(driver, max(1.0, min(args.timeout, 30.0)))
+    payload["binary"] = os.path.realpath(driver)
+    payload["executable_version"] = executable_version(driver)
+    payload["reported_version"] = reported_version(payload.get("report"))
+    payload["identity_ok"] = bool(
+        payload["executable_version"]
+        and payload["reported_version"]
+        and payload["executable_version"] == payload["reported_version"]
+    )
+    if payload.get("ok") and not payload["identity_ok"]:
+        payload["ok"] = False
+        payload["code"] = "identity_split_brain"
+        payload["next"] = {"action": "repair_cua_identity"}
+        rc = 40
     print(json.dumps(payload, separators=(",", ":")))
     return rc
 
