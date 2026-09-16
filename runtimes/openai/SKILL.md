@@ -172,6 +172,24 @@ If background was selected and Cua explicitly returns `background_unavailable` /
 
 **Control-priority arbitration adds zero model calls.**
 
+### Foreground action coverage
+
+Treat foreground as a delivery/presentation contract. Cover each surface according to how it actually acts:
+
+| Kind | Actions / surface | Required foreground behavior |
+|---|---|---|
+| Pointer input | `click`, `double_click`, `right_click`, `middle_click`, `drag`, `scroll` | Exact `(pid, window_id)` → PRESENT → `delivery_mode="foreground"` → act on that same target. |
+| Text / keyboard input | `type`, `key` | Same exact-target PRESENT gate before foreground delivery. Lower-level Cua span tools may expose the equivalent operations as `type_text`, `press_key`, or `hotkey`. |
+| Closed local app | `launch_app` | ACQUIRE through Cua, bind exactly one new `(pid, window_id)`, then PRESENT before later foreground input. Launch itself is acquisition, not `delivery_mode` input. |
+| Persistent presentation | `/computer-use present` / `present-window.py` | Persistently focus + raise one exact native target and prove `focused=true`, `visible=true`, `minimized=false`. A raw `focus_app`/raise request is not a substitute for this proof when persistent foreground is required. |
+| Exact-bound browser mutation | `cua_browser_state` + `cua_browser_*` | Bind exact native `(pid, window_id)` first. PRESENT that native target for foreground/visible work. Typed page success alone never proves visibility. |
+| Direct AX value mutation | `set_value` | Semantic mutation without foreground delivery semantics. It does not substitute for PRESENT when the result must be visible. |
+| Observation / waits | `capture`, `wait`, `list_apps`, `list_windows` | Read/discovery only. No foreground delivery, and no persistent-presentation proof by themselves. |
+
+For the direct Hermes surface, the mechanically gated native foreground set is exactly the plugin's `_INPUT_ACTIONS`: `click`, `double_click`, `right_click`, `middle_click`, `drag`, `scroll`, `type`, and `key`. If one of those is sent with foreground delivery, missing exact identity or failed PRESENT stops the action before Cua input.
+
+For local action spans, do not freeze foreground coverage to that list. `action-span.py` reads Cua's MCP `tools/list` schema and treats **every tool exposing `delivery_mode`** as foreground-capable. It injects the chosen mode, requires exact `(pid, window_id)` for foreground, runs PRESENT, and only then sends the tool call. New Cua foreground-capable tools therefore inherit the gate without waiting for a GWCU list update.
+
 ## Visible-result contract
 
 Foreground input and persistent presentation are different properties. `delivery_mode:"foreground"` alone does not satisfy “show me”, “watch this”, “take over”, “put this on my screen”, or “leave it open”.
