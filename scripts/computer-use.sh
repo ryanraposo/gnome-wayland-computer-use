@@ -145,25 +145,33 @@ show_trace() {
     cat <<'TRACE'
 Default foreground trace (background priority OFF)
 
-  1. DISCOVER
-     Cua list_windows resolves the intended native target to exact (pid, window_id).
+  1. ACQUIRE (when the local app is closed)
+     Resolve the installed local application deterministically, then use
+     computer_use launch_app so Cua performs the launch. Snapshot windows before
+     launch and bind only one exact NEW (pid, window_id). No terminal launch,
+     desktop search, title-only guess, or fallback actuator is allowed.
+     If the intended app is already running, continue directly to DISCOVER.
+
+  2. DISCOVER
+     Cua list_windows resolves an already-running intended native target to exact
+     (pid, window_id), or revalidates the identity returned by ACQUIRE.
      No title-only actuation. Ambiguity is resolved before input.
 
-  2. PRESENT
+  3. PRESENT
      GWCU calls Cua's installed GNOME Shell helper for that stable window id.
      GNOME must report that exact pid/window_id focused, visible, and not minimized.
      Failure here is terminal for the action: no global input is sent.
 
-  3. ACT
+  4. ACT
      Cua performs the mutation against the same exact target with
      delivery_mode=foreground. Because the target is already the focused window,
      Cua's action-scoped foreground restore resolves back to that same target.
 
-  4. REVALIDATE
+  5. REVALIDATE
      If an action creates, closes, replaces, or navigates the native target,
      resolve its current exact identity before the next focus-bound mutation.
 
-  5. COMPLETE VISIBLY
+  6. COMPLETE VISIBLY
      Re-present the final exact target, verify focused+visible again, then verify
      the requested application/page state. Leave the intended result on screen.
 
@@ -173,7 +181,7 @@ Typed Chromium/Electron route
   Typed browser success never substitutes for native visible presentation.
 
 Background priority ON is the explicit opt-out from persistent takeover for
-ordinary work. A user-visible result still ends at step 5.
+ordinary work. A user-visible result still ends at step 6.
 TRACE
 }
 
@@ -363,7 +371,7 @@ PY
         presentation=$("$PYTHON" "$PRESENTER" status 2>/dev/null); presentation_rc=$?
         set -e
         [ -n "$portal" ] || portal='{"schema":"gwcu.portal-control.v1","ok":false,"code":"unavailable"}'
-        [ -n "$health" ] || health='{"schema":"gwcu.cua-health.v1","ok":false,"code":"unavailable"}'
+        [ -n "$health" ] || health='{"schema":"gwcu.cua-health.v2","ok":false,"code":"unavailable"}'
         [ -n "$worldline" ] || worldline='{"schema":"gwcu.worldline.v1","ok":false,"code":"unavailable"}'
         [ -n "$presentation" ] || presentation='{"schema":"gwcu.presentation.v1","ok":false,"code":"unavailable"}'
         "$PYTHON" - "$managed" "$portal" "$health" "$worldline" "$presentation" "$background" <<'PY'
@@ -373,6 +381,7 @@ portal=p.get('portal',{}); token=portal.get('restore_token',{}); report=h.get('r
 state=w.get('state') if isinstance(w.get('state'),dict) else w
 print("Computer use")
 print(f"  Cua health: {report.get('overall') or h.get('code','unknown')}")
+print(f"  Cua identity: {'proved' if h.get('identity_ok') else 'unproved'} ({h.get('binary') or '-'})")
 print(f"  exact presentation: {pr.get('code','unavailable')} (helper API {pr.get('helper_api','?')})")
 print(f"  WORLDLINE: {w.get('code','ready') if w.get('ok') else w.get('code','unavailable')}")
 if isinstance(state,dict) and state.get('revision') is not None: print(f"  WORLDLINE revision: {state.get('revision')}")
@@ -381,7 +390,7 @@ print(f"  RemoteDesktop portal: {'available' if portal.get('available') else 'un
 print(f"  RemoteDesktop restore token: {'present' if token.get('present') else 'not established'}")
 print(f"  managed .gwcu: {'on' if m.get('managed_truths') else 'off'}")
 if scope.get('path'): print(f"  truth file: {scope['path']}")
-print("  default foreground: exact target -> Cua GNOME presentation gate -> Cua input -> visible proof")
+print("  default foreground: ACQUIRE if closed -> exact target -> Cua GNOME presentation gate -> Cua input -> visible proof")
 print("  runtime truth: AT-SPI/direct oracles -> WORLDLINE")
 print("  visual escalation: XDG ScreenCast -> PipeWire observer -> WORLDLINE")
 PY
