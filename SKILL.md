@@ -17,7 +17,7 @@ metadata:
 
 Use **Cua Driver for desktop actuation**. WORLDLINE tracks transient revisioned truth and postconditions. `.gwcu` stores durable local facts.
 
-> **Resolve exactly. Present exactly. Cua acts. Verify reality.**
+> **Resolve exactly. Present exactly. Cua acts. WORLDLINE knows. `.gwcu` remembers.**
 
 ## Invocation contract
 
@@ -123,12 +123,22 @@ The default foreground path is not “send `delivery_mode:foreground` and hope.�
 When background priority is OFF, pre-trace this path before the first mutation:
 
 ```text
-1 DISCOVER
-  Cua list_windows
+1 ACQUIRE — only when the intended local app is closed
+  resolve the installed local application deterministically
+  → computer_use action="launch_app" app="<name>"
+  → Cua launch_app performs the launch
+  → compare pre/post Cua window sets
+  → bind exactly one NEW (pid, window_id)
+  → ambiguity or no new exact target = STOP
+  → never substitute terminal launch, desktop search, or another actuator
+
+2 DISCOVER
+  for an already-running target, Cua list_windows
   → exact intended (pid, window_id)
   → no title-only actuation
+  after ACQUIRE, use discovery only to revalidate the bound identity
 
-2 PRESENT
+3 PRESENT
   Cua GNOME presentation gate
   → attested org.cua.WinRects owner
   → exact stable-sequence id + pid exists exactly once
@@ -136,17 +146,17 @@ When background priority is OFF, pre-trace this path before the first mutation:
   → GNOME reports that exact window focused=true, visible=true, minimized=false
   → otherwise STOP before input
 
-3 ACT
+4 ACT
   computer_use mutation against the same pid + window_id
   → delivery_mode="foreground"
   → because the exact target was already frontmost, action-scoped restore returns to it
 
-4 REVALIDATE
+5 REVALIDATE
   if an action creates/closes/replaces the native target
   → list_windows again before the next focus-bound mutation
   → never carry stale identity forward
 
-5 COMPLETE VISIBLY
+6 COMPLETE VISIBLY
   if visible_required
   → present the final exact target again
   → verify focused+visible
@@ -154,9 +164,9 @@ When background priority is OFF, pre-trace this path before the first mutation:
   → leave it on screen
 ```
 
-This trace is the default contract, not advice. The Hermes `computer_use` policy shim and `action-span.py` both fail closed before foreground native input when exact `(pid, window_id)` presentation cannot be proved.
+This trace is the default contract, not advice. The Hermes `computer_use` policy shim exposes ACQUIRE as `launch_app` and fails closed unless Cua produces one exact new `(pid, window_id)`. The policy shim and `action-span.py` both fail closed before foreground native input when exact presentation cannot be proved.
 
-For direct Hermes `computer_use` native input, always provide exact integer `pid` and `window_id`. Reads may remain target-free when their schema permits it.
+For direct Hermes `computer_use` native input, use `action:"launch_app", app:"<local app>"` before discovery when the app is closed. Always provide exact integer `pid` and `window_id` for subsequent native input. Reads may remain target-free when their schema permits it.
 
 If background was selected and Cua explicitly returns `background_unavailable` / `foreground_required`, the action-span runner may fall forward once. It must pass the same exact presentation gate **before** retrying foreground.
 
@@ -168,7 +178,7 @@ Foreground input and persistent presentation are different properties. `delivery
 
 For `visible_required` work:
 
-1. resolve exact native target;
+1. ACQUIRE a closed local app through Cua, or resolve an already-running exact native target;
 2. present it through `present-window.py` / the policy shim;
 3. perform Cua work;
 4. re-resolve if native identity changes;
@@ -182,6 +192,7 @@ Do not use generic compositor guessing or title-only focus as a substitute.
 | Situation | setup calls before useful work |
 |---|---:|
 | known app/window | **0** model calls once exact `(pid, window_id)` is already known; presentation is local |
+| closed installed app | **1 local computer_use call** — ACQUIRE resolves + Cua launches + exact new identity is bound |
 | uncertain installed/PWA identity | **1** — `profile.sh route` |
 | host/runtime contradiction | **1** — `profile.sh recover` |
 | local postcondition/revision | **1** — `worldline-capture.sh` |
@@ -192,6 +203,7 @@ Do not use generic compositor guessing or title-only focus as a substitute.
 ```text
 durable known fact             → .gwcu / current context
 current transient fact         → WORLDLINE
+closed local application       → Cua ACQUIRE (launch_app)
 web content/research           → browser/web tooling
 shell/CLI state                → terminal tool
 stable recurring mechanics     → repository script (when terminal is available)
@@ -244,7 +256,7 @@ For an installed app, PWA, or user browser session, use the local route helper w
 "$ROOT/scripts/profile.sh" route --machine "<target name>"
 ```
 
-That route performs the repo/workspace .gwcu lookup before deterministic identity discovery. `.gwcu` accelerates stable identity; live Cua/WORLDLINE truth wins on contradiction.
+That route performs the repo/workspace .gwcu lookup before deterministic identity discovery. `.gwcu` accelerates stable identity; live Cua/WORLDLINE truth wins on contradiction. When the resolved target is a closed local application, ACQUIRE it through `computer_use launch_app`; the route helper is not permission to launch through a terminal or desktop search.
 
 ## Host contradiction
 
@@ -274,6 +286,8 @@ Persistent machine/workspace truth belongs in one `.gwcu`, **never in `AGENTS.md
 ## Failure and refusal policy
 
 **Never answer a Cua refusal with raw pointer/keyboard injection. Never guess focus.**
+
+A failed ACQUIRE is an actuation boundary. Do not launch the app with terminal commands, GNOME search, keyboard shortcuts, or another actuator. Resolve ambiguity or report the deterministic acquisition failure.
 
 When operating a specific user browser session, keep its mutations on Cua; switching actuator planes invalidates the target and evidence assumptions already established for that session.
 
