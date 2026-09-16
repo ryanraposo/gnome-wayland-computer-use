@@ -19,16 +19,31 @@ model decides → exact target → Cua acts → WORLDLINE revises truth
 
 Observation is an interrupt, not a ritual RPC. Facts are valid until invalidated.
 
-## What it is
+## What GWCU is
 
-| Layer | Job |
+GWCU is best understood as an **agent skill with a small enforcement/runtime system around it**. `SKILL.md` is the canonical agent contract: routing, foreground behavior, acquisition, verification, browser continuity, failure boundaries, and the exact action semantics live there.
+
+GWCU uses **Cua Driver's MCP/tool surface** for computer use; GWCU itself is not another MCP server. The runtime exists to make the skill's contract mechanical instead of advisory.
+
+| Component | Role |
 |---|---|
-| **Cua Driver** | Sends desktop input and reads native/browser UI state. |
-| **Cua GNOME helper** | Presents an exact `(pid, window_id)` and proves it is visible/focused. |
-| **WORLDLINE** | Transient revisioned state, invalidation, predicates, waits and conflicts. |
-| **`.gwcu`** | Durable low-churn machine/workspace truth. |
+| **`SKILL.md`** | Canonical agent behavior contract and `/computer-use` task surface. |
+| **Hermes policy plugin** | Wraps Hermes' built-in `computer_use` tool so saved delivery policy, ACQUIRE, exact foreground admission, and gateway identity are enforced. |
+| **Cua Driver** | Upstream actuator and native/browser UI tool surface. All GWCU desktop GUI input goes through Cua. |
+| **Cua GNOME helper** | Presents one exact `(pid, window_id)` and proves focused + visible state. |
+| **GWCU local runtime** | Installer, doctor, action spans, presentation helpers, routing and lifecycle repair. |
+| **WORLDLINE** | Transient revisioned state, invalidation, predicates, waits and conflicts. Read-only: it never injects input. |
+| **`.gwcu`** | Durable low-churn machine/workspace truth such as stable identity, capabilities, calibration and preferences. |
 
-Here, *desktop actuation* simply means sending GUI input such as clicks, keys, scrolls and drags. GWCU keeps that input on Cua so targeting and verification use one consistent desktop path.
+The short form is:
+
+```text
+skill decides the contract
+→ policy/runtime enforce it
+→ Cua acts
+→ WORLDLINE knows what changed
+→ .gwcu remembers stable truth
+```
 
 GNOME Wayland uses the `Remote Desktop` portal → EIS/libei for compositor-approved local input. GWCU installs no RDP/VNC server or raw-input daemon. **No X11 or XWayland session is required.**
 
@@ -51,7 +66,7 @@ GNOME Wayland uses the `Remote Desktop` portal → EIS/libei for compositor-appr
 
 Examples: `/computer-use open YouTube and play something`, `/computer-use send the message I drafted`.
 
-`computer-use.sh span` is internal-only.
+`computer-use.sh span` is internal-only. Detailed agent behavior belongs in `SKILL.md` rather than being duplicated here.
 
 ## Agent routing
 
@@ -65,105 +80,56 @@ shell or CLI state                         → terminal tool
 terminal window as visible desktop UI      → Cua
 ```
 
-A task can move between these naturally: research with web tooling, run a CLI step through terminal, then use Cua when the task reaches the desktop.
+A task can move between these naturally. Once work targets a specific browser window/session, its UI mutations remain on Cua so native window identity, tab/page state, visibility and completion evidence stay coherent.
 
-When a task targets a specific browser window/session, keep that session's UI mutations on Cua so native window identity, page/tab state, visibility and completion evidence remain coherent. Supported Chromium/Electron page work binds exact native `(pid, window_id)` before typed mutation; Firefox, browser chrome and unsupported routes use Cua's native AX/PX path.
-
-## Hermes
+## Hermes integration
 
 ```text
 computer-use skill
       ↓
 GWCU policy plugin
       ↓
-computer_use built-in tool
+Hermes built-in computer_use
       ↓
 Cua Driver
 ```
 
-GWCU replaces the targeted `computer-use` skill, **not** Hermes' built-in `computer_use` tool/toolset. The plugin wraps that tool to apply the saved delivery preference and mechanically prove exact foreground presentation before native input.
+GWCU replaces the targeted `computer-use` skill, **not** Hermes' built-in `computer_use` tool/toolset. The plugin receives the tool-override capability and wraps that existing tool. Terminal access is optional helper machinery; ordinary desktop control requires only `computer_use`.
 
-The skill requires only `computer_use`. Terminal can accelerate GWCU's local helper scripts when available; ordinary computer use remains usable without it.
+The installer also pins the exact Cua identity used by integrated Hermes profiles, restarts affected running gateways after integration/environment repair, and proves the live gateway environment before readiness can succeed.
 
-## Control preference
+## Exact foreground
 
-A fresh interactive install explains this choice and asks once. **Foreground is the default.**
+Foreground is the informed fresh-install default. `/computer-use background on|off|status` changes the standing preference; explicit task intent wins.
 
-```text
-Foreground / background OFF
-  exact target is presented; may take over your screen
-
-Background / background ON
-  keep your current window in front where Cua supports it
-```
-
-Visible-result requests still finish visibly. Explicit foreground/background wording always wins over the standing preference.
-
-Change it later:
+The high-level foreground path is:
 
 ```text
-/computer-use background on       prefer background work
-/computer-use background off      prefer exact visible takeover
-/computer-use background status   show current preference
-/computer-use background          toggle
+ACQUIRE    closed local app → Cua launch → bind one exact NEW (pid, window_id)
+DISCOVER   running target → exact (pid, window_id)
+PRESENT    Cua GNOME helper → focused + visible + not minimized proof
+ACT        Cua mutates that exact target
+REVALIDATE identity when it changes
+COMPLETE   present + verify the final visible result when required
 ```
 
-If a native `computer_use` action does not specify delivery mode, GWCU applies this preference. Action spans use the same setting.
+**No exact `(pid, window_id)` proof, no focus-bound input.** Visible-result requests end visibly. A background-unavailable fallback may escalate through the same PRESENT gate once.
 
-### Exact foreground
-
-Background OFF pre-traces:
-
-```text
-ACQUIRE    closed local app → Cua launch_app → bind one exact NEW (pid, window_id)
-DISCOVER   running app → Cua list_windows → exact (pid, window_id)
-PRESENT    GNOME helper → Activate(window_id) → focused+visible proof
-ACT        same exact target → delivery_mode="foreground"
-REVALIDATE if native identity changes
-COMPLETE   present and verify the final visible result when required
-```
-
-**No exact `(pid, window_id)` proof, no focus-bound input.** Direct Hermes calls and multi-action spans fail closed before foreground input if exact presentation cannot be proved.
-
-If background delivery is explicitly unavailable, GWCU may fall forward once through the same presentation gate. There is no floating confidence threshold.
-
-### Foreground action coverage
-
-Foreground is a delivery/presentation contract, not a synonym for every mutation. The current surfaces are documented explicitly so adding a new action does not silently weaken the contract.
-
-| Kind | Actions / surface | Foreground contract |
-|---|---|---|
-| Pointer input | `click`, `double_click`, `right_click`, `middle_click`, `drag`, `scroll` | Exact `(pid, window_id)` → PRESENT → `delivery_mode="foreground"` → act on the same target. |
-| Text / keyboard input | `type`, `key` | Same exact-target PRESENT gate before foreground delivery. Cua's lower-level span vocabulary may expose these as `type_text`, `press_key`, or `hotkey`. |
-| Closed local app | `launch_app` | **ACQUIRE**, not foreground input: resolve the local app, launch through Cua, then bind exactly one new `(pid, window_id)` before later PRESENT/ACT. No terminal/search launch substitute. |
-| Persistent window presentation | `/computer-use present` / GWCU presentation gate | Makes one exact native target persistently focused + visible and proves it. A raw `focus_app`/raise request is not a substitute for this proof when persistent foreground is required. |
-| Exact-bound browser work | `cua_browser_state` + `cua_browser_*` mutations | Bind the browser to exact native `(pid, window_id)`; PRESENT that native target for foreground/visible work; page mutation success alone does not prove visibility. |
-| Direct AX value mutation | `set_value` | Direct semantic mutation, not a `delivery_mode` foreground action. It never substitutes for PRESENT when the requested result must be visible. |
-| Observation / waits | `capture`, `wait`, `list_apps`, `list_windows` | Read/discovery only. They do not need foreground delivery and do not themselves prove persistent presentation. |
-
-The Hermes policy mechanically covers every native foreground action in its `_INPUT_ACTIONS` set. `action-span.py` is broader: it discovers every Cua MCP tool whose runtime schema exposes `delivery_mode`, then applies the same exact-target presentation gate. That keeps foreground span coverage capability-driven instead of freezing it to a hand-maintained action list.
+The exhaustive foreground action matrix belongs in `SKILL.md`. Direct Hermes native actions are mechanically gated by the policy plugin, while local action spans discover every Cua tool exposing `delivery_mode` from the runtime MCP schema so new foreground-capable Cua tools inherit the gate without a hand-maintained list.
 
 ## WORLDLINE
 
-A predictable consequence should not require repeated model turns:
-
-```text
-click Save → screenshot → model → wait → screenshot → model
-```
-
-becomes:
+WORLDLINE turns repeated observation loops into local predicate-driven continuation:
 
 ```text
 click Save → document.dirty == false → predicate satisfied → continue
 ```
 
-WORLDLINE ingests authoritative facts from AT-SPI, filesystem/process state, D-Bus, settings, network/task watchers and visual evidence only when needed. It never injects input.
-
-WORLDLINE is socket-activated. Health: `worldline.py request --json '{"op":"status"}'`.
+It prefers direct truth from AT-SPI, filesystem/process state, D-Bus, settings, network and task watchers, with ScreenCast/PipeWire visual evidence only when needed. It is socket-activated and read-only.
 
 ## `.gwcu`
 
-`.gwcu` stores stable identity, capabilities, calibration and user-authored preferences. It never stores screenshots, documents, credentials, transient focus/geometry or WORLDLINE revisions. Live Cua/WORLDLINE evidence wins on contradiction.
+`.gwcu` stores stable local truth only. It never stores screenshots, documents, credentials, transient focus/geometry or WORLDLINE revisions. Live Cua/WORLDLINE evidence wins on contradiction.
 
 Scope order: `GWCU_SCOPE_ROOT` → Git worktree root → nearest ancestor already containing `.gwcu` → current directory. Git scopes add `/.gwcu` to `.gitignore` before managed truth is written.
 
@@ -173,18 +139,9 @@ Scope order: `GWCU_SCOPE_ROOT` → Git worktree root → nearest ancestor alread
 curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh | bash
 ```
 
-The installer qualifies Ubuntu 26.04 GNOME Wayland, installs/reuses Cua Driver `0.20.0` plus its helper, establishes portal consent, installs the skill/runtime and Hermes policy, configures preferences, enables WORLDLINE/observation, repairs older GWCU artifacts, and live-proves readiness.
+The installer qualifies Ubuntu 26.04 GNOME Wayland, installs/reuses pinned Cua plus its helper, establishes portal consent, installs the skill/runtime and Hermes policy, synchronizes live desktop environment into the user systemd/DBus activation environment, restarts affected Hermes gateways, enables WORLDLINE/observation, repairs older GWCU artifacts, and live-proves readiness.
 
-On a fresh interactive install it explains:
-
-```text
-Foreground (default): presents the exact target and may take over your screen.
-Background: keeps your current window in front where Cua supports it.
-Visible-result requests still finish visibly.
-Change later: /computer-use background on|off|status
-```
-
-Then it asks `Use exact visible takeover as your default? [Y/n]`. `--unattended` accepts foreground. The setting changes later without reinstalling.
+`READY // PROVED` requires the installed Cua identity, Hermes-selected identity, running gateway backend identity and doctor-reported identity to agree. A split-brain version/path state fails readiness.
 
 If the GNOME helper needs a session reload, the installer asks for one sign-out/sign-in and does not claim fully proved readiness until rerun.
 
@@ -198,13 +155,11 @@ Teardown removes GWCU-managed integration/transient state, restores archives whe
 
 ## Invariants
 
-- Route by the state the task needs next.
-- All GWCU desktop GUI input goes through Cua.
+- `SKILL.md` is the canonical agent contract; README explains the system at a human level.
+- Cua is the sole desktop actuator; GWCU is not a second MCP control plane.
 - A specific user browser session stays on one Cua actuation path while it is being manipulated.
-- Foreground is the informed fresh-install default; `/computer-use background` changes the standing preference.
-- Every native foreground action is covered by the exact-target PRESENT gate; action spans discover `delivery_mode` support from Cua at runtime.
+- Foreground uses exact target identity plus persistent PRESENT proof.
 - Visible requests end visibly.
-- No exact target/presentation proof means no focus-bound input.
 - WORLDLINE knows; it never acts.
 - Direct truth beats pixels; model calls happen at decision boundaries.
 - `.gwcu` stores durable truth only.
