@@ -9,9 +9,11 @@ fail(){ printf 'not ok - %s\n' "$1" >&2; exit 1; }
 installer="$ROOT/install.sh"; uninstaller="$ROOT/uninstall.sh"; teardown="$ROOT/scripts/teardown.sh"
 profile="$ROOT/scripts/profile.sh"; truths="$ROOT/scripts/truths.py"; portal="$ROOT/scripts/portal-control.py"
 worldline="$ROOT/scripts/worldline.py"; capture="$ROOT/scripts/capture.sh"; presenter="$ROOT/scripts/present-window.py"
+diagnose="$ROOT/scripts/diagnose.sh"
 
-for s in "$installer" "$uninstaller" "$teardown" "$ROOT/scripts/diagnose.sh" "$capture" "$ROOT/scripts/observe.sh" "$profile" "$ROOT/scripts/computer-use.sh" "$ROOT/scripts/worldline-capture.sh"; do bash -n "$s" || fail "shell syntax: ${s#$ROOT/}"; done
-python3 -m py_compile "$ROOT"/scripts/*.py "$ROOT/runtimes/hermes/__init__.py" || fail "Python syntax"
+for s in "$installer" "$uninstaller" "$teardown" "$diagnose" "$capture" "$ROOT/scripts/observe.sh" "$profile" "$ROOT/scripts/computer-use.sh" "$ROOT/scripts/worldline-capture.sh"; do bash -n "$s" || fail "shell syntax: ${s#$ROOT/}"; done
+python3 -m py_compile "$ROOT"/scripts/*.py "$ROOT/runtimes/hermes/__init__.py" "$ROOT/tests/calculator-cold.py" || fail "Python syntax"
+python3 "$ROOT/tests/calculator-cold.py" >/dev/null || fail "Calculator regression skip contract"
 pass "entrypoints parse"
 
 [ ! -e "$ROOT/install-core.sh" ] || fail "secondary installer exists"
@@ -57,6 +59,20 @@ grep -Fq 'focused' "$presenter" && grep -Fq 'visible' "$presenter" && grep -Fq '
 grep -Fq 'pid' "$presenter" && grep -Fq 'window_id' "$presenter" || fail "presenter lacks exact identity"
 pass "WORLDLINE, observer and exact presentation are shipped and provable"
 
+# Install-context diagnosis is the repair boundary: validate/import the *live*
+# Wayland environment, pin Hermes to one Cua identity, restart affected running
+# gateways through Hermes itself, then prove their /proc environment.
+grep -Fq '"systemctl","--user","import-environment",*ENV_KEYS' "$diagnose" || fail "live systemd environment import missing"
+grep -Fq '"dbus-update-activation-environment","--systemd",*ENV_KEYS' "$diagnose" || fail "D-Bus activation environment import missing"
+! grep -Eq 'WAYLAND_DISPLAY[=:]["'"'"']?:0|WAYLAND_DISPLAY=:0' "$diagnose" || fail "diagnosis fabricates a Wayland display"
+grep -Fq 'HERMES_CUA_DRIVER_CMD' "$diagnose" || fail "Hermes Cua identity pin missing"
+grep -Fq '[hermes,"gateway","restart","--force"]' "$diagnose" || fail "affected Hermes gateway restart missing"
+grep -Fq '/proc/{pid}/environ' "$diagnose" || fail "running gateway environment is not proved"
+grep -Fq 'installed == hermes_selected == gateway_backend == doctor_reported' "$diagnose" || fail "Cua identity invariant missing"
+grep -Fq 'cua_identity_split_brain' "$diagnose" || fail "split-brain readiness failure missing"
+grep -Fq 'pipewire.service' "$diagnose" && grep -Fq 'wireplumber.service' "$diagnose" || fail "observation repair does not name exact services"
+pass "install repair synchronizes and proves live gateway/Cua identity"
+
 # Hermes is a completed integration when detected: no manual enable chore.
 grep -Fq 'hermes_exec config set plugins.enabled' "$installer" || fail "Hermes enabled list is not installed"
 grep -Fq 'hermes_exec config set plugins.disabled' "$installer" || fail "stale Hermes disable is not repaired"
@@ -88,7 +104,7 @@ grep -Fq 'gwcu.install-receipt.v1' "$installer" || fail "installer produces no d
 grep -Fq 'install.log' "$installer" || fail "installer has no durable private log"
 grep -Fq 'READY // PROVED' "$installer" || fail "success output does not distinguish proved state"
 grep -Fq 'INSTALL COMPLETE // ONE GNOME RELOAD REQUIRED' "$installer" || fail "GNOME reload boundary is not honest"
-grep -Fq 'presentation_degraded' "$ROOT/scripts/diagnose.sh" || fail "diagnosis can ignore broken exact presentation"
+grep -Fq 'presentation_degraded' "$diagnose" || fail "diagnosis can ignore broken exact presentation"
 pass "installer ends on unified proof with honest reload boundary"
 
 grep -q 'gnome-wayland-computer-use-worldline.socket' "$teardown" || fail "WORLDLINE unit not removed"
@@ -107,26 +123,41 @@ pass "read-only sensors stay read-only"
 cat >"$TMP/fake-cua" <<'PY'
 #!/usr/bin/env python3
 import json,sys
+if len(sys.argv)>=2 and sys.argv[1]=='--version':
+ print('cua-driver 0.28.3');raise SystemExit(0)
 if len(sys.argv)<2 or sys.argv[1]!='mcp': raise SystemExit(2)
 for line in sys.stdin:
  q=json.loads(line)
- if q.get('method')=='initialize': print(json.dumps({'jsonrpc':'2.0','id':q['id'],'result':{'protocolVersion':'2024-11-05','serverInfo':{'name':'cua-driver','version':'test'}}}),flush=True)
- elif q.get('method')=='tools/call': print(json.dumps({'jsonrpc':'2.0','id':q['id'],'result':{'content':[],'isError':False,'structuredContent':{'schema_version':'1','platform':'linux','driver_version':'test','overall':'ok','checks':[]}}}),flush=True)
+ if q.get('method')=='initialize': print(json.dumps({'jsonrpc':'2.0','id':q['id'],'result':{'protocolVersion':'2024-11-05','serverInfo':{'name':'cua-driver','version':'0.28.3'}}}),flush=True)
+ elif q.get('method')=='tools/call': print(json.dumps({'jsonrpc':'2.0','id':q['id'],'result':{'content':[],'isError':False,'structuredContent':{'schema_version':'1','platform':'linux','driver_version':'0.28.3','overall':'ok','checks':[{'name':'binary_version','status':'pass','message':'cua-driver 0.28.3'}]}}}),flush=True)
 PY
 chmod +x "$TMP/fake-cua"
 python3 "$ROOT/scripts/cua-health.py" --driver "$TMP/fake-cua" >"$TMP/health.json"
-python3 - "$TMP/health.json" <<'PY' || fail "health transport contract failed"
+python3 - "$TMP/health.json" <<'PY' || fail "health transport/identity contract failed"
 import json,sys
-d=json.load(open(sys.argv[1]));assert d['schema']=='gwcu.cua-health.v1' and d['ok'] and d['report']['overall']=='ok'
+d=json.load(open(sys.argv[1]));assert d['schema']=='gwcu.cua-health.v2' and d['ok'] and d['report']['overall']=='ok';assert d['identity_ok'] and d['executable_version']=='0.28.3' and d['reported_version']=='0.28.3'
 PY
-pass "Cua health uses MCP structuredContent"
+# Same executable claiming a stale MCP binary version must fail closed.
+sed 's/cua-driver 0.28.3'"'"'/cua-driver 0.26.1'"'"'/' "$TMP/fake-cua" >"$TMP/fake-cua-split";chmod +x "$TMP/fake-cua-split"
+# Restore --version to the installed identity while leaving health stale.
+python3 - "$TMP/fake-cua-split" <<'PY'
+import pathlib,sys
+p=pathlib.Path(sys.argv[1]);s=p.read_text();s=s.replace("print('cua-driver 0.26.1');raise SystemExit(0)","print('cua-driver 0.28.3');raise SystemExit(0)",1);p.write_text(s)
+PY
+rc=0;python3 "$ROOT/scripts/cua-health.py" --driver "$TMP/fake-cua-split" >"$TMP/health-split.json" || rc=$?
+[ "$rc" -ne 0 ] || fail "split-brain Cua health succeeded"
+python3 - "$TMP/health-split.json" <<'PY' || fail "split-brain Cua health code missing"
+import json,sys
+d=json.load(open(sys.argv[1]));assert not d['ok'] and d['code']=='identity_split_brain';assert d['executable_version']=='0.28.3' and d['reported_version']=='0.26.1'
+PY
+pass "Cua health proves executable == MCP-reported binary version"
 
 mkdir -p "$TMP/home"; rc=0
-HOME="$TMP/home" XDG_SESSION_TYPE=x11 XDG_CURRENT_DESKTOP=KDE "$ROOT/scripts/diagnose.sh" --machine >"$TMP/diag.json" 2>/dev/null || rc=$?
+HOME="$TMP/home" XDG_SESSION_TYPE=x11 XDG_CURRENT_DESKTOP=KDE "$diagnose" --machine >"$TMP/diag.json" 2>/dev/null || rc=$?
 [ "$rc" -ne 0 ] || fail "wrong-session diagnosis succeeded"
 python3 - "$TMP/diag.json" <<'PY' || fail "diagnostic envelope invalid"
 import json,sys
-d=json.load(open(sys.argv[1]));assert not d['ok'] and d['code']=='wrong_session';assert 'presentation' in d
+d=json.load(open(sys.argv[1]));assert not d['ok'] and not d['host']['ok'];assert 'presentation' in d and 'desktop_environment' in d and 'identity' in d['cua']
 PY
 XDG_RUNTIME_DIR="$TMP/runtime" python3 "$ROOT/scripts/observer.py" self-test >/dev/null || fail "observer self-test"
 XDG_RUNTIME_DIR="$TMP/world" python3 "$worldline" self-test >/dev/null || fail "WORLDLINE self-test"
