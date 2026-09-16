@@ -36,11 +36,11 @@ def classify(p):
  except Exception:return None
  if not c.has_section('Desktop Entry'):return None
  e=c['Desktop Entry']
- if e.get('Type','Application')!='Application' or e.get('Hidden','').casefold()=='true':return None
+ if e.get('Type','Application')!='Application' or e.get('Hidden','').casefold()=='true' or e.get('NoDisplay','').casefold()=='true':return None
  a=parse_exec(e.get('Exec','')); eng=engine(a)
- if not a or not eng:return None
+ if not a:return None
  app=flag(a,'--app-id'); site=flag(a,'--app'); standalone=bool(app or site or any(x in {'--ssb','--kiosk-app'} for x in a)); wm=e.get('StartupWMClass','').strip() or None
- kind='installed-web-app' if standalone else ('electron-app' if eng=='electron' else 'browser')
+ kind='installed-web-app' if standalone else ('electron-app' if eng=='electron' else ('browser' if eng else 'native-app'))
  return {'display_name':e.get('Name',p.stem).strip(),'desktop_id':p.name,'app_id':app or wm or p.stem,'startup_wm_class':wm,'engine':eng,'kind':kind,'standalone_web_app':standalone,'site':site,'exec':e.get('Exec',''),'source':str(p)}
 def dirs():
  seen=set(); roots=[pathlib.Path(os.environ.get('XDG_DATA_HOME') or pathlib.Path.home()/'.local/share')/'applications']
