@@ -296,7 +296,11 @@ def freshen_wait_spec(spec: dict[str, Any], baseline: int) -> dict[str, Any]:
             return raw
         p = dict(raw)
         if p.get("op", "eq") not in {"changed", "invalid"}:
-            p.setdefault("fresh_after", baseline)
+            try:
+                requested = int(p.get("fresh_after", baseline))
+            except (TypeError, ValueError):
+                requested = baseline
+            p["fresh_after"] = max(baseline, requested)
         return p
     if isinstance(out.get("predicates"), list):
         out["predicates"] = [mark(p) for p in out["predicates"]]
@@ -310,7 +314,7 @@ def freshen_wait_spec(spec: dict[str, Any], baseline: int) -> dict[str, Any]:
                 branch["predicates"] = [mark(p) for p in branch["predicates"]]
             branches.append(branch)
         out["branches"] = branches
-    out.setdefault("after_revision", baseline)
+    out["after_revision"] = baseline
     return out
 
 
