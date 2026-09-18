@@ -288,6 +288,32 @@ def fail_boundary(control: dict[str, Any], presentations: list[dict[str, Any]], 
     return envelope(False, "boundary", requested=requested, completed=completed, results=results, boundary=b, detail=detail, revision=revision, control=control), 30
 
 
+def freshen_wait_spec(spec: dict[str, Any], baseline: int) -> dict[str, Any]:
+    """Require awaited state to be evidenced after this action's WORLDLINE fence."""
+    out = dict(spec)
+    def mark(raw: Any) -> Any:
+        if not isinstance(raw, dict):
+            return raw
+        p = dict(raw)
+        if p.get("op", "eq") not in {"changed", "invalid"}:
+            p.setdefault("fresh_after", baseline)
+        return p
+    if isinstance(out.get("predicates"), list):
+        out["predicates"] = [mark(p) for p in out["predicates"]]
+    if isinstance(out.get("branches"), list):
+        branches = []
+        for raw in out["branches"]:
+            if not isinstance(raw, dict):
+                branches.append(raw); continue
+            branch = dict(raw)
+            if isinstance(branch.get("predicates"), list):
+                branch["predicates"] = [mark(p) for p in branch["predicates"]]
+            branches.append(branch)
+        out["branches"] = branches
+    out.setdefault("after_revision", baseline)
+    return out
+
+
 def run(driver: str, request: dict[str, Any], timeout: float, worldline_path: Path, presenter: Path):
     steps = request["steps"]
     requested = len(steps)
@@ -322,12 +348,7 @@ def run(driver: str, request: dict[str, Any], timeout: float, worldline_path: Pa
                 return fail_boundary(control, presentations, requested, completed, results, "transition_limit", index=index, revision=last_revision)
             step, action = steps[index], steps[index]["action"]
             baseline = last_revision
-            if "await" in step:
-                try:
-                    status = worldline_call(worldline_path, {"op": "status"}, 3)
-                    baseline = status.get("revision", baseline) if status.get("ok") else baseline
-                except Exception as exc:
-                    return envelope(False, "worldline_boundary", requested=requested, completed=completed, results=results, boundary={"index": index, "reason": "worldline_unavailable_before_action"}, detail=str(exc), revision=last_revision, control=control), 50
+            fence_result = None
 
             arguments = dict(action["arguments"])
             supports_delivery = bool(modes.get(action["name"]))
@@ -347,6 +368,15 @@ def run(driver: str, request: dict[str, Any], timeout: float, worldline_path: Pa
                 if not presentation.get("ok"):
                     return fail_boundary(control, presentations, requested, completed, results, "presentation_not_proved", index=index, name=action["name"], detail=compact(presentation), revision=last_revision)
 
+            if "await" in step:
+                try:
+                    fence_result = worldline_call(worldline_path, {"op": "fence", "trigger": f"before:{action['name']}"}, 3)
+                    if not fence_result.get("ok") or not isinstance(fence_result.get("revision"), int):
+                        raise RuntimeError(compact(fence_result))
+                    baseline = fence_result["revision"]
+                except Exception as exc:
+                    return envelope(False, "worldline_boundary", requested=requested, completed=completed, results=results, boundary={"index": index, "reason": "worldline_fence_failed"}, detail=str(exc), revision=last_revision, control=control), 50
+
             send(process, {"jsonrpc": "2.0", "id": request_id, "method": "tools/call", "params": {"name": action["name"], "arguments": arguments}})
             response = recv_for(process, request_id, timeout)
             request_id += 1
@@ -361,6 +391,14 @@ def run(driver: str, request: dict[str, Any], timeout: float, worldline_path: Pa
                     return fail_boundary(control, presentations, requested, completed, results, "presentation_not_proved_for_fallback", index=index, name=action["name"], detail=compact(presentation), revision=last_revision)
                 overrides.append({"index": index, "from": "background", "to": "foreground", "reason": "cua_background_unavailable"})
                 arguments["delivery_mode"] = "foreground"
+                if "await" in step:
+                    try:
+                        fence_result = worldline_call(worldline_path, {"op": "fence", "trigger": f"before:{action['name']}:foreground-fallback"}, 3)
+                        if not fence_result.get("ok") or not isinstance(fence_result.get("revision"), int):
+                            raise RuntimeError(compact(fence_result))
+                        baseline = fence_result["revision"]
+                    except Exception as exc:
+                        return envelope(False, "worldline_boundary", requested=requested, completed=completed, results=results, boundary={"index": index, "reason": "worldline_fence_failed_for_fallback"}, detail=str(exc), revision=last_revision, control=control), 50
                 send(process, {"jsonrpc": "2.0", "id": request_id, "method": "tools/call", "params": {"name": action["name"], "arguments": arguments}})
                 response = recv_for(process, request_id, timeout)
                 request_id += 1
@@ -368,6 +406,8 @@ def run(driver: str, request: dict[str, Any], timeout: float, worldline_path: Pa
             result = normalize_result(response)
             failed, reason = boundary(response)
             record = {"index": index, "name": action["name"], "result": result, "control": {"requested": control["mode"], "delivery_mode_supported": supports_delivery, "applied": arguments.get("delivery_mode") if supports_delivery else "driver_default", "fallback": fallback, "presentation": presentation}}
+            if fence_result is not None:
+                record["worldline_fence"] = fence_result
             results.append(record)
             if failed:
                 control["runtime_overrides"] = overrides
@@ -376,10 +416,21 @@ def run(driver: str, request: dict[str, Any], timeout: float, worldline_path: Pa
 
             wait_result = None
             if "await" in step:
-                spec = dict(step["await"])
+                if not isinstance(baseline, int):
+                    return fail_boundary(control, presentations, requested, completed, results, "worldline_fence_missing_revision", index=index, name=action["name"], revision=last_revision)
+                target_facts = {}
+                if target is not None:
+                    target_facts = {"cua.action.pid": target[0], "cua.action.window_id": target[1]}
+                try:
+                    receipt = worldline_call(worldline_path, {"op": "event", "event": {"source": "cua", "type": "action-complete", "facts": {"cua.action.name": action["name"], "cua.action.ok": True, "cua.action.fence_revision": baseline, **target_facts}}}, 3)
+                    if not receipt.get("ok"):
+                        raise RuntimeError(compact(receipt))
+                    record["worldline_action"] = receipt
+                    last_revision = receipt.get("revision", last_revision)
+                except Exception as exc:
+                    return envelope(False, "worldline_boundary", requested=requested, completed=completed, results=results, boundary={"index": index, "reason": "worldline_action_receipt_failed"}, detail=str(exc), revision=last_revision, control=control), 50
+                spec = freshen_wait_spec(dict(step["await"]), baseline)
                 spec["op"] = "wait"
-                if baseline is not None:
-                    spec.setdefault("after_revision", baseline)
                 try:
                     wait_result = worldline_call(worldline_path, spec, max(1, min(float(spec.get("timeout_ms", 5000)) / 1000 + 2, 122)))
                 except Exception as exc:

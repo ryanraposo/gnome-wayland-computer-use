@@ -201,6 +201,18 @@ class World:
             return {"schema":SCHEMA,"ok":True,"code":"applied","revision":r["revision"],"woken":r["woken"]}
     def capture(self,q:dict[str,Any]):
         with self.changed:return self._reduce(q)
+    def fence(self,q:dict[str,Any]):
+        """Seal pre-action truth so later waits can demand evidence newer than it."""
+        with self.changed:
+            r=self._reduce({
+                "trigger":str(q.get("trigger") or "action:fence"),
+                "invalidates":q.get("invalidates") if isinstance(q.get("invalidates"),list) else [],
+                "pids":q.get("pids") if isinstance(q.get("pids"),list) else [],
+                "paths":q.get("paths") if isinstance(q.get("paths"),list) else [],
+                "visual":bool(q.get("visual")),
+                "visual_timeout_ms":q.get("visual_timeout_ms",500),
+            })
+            return {"schema":SCHEMA,"ok":True,"code":"fenced","revision":r["revision"],"boundary":r["boundary"]}
     def arm(self,q:dict[str,Any]):
         ident=str(q.get("id") or "");ps=q.get("predicates");mode=q.get("mode","all")
         if not ident or not isinstance(ps,list) or not ps or mode not in ("all","any"):raise ValueError("arm requires id, non-empty predicates and mode all|any")
@@ -218,8 +230,18 @@ class World:
     def _wait_pred(self,p:dict[str,Any],after:int)->bool:
         op=p.get("op","eq");path=p.get("path")
         if not isinstance(path,str) or not path:return False
-        if op=="changed":return self._path_touched_since(path,after,"changed")
-        if op=="invalid":return self._path_touched_since(path,after,"invalidated")
+        fresh_after=p.get("fresh_after")
+        if fresh_after is not None:
+            try:fresh_after=int(fresh_after)
+            except (TypeError,ValueError):return False
+        clock_after=fresh_after if fresh_after is not None else after
+        if op=="changed":return self._path_touched_since(path,clock_after,"changed")
+        if op=="invalid":return self._path_touched_since(path,clock_after,"invalidated")
+        if fresh_after is not None:
+            if op=="missing":
+                return pred(p,self.facts,set(),set()) and self._path_touched_since(path,fresh_after)
+            entry=self.facts.get(path)
+            if not isinstance(entry,dict) or int(entry.get("revision",0))<=fresh_after:return False
         return pred(p,self.facts,set(),set())
     def _match(self,predicates:list[dict[str,Any]],mode:str,after:int)->bool:
         states=[self._wait_pred(p,after) for p in predicates]
@@ -257,10 +279,11 @@ class World:
         if op=="status":return self.status()
         if op=="event":return self.event(q.get("event") if isinstance(q.get("event"),dict) else q)
         if op=="capture":return self.capture(q)
+        if op=="fence":return self.fence(q)
         if op=="arm":return self.arm(q)
         if op=="wait":return self.wait(q)
         if op=="close":return {"schema":SCHEMA,"ok":True,"code":"closing"}
-        raise ValueError("op must be status|event|capture|arm|wait|close")
+        raise ValueError("op must be status|event|capture|fence|arm|wait|close")
 
 def listen()->socket.socket:
     try:n=int(os.getenv("LISTEN_FDS","0"));pid=int(os.getenv("LISTEN_PID","0"))
@@ -303,6 +326,10 @@ def selftest()->int:
         assert w.wait({"branches":[{"id":"done","predicates":[{"path":"task.done","op":"eq","value":True}]}],"timeout_ms":5})["matched_branch"]=="done"
         baseline=w.revision;w.event({"source":"user","facts":{"ui.focus.name":"Other"}});w.event({"source":"task","facts":{"task.noise":1}})
         assert w.wait({"predicates":[{"path":"never","op":"exists"}],"conflict_paths":["ui.focus"],"after_revision":baseline,"timeout_ms":5})["code"]=="conflict"
+        w.event({"source":"task","facts":{"task.fresh":True}});stale=w.revision
+        assert w.wait({"predicates":[{"path":"task.fresh","op":"eq","value":True,"fresh_after":stale}],"timeout_ms":5})["code"]=="timeout"
+        w.event({"source":"task","facts":{"task.fresh":True}})
+        assert w.wait({"predicates":[{"path":"task.fresh","op":"eq","value":True,"fresh_after":stale}],"timeout_ms":5})["code"]=="ready"
         print(js({"schema":SCHEMA,"ok":True,"code":"self_test_ok"}));return 0
     finally:
         if old is None:os.environ.pop("XDG_RUNTIME_DIR",None)

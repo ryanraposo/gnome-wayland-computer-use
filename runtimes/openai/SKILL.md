@@ -258,7 +258,7 @@ The runner keeps one Cua MCP session open. For every foreground-capable mutation
 
 ## WORLDLINE postconditions
 
-Use WORLDLINE when the executor can state what must become true and its local helper surface is available.
+Use WORLDLINE when the executor can state what must become true and its local helper surface is available. Awaited action spans seal a WORLDLINE fence **after PRESENT and immediately before Cua mutation**. Ordinary completion predicates are automatically required to have evidence newer than that fence revision, so a cached pre-action truth cannot satisfy a new action.
 
 ```bash
 "$ROOT/scripts/worldline-capture.sh" --trigger action:save --expect-json '[{"path":"task.document.saved","op":"eq","value":true}]'

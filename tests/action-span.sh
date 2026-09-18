@@ -110,11 +110,21 @@ pass "background-unavailable falls forward only after exact visible takeover"
 mkdir -p "$TMP/runtime";XDG_RUNTIME_DIR="$TMP/runtime" GWCU_WORLDLINE_IDLE_SECONDS=30 python3 "$WORLD" serve >/dev/null 2>&1 & wpid=$!
 for _ in $(seq 1 50);do [ -S "$TMP/runtime/gnome-wayland-computer-use/worldline.sock" ]&&break;sleep .02;done
 SOCK="$TMP/runtime/gnome-wayland-computer-use/worldline.sock";: >"$TMP/calls"
+XDG_RUNTIME_DIR="$TMP/runtime" python3 "$WORLD" request --json '{"op":"event","event":{"source":"test-ui","facts":{"ui.dialog":"ready"}}}' >/dev/null
+STALE_TX='{"schema":"gwcu.transaction.v1","steps":[{"action":{"name":"click","arguments":{"pid":4242,"window_id":77,"x":10,"y":20}},"await":{"timeout_ms":60,"predicates":[{"path":"ui.dialog","op":"eq","value":"ready"}]}}]}'
+set +e
+FAKE_CUA_LOG="$TMP/calls" WORLDLINE_SOCKET="$SOCK" XDG_RUNTIME_DIR="$TMP/runtime" XDG_STATE_HOME="$TMP/other-state" bash "$SURFACE" span --driver "$TMP/fake-cua" --presenter "$TMP/fake-presenter" --worldline-socket "$SOCK" --actions-json "$STALE_TX" >"$TMP/stale-tx.json"
+stale_tx_rc=$?
+set -e
+[ "$stale_tx_rc" -ne 0 ] || fail "cached pre-action fact satisfied awaited postcondition"
+grep -q 'worldline_timeout' "$TMP/stale-tx.json" || fail "stale postcondition did not stop at WORLDLINE timeout"
+pass "action fence rejects a cached pre-action fact as completion evidence"
+
 TX='{"schema":"gwcu.transaction.v1","steps":[{"action":{"name":"click","arguments":{"pid":4242,"window_id":77,"x":10,"y":20}},"await":{"timeout_ms":1000,"predicates":[{"path":"ui.dialog","op":"eq","value":"ready"}]}},{"action":{"name":"type_text","arguments":{"pid":4242,"window_id":77,"text":"continued locally"}}}]}'
 FAKE_CUA_LOG="$TMP/calls" EMIT_AFTER_CLICK=1 WORLDLINE_SOCKET="$SOCK" XDG_RUNTIME_DIR="$TMP/runtime" XDG_STATE_HOME="$TMP/other-state" bash "$SURFACE" span --driver "$TMP/fake-cua" --presenter "$TMP/fake-presenter" --worldline-socket "$SOCK" --actions-json "$TX" >"$TMP/tx.json"
 python3 - "$TMP/tx.json" <<'PY' || fail "transaction envelope invalid"
 import json,sys
-d=json.load(open(sys.argv[1]));assert d['ok'] and d['completed']==2;assert d['results'][0]['worldline']['code']=='ready'
+d=json.load(open(sys.argv[1]));assert d['ok'] and d['completed']==2;first=d['results'][0];assert first['worldline']['code']=='ready';assert first['worldline_fence']['code']=='fenced';assert first['worldline_action']['code']=='applied'
 PY
 pass "one outer call performs Cua action -> WORLDLINE wait -> local continuation"
 XDG_RUNTIME_DIR="$TMP/runtime" python3 "$WORLD" request --json '{"op":"close"}' >/dev/null||true;wait "$wpid"||true

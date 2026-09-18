@@ -129,6 +129,8 @@ click Save → document.dirty == false → predicate satisfied → continue
 
 It prefers direct truth from AT-SPI, filesystem/process state, D-Bus, settings, network and task watchers, with ScreenCast/PipeWire visual evidence only when needed. It is socket-activated and read-only.
 
+For awaited actions, the runtime seals a WORLDLINE fence after presentation and immediately before Cua mutates the target. Postconditions must then be evidenced in a newer revision: a cached fact that was already true before the action cannot complete the action.
+
 ## `.gwcu`
 
 `.gwcu` stores stable local truth only. It never stores screenshots, documents, credentials, transient focus/geometry or WORLDLINE revisions. Live Cua/WORLDLINE evidence wins on contradiction.
