@@ -49,13 +49,13 @@ print(json.load(open(sys.argv[1]))["revision"])
 PY
 )
 set +e
-XDG_RUNTIME_DIR="$TMP/runtime" python3 "$world" request --json "{"op":"wait","timeout_ms":40,"predicates":[{"path":"task.fresh","op":"eq","value":true,"fresh_after":$stale_rev}]}" >"$TMP/stale-wait.json"
+XDG_RUNTIME_DIR="$TMP/runtime" python3 "$world" request --json '{"op":"wait","timeout_ms":40,"predicates":[{"path":"task.fresh","op":"eq","value":true,"fresh_after":'"$stale_rev"'}]}' >"$TMP/stale-wait.json"
 stale_rc=$?
 set -e
 [ "$stale_rc" -ne 0 ] || fail "stale fact satisfied a fresh wait"
 grep -q '"code":"timeout"' "$TMP/stale-wait.json" || fail "stale fresh wait did not time out"
 XDG_RUNTIME_DIR="$TMP/runtime" python3 "$world" request --json '{"op":"event","event":{"source":"task","facts":{"task.fresh":true}}}' >/dev/null
-XDG_RUNTIME_DIR="$TMP/runtime" python3 "$world" request --json "{"op":"wait","timeout_ms":100,"predicates":[{"path":"task.fresh","op":"eq","value":true,"fresh_after":$stale_rev}]}" >"$TMP/fresh-wait.json"
+XDG_RUNTIME_DIR="$TMP/runtime" python3 "$world" request --json '{"op":"wait","timeout_ms":100,"predicates":[{"path":"task.fresh","op":"eq","value":true,"fresh_after":'"$stale_rev"'}]}' >"$TMP/fresh-wait.json"
 grep -q '"code":"ready"' "$TMP/fresh-wait.json" || fail "freshly re-observed fact did not satisfy fresh wait"
 pass "fresh_after rejects cached truth until the fact is observed in a newer revision"
 
