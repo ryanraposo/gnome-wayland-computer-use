@@ -1,0 +1,10 @@
+[Unit]
+Description=GWCU WORLDLINE revision and predicate daemon
+PartOf=graphical-session.target
+After=graphical-session.target gnome-wayland-computer-use-observer.socket
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 %h/.agents/skills/gnome-wayland-computer-use/scripts/worldline.py serve
+Restart=on-failure
+RestartSec=250ms

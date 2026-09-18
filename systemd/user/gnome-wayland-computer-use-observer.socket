@@ -1,0 +1,13 @@
+[Unit]
+Description=GNOME Wayland screen observer socket
+PartOf=graphical-session.target
+
+[Socket]
+ListenStream=%t/gnome-wayland-computer-use/observer.sock
+DirectoryMode=0700
+SocketMode=0600
+RemoveOnStop=true
+Service=gnome-wayland-computer-use-observer.service
+
+[Install]
+WantedBy=graphical-session.target

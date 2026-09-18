@@ -1,0 +1,11 @@
+[Unit]
+Description=GNOME Wayland persistent ScreenCast observer
+After=graphical-session.target pipewire.service wireplumber.service xdg-desktop-portal.service
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.agents/skills/gnome-wayland-computer-use/scripts/observer.py serve
+Restart=on-failure
+RestartSec=250ms
+TimeoutStopSec=2s
