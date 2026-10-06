@@ -13,6 +13,7 @@ import os
 import socket
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -236,7 +237,7 @@ def parse_request(raw: str) -> dict[str, Any]:
     return {"schema": TRANSACTION_SCHEMA if transaction else REQUEST_SCHEMA, "steps": steps, "start": start, "control": control}
 
 
-def physical_trace(requested: int, completed: int, results: list[dict[str, Any]], boundary: Any, revision: Any, control: Any) -> dict[str, Any]:
+def physical_trace(ok: bool, code: str, requested: int, completed: int, results: list[dict[str, Any]], boundary: Any, revision: Any, control: Any) -> dict[str, Any]:
     """Return a compact, payload-redacted physical execution digest."""
     control = control if isinstance(control, dict) else {}
     presentations = control.get("presentations", [])
@@ -285,6 +286,9 @@ def physical_trace(requested: int, completed: int, results: list[dict[str, Any]]
 
     return {
         "schema": TRACE_SCHEMA,
+        "ok": ok,
+        "code": code,
+        "recorded_at_unix_ns": time.time_ns(),
         "requested": requested,
         "completed": completed,
         "mode": control.get("mode"),
@@ -299,6 +303,25 @@ def physical_trace(requested: int, completed: int, results: list[dict[str, Any]]
     }
 
 
+def trace_path() -> Path:
+    return Path(os.getenv("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "gnome-wayland-computer-use" / "last-trace.json"
+
+
+def persist_trace(trace: dict[str, Any]) -> None:
+    """Persist only the redacted physical digest in ephemeral per-user runtime state."""
+    try:
+        path = trace_path()
+        path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        os.chmod(path.parent, 0o700)
+        tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+        tmp.write_text(compact(trace) + "\n")
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, path)
+    except OSError:
+        # Tracing must never turn a completed/refused desktop action into failure.
+        pass
+
+
 def envelope(ok: bool, code: str, **kwargs: Any) -> dict[str, Any]:
     requested = kwargs.get("requested", 0)
     completed = kwargs.get("completed", 0)
@@ -310,7 +333,8 @@ def envelope(ok: bool, code: str, **kwargs: Any) -> dict[str, Any]:
     for key in ("detail", "revision", "control"):
         if kwargs.get(key) is not None:
             payload[key] = kwargs[key]
-    payload["trace"] = physical_trace(requested, completed, results, boundary, revision, control)
+    payload["trace"] = physical_trace(ok, code, requested, completed, results, boundary, revision, control)
+    persist_trace(payload["trace"])
     return payload
 
 
