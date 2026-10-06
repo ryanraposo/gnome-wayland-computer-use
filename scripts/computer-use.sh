@@ -330,7 +330,7 @@ PY
 )
         fi
         out=$("$driver" mcp <<MCP
-{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"gwcu-list-windows","version":"2.3.0"}}}
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"gwcu-list-windows","version":"2.4.0"}}}
 {"jsonrpc":"2.0","method":"notifications/initialized"}
 {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_windows","arguments":$args}}
 MCP
