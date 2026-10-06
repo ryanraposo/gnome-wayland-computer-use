@@ -12,6 +12,8 @@ PRESENTER="$ROOT/scripts/present-window.py"
 PYTHON="${GWCU_SYSTEM_PYTHON:-${GNOME_WAYLAND_SYSTEM_PYTHON:-/usr/bin/python3}}"
 [ -x "$PYTHON" ] || PYTHON="$(command -v python3)"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/gnome-wayland-computer-use"
+RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/gnome-wayland-computer-use"
+LAST_TRACE="$RUNTIME_DIR/last-trace.json"
 BACKGROUND_PREF="$STATE_DIR/background-priority"
 
 # Resolve cua-driver binary (mirrors mcp_client.resolve_driver)
@@ -50,7 +52,7 @@ usage() {
       Compact Cua, presentation, WORLDLINE, consent, observer and .gwcu status.
 
   /computer-use trace
-      Print the exact default foreground execution path agents must follow.
+      Show the last redacted physical span, then the canonical foreground path.
 
   /computer-use present --pid PID --window-id ID
       Persistently focus + raise one exact Cua/GNOME window and prove it.
@@ -142,8 +144,36 @@ worldline_status() {
 }
 
 show_trace() {
+    if [ -s "$LAST_TRACE" ]; then
+        "$PYTHON" - "$LAST_TRACE" <<'PY'
+import datetime,json,sys
+try:d=json.load(open(sys.argv[1]))
+except Exception:
+    print("Last physical span: unreadable")
+else:
+    print("Last physical span")
+    print(f"  outcome: {d.get('code','unknown')} ({d.get('completed',0)}/{d.get('requested',0)} actions)")
+    print(f"  mode: {d.get('mode') or 'unknown'}  visible-required: {'yes' if d.get('visible_required') else 'no'}")
+    stamp=d.get("recorded_at_unix_ns")
+    if isinstance(stamp,int):
+        when=datetime.datetime.fromtimestamp(stamp/1_000_000_000,datetime.timezone.utc).isoformat(timespec="seconds")
+        print(f"  recorded: {when}")
+    for target in d.get("targets") or []:
+        if isinstance(target,dict):print(f"  target: pid={target.get('pid')} window_id={target.get('window_id')}")
+    for a in d.get("actions") or []:
+        if not isinstance(a,dict):continue
+        revs="/".join(str(a.get(k) if a.get(k) is not None else "-") for k in ("fence_revision","action_revision","postcondition_revision"))
+        print(f"  action[{a.get('index')}]: {a.get('name')} mode={a.get('delivery_mode') or '-'} presented={'yes' if a.get('presented') else 'no'} revisions={revs} post={a.get('postcondition_code') or '-'}")
+    boundary=d.get("boundary")
+    if boundary:print("  boundary: "+json.dumps(boundary,separators=(",",":")))
+    print("  payloads: redacted")
+    print()
+PY
+    else
+        printf 'Last physical span: none in this login session\n\n'
+    fi
     cat <<'TRACE'
-Default foreground trace (background priority OFF)
+Canonical foreground path (background priority OFF)
 
   1. ACQUIRE (when the local app is closed)
      Resolve the installed local application deterministically, then use
