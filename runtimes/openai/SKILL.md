@@ -1,7 +1,7 @@
 ---
 name: computer-use
 description: Use for reliable Ubuntu GNOME desktop control with Cua.
-version: 2.3.0
+version: 2.4.0
 author: Ryan Raposo
 license: MIT
 platforms: [linux]

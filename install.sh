@@ -3,7 +3,7 @@
 set -euo pipefail
 
 APP_ID="gnome-wayland-computer-use"
-VERSION="2.3.0"
+VERSION="2.4.0"
 BASE_URL="${GWCU_BASE_URL:-https://ryanraposo.github.io/gnome-wayland-computer-use}"
 CUA_DRIVER_RS_VERSION="${GWCU_CUA_DRIVER_RS_VERSION:-0.20.0}" # deliberately pinned
 PYTHON="${GWCU_SYSTEM_PYTHON:-/usr/bin/python3}"
