@@ -271,6 +271,15 @@ ROOT="$HOME/.agents/skills/gnome-wayland-computer-use"
 
 The runner keeps one Cua MCP session open. For every foreground-capable mutation it locally proves exact presentation before sending `tools/call`. Split only when fresh state changes the decision, target identity changes, a branch is undeclared, Cua refuses/fails, or a real user choice appears. Without terminal access, keep using the built-in `computer_use` tool directly and preserve the same decision boundaries.
 
+
+### Physical trace
+
+Every action span returns a `trace` object with schema `gwcu.trace.v1`. This is the compact forensic record for what GWCU physically attempted: action names, delivery mode, exact targets, presentation proofs, WORLDLINE fence/action/postcondition revisions, runtime foreground fallbacks, and the terminal failure boundary when one occurs.
+
+The trace deliberately omits action arguments and result payloads. Typed text, clipboard content, document data, and other task payloads do not belong in the physical trace. The full span result remains available to the immediate caller; the trace is the safe at-a-glance artifact for tests, debugging, and PR evidence.
+
+`/computer-use trace` describes the canonical control path; `gwcu.trace.v1` records what an executed span actually did.
+
 ## WORLDLINE postconditions
 
 Use WORLDLINE when the executor can state what must become true and its local helper surface is available. Awaited action spans seal a WORLDLINE fence **after PRESENT and immediately before Cua mutation**. Ordinary completion predicates are automatically required to have evidence newer than that fence revision, so a cached pre-action truth cannot satisfy a new action.
