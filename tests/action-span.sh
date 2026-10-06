@@ -44,6 +44,11 @@ python3 - "$TMP/result.json" <<'PY' || fail "completed span envelope invalid"
 import json,sys
 d=json.load(open(sys.argv[1]));assert d['ok'] and d['completed']==3;assert d['control']['mode']=='foreground';assert d['control']['reason']=='standing_preference';assert d['control']['extra_model_calls']==0
 assert all(x['control']['applied']=='foreground' for x in d['results']);assert len(d['control']['presentations'])==3
+trace=d['trace'];assert trace['schema']=='gwcu.trace.v1';assert trace['completed']==3;assert trace['mode']=='foreground'
+assert [x['name'] for x in trace['actions']]==['click','type_text','key_press'];assert trace['targets']==[{'pid':4242,'window_id':77}]
+assert len(trace['presentations'])==3;assert all(x['ok'] is True for x in trace['presentations'])
+assert trace['redaction']=='action arguments and result payloads omitted'
+assert 'hello' not in json.dumps(trace) and 'ENTER' not in json.dumps(trace)
 PY
 [ "$(wc -l <"$TMP/present")" -eq 3 ] || fail "each foreground mutation was not presentation-gated"
 pass "default OFF is exact visible takeover before every Cua mutation"
@@ -52,6 +57,10 @@ pass "default OFF is exact visible takeover before every Cua mutation"
 set +e;FAKE_CUA_LOG="$TMP/calls" XDG_STATE_HOME="$TMP/state" bash "$SURFACE" span --driver "$TMP/fake-cua" --presenter "$TMP/fake-presenter" --actions-json "$REQ_NO_TARGET" >"$TMP/no-target.json";rc=$?;set -e
 [ "$rc" -ne 0 ] || fail "targetless foreground input succeeded";[ ! -s "$TMP/calls" ] || fail "Cua received input before exact target proof"
 grep -q 'exact_target_required_for_foreground' "$TMP/no-target.json" || fail "targetless refusal was not explicit"
+python3 - "$TMP/no-target.json" <<'PY' || fail "targetless failure trace missing"
+import json,sys
+d=json.load(open(sys.argv[1]));t=d['trace'];assert t['schema']=='gwcu.trace.v1';assert t['completed']==0;assert t['boundary']['reason']=='exact_target_required_for_foreground'
+PY
 pass "foreground actuation fails closed before input without exact pid/window_id"
 
 : >"$TMP/calls";set +e
@@ -125,6 +134,7 @@ FAKE_CUA_LOG="$TMP/calls" EMIT_AFTER_CLICK=1 WORLDLINE_SOCKET="$SOCK" XDG_RUNTIM
 python3 - "$TMP/tx.json" <<'PY' || fail "transaction envelope invalid"
 import json,sys
 d=json.load(open(sys.argv[1]));assert d['ok'] and d['completed']==2;first=d['results'][0];assert first['worldline']['code']=='ready';assert first['worldline_fence']['code']=='fenced';assert first['worldline_action']['code']=='applied'
+trace=d['trace'];assert trace['actions'][0]['fence_revision'] is not None;assert trace['actions'][0]['action_revision'] is not None;assert trace['actions'][0]['postcondition_revision'] is not None;assert trace['actions'][0]['postcondition_code']=='ready'
 PY
 pass "one outer call performs Cua action -> WORLDLINE wait -> local continuation"
 XDG_RUNTIME_DIR="$TMP/runtime" python3 "$WORLD" request --json '{"op":"close"}' >/dev/null||true;wait "$wpid"||true
