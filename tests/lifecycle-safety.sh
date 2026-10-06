@@ -33,6 +33,7 @@ PY
 pass "release builder emits one commit-addressed SHA-256 archive"
 
 # Official curl-pipe form must not trust ./scripts/teardown.sh from the caller cwd.
+# It consumes the same verified archive built above.
 mkdir -p "$TMP/attacker/scripts" "$TMP/home" "$TMP/bin"
 cat >"$TMP/attacker/scripts/teardown.sh" <<'SH'
 #!/usr/bin/env bash
@@ -41,21 +42,61 @@ SH
 chmod +x "$TMP/attacker/scripts/teardown.sh"
 cat >"$TMP/bin/curl" <<'SH'
 #!/usr/bin/env bash
-out=""; while [ $# -gt 0 ]; do [ "$1" = -o ] && { shift; out="$1"; }; shift || true; done
-cat >"$out" <<'SAFE'
-#!/usr/bin/env bash
-touch "$SAFE_MARK"
-SAFE
+out=""; url=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -o) shift; out="$1" ;;
+    http*) url="$1" ;;
+  esac
+  shift || true
+done
+case "$url" in
+  *.json) cp "$RELEASE_META" "$out" ;;
+  *.tar.gz) cp "$RELEASE_ARCHIVE" "$out" ;;
+  *) exit 22 ;;
+esac
 SH
 chmod +x "$TMP/bin/curl"
 (
   cd "$TMP/attacker"
-  ATTACK_MARK="$TMP/attacked" SAFE_MARK="$TMP/safe" HOME="$TMP/home" PATH="$TMP/bin:/usr/bin:/bin" \
-    bash -s -- <"$ROOT/uninstall.sh"
+  ATTACK_MARK="$TMP/attacked" RELEASE_META="$release_meta" RELEASE_ARCHIVE="$release_archive" \
+    HOME="$TMP/home" XDG_STATE_HOME="$TMP/uninstall-state" PATH="$TMP/bin:/usr/bin:/bin" \
+    bash -s -- <"$ROOT/uninstall.sh" >"$TMP/uninstall-verified.out"
 )
 [ ! -e "$TMP/attacked" ] || fail "curl-pipe uninstaller executed caller-local teardown"
-[ -e "$TMP/safe" ] || fail "curl-pipe uninstaller did not use fetched teardown"
-pass "curl-pipe uninstall ignores planted caller-local scripts"
+grep -Fq '[OK] Verified GWCU teardown source' "$TMP/uninstall-verified.out" || fail "curl-pipe uninstaller did not prove release identity"
+pass "curl-pipe uninstall ignores caller cwd and uses verified release teardown"
+
+# Integrity failure is terminal even when a same-generation managed fallback exists.
+rm -rf "$TMP/home" "$TMP/bin"; mkdir -p "$TMP/home/.agents/skills/gnome-wayland-computer-use/scripts" "$TMP/bin"
+printf '%s\n' "$release_version" >"$TMP/home/.agents/skills/gnome-wayland-computer-use/VERSION"
+: >"$TMP/home/.agents/skills/gnome-wayland-computer-use/.gnome-wayland-computer-use-managed"
+cat >"$TMP/home/.agents/skills/gnome-wayland-computer-use/scripts/teardown.sh" <<'SH'
+#!/usr/bin/env bash
+touch "$FALLBACK_MARK"
+SH
+chmod +x "$TMP/home/.agents/skills/gnome-wayland-computer-use/scripts/teardown.sh"
+cat >"$TMP/bin/curl" <<'SH'
+#!/usr/bin/env bash
+out=""; url=""
+while [ $# -gt 0 ]; do
+  case "$1" in -o) shift; out="$1";; http*) url="$1";; esac
+  shift || true
+done
+case "$url" in
+  *.json) cp "$RELEASE_META" "$out" ;;
+  *.tar.gz) printf 'tampered-release' >"$out" ;;
+  *) exit 22 ;;
+esac
+SH
+chmod +x "$TMP/bin/curl"
+rc=0
+FALLBACK_MARK="$TMP/fallback-called" RELEASE_META="$release_meta" HOME="$TMP/home" PATH="$TMP/bin:/usr/bin:/bin" \
+  bash -s -- <"$ROOT/uninstall.sh" >"$TMP/uninstall-tampered.out" 2>"$TMP/uninstall-tampered.err" || rc=$?
+[ "$rc" -ne 0 ] || fail "tampered release uninstall succeeded"
+[ ! -e "$TMP/fallback-called" ] || fail "integrity failure downgraded to installed fallback"
+grep -Fq 'refusing uninstall because current release integrity could not be proved' "$TMP/uninstall-tampered.err" || fail "integrity failure boundary is unclear"
+pass "uninstall integrity failure is terminal and cannot downgrade"
 
 # Teardown must preserve every unmarked skill directory, including profiles.
 mkdir -p "$TMP/home/.agents/skills/gnome-wayland-computer-use" \
@@ -153,6 +194,8 @@ grep -Fq 'verified source missing: $r' "$ROOT/install.sh" || fail "installed fil
 grep -Fq 'SOURCE_KIND="checkout-dirty"' "$ROOT/install.sh" || fail "dirty local installs can masquerade as exact commits"
 grep -Fq 'SOURCE_KIND="local-files"' "$ROOT/install.sh" || fail "non-Git local installs lack honest source identity"
 grep -Fq 'flock -n 9' "$ROOT/install.sh" || fail "concurrent installs are not fenced"
+grep -Fq 'fetch_verified_release' "$ROOT/uninstall.sh" || fail "public uninstall does not verify the release bundle"
+grep -Fq 'refusing uninstall because current release integrity could not be proved' "$ROOT/uninstall.sh" || fail "uninstall can downgrade after integrity failure"
 ! grep -Fq 'else curl -fsSL --retry 3 --retry-delay 1 -o "$d" "$BASE_URL/$r"' "$ROOT/install.sh" || fail "per-file remote fallback can mix releases"
 python3 - "$ROOT/install.sh" <<'PY' || fail "release verification is not ordered before mutation"
 import pathlib,sys
