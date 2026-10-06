@@ -127,6 +127,8 @@ The installer must remain:
 
 - Ubuntu 26.04 GNOME Wayland qualified;
 - pinned to a deliberate current Cua release;
+- remote delivery is one commit-addressed SHA-256 release archive verified before durable/system mutation; never restore per-file network fallback;
+- concurrent installs are locked so two installers cannot mutate the same GWCU state at once;
 - explicit about PipeWire/portal/AT-SPI dependencies;
 - idempotent;
 - compatible with curl-pipe terminal prompting;
