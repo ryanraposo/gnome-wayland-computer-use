@@ -87,7 +87,7 @@ grep -q 'computer-use.sh" span --actions-json' "$ROOT/SKILL.md" || fail "span su
 grep -q 'worldline-capture.sh' "$ROOT/SKILL.md" || fail "WORLDLINE surface missing"
 grep -Fq 'schema `gwcu.trace.v1`' "$ROOT/SKILL.md" || fail "physical trace schema undocumented"
 grep -Fq 'Typed text, clipboard content, document data, and other task payloads do not belong in the physical trace.' "$ROOT/SKILL.md" || fail "trace redaction boundary missing"
-grep -Fq '/computer-use trace` describes the canonical control path; `gwcu.trace.v1` records what an executed span actually did.' "$ROOT/SKILL.md" || fail "operator/runtime trace distinction missing"
+grep -Fq '`/computer-use trace` shows the most recent redacted `gwcu.trace.v1` physical span from ephemeral per-login runtime state' "$ROOT/SKILL.md" || fail "live trace operator semantics missing"
 grep -q 'Never answer a Cua refusal with raw pointer/keyboard injection' "$ROOT/SKILL.md" || fail "refusal boundary missing"
 grep -q 'No X11 or XWayland session is required' "$ROOT/SKILL.md" || fail "GNOME Wayland contract missing"
 grep -q 'standing delivery preference' "$ROOT/SKILL.md" || fail "background command contract missing"
