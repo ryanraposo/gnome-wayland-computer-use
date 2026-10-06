@@ -334,7 +334,8 @@ def envelope(ok: bool, code: str, **kwargs: Any) -> dict[str, Any]:
         if kwargs.get(key) is not None:
             payload[key] = kwargs[key]
     payload["trace"] = physical_trace(ok, code, requested, completed, results, boundary, revision, control)
-    persist_trace(payload["trace"])
+    if requested > 0:
+        persist_trace(payload["trace"])
     return payload
 
 
