@@ -143,7 +143,7 @@ Scope order: `GWCU_SCOPE_ROOT` → Git worktree root → nearest ancestor alread
 curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh | bash
 ```
 
-The installer qualifies Ubuntu 26.04 GNOME Wayland, installs/reuses pinned Cua plus its helper, establishes portal consent, installs the skill/runtime and Hermes policy, synchronizes live desktop environment into the user systemd/DBus activation environment, restarts affected Hermes gateways, enables WORLDLINE/observation, repairs older GWCU artifacts, and live-proves readiness.
+The installer first verifies one commit-addressed SHA-256 release archive, then qualifies Ubuntu 26.04 GNOME Wayland, installs/reuses pinned Cua plus its helper, establishes portal consent, installs the skill/runtime and Hermes policy, synchronizes live desktop environment into the user systemd/DBus activation environment, restarts affected Hermes gateways, enables WORLDLINE/observation, repairs older GWCU artifacts, and live-proves readiness.
 
 `READY // PROVED` requires the installed Cua identity, Hermes-selected identity, running gateway backend identity and doctor-reported identity to agree. A split-brain version/path state fails readiness.
 
