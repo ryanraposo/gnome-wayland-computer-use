@@ -35,7 +35,14 @@ prepare_source(){
     [ "$local_version" = "$VERSION" ] || die "Local source version $local_version does not match installer $VERSION"
     SOURCE_KIND="checkout"
     SOURCE_COMMIT=$(git -C "$SELF" rev-parse --verify HEAD 2>/dev/null || true)
-    [ -n "$SOURCE_COMMIT" ] || SOURCE_COMMIT="local"
+    if [ -n "$SOURCE_COMMIT" ]; then
+      if ! git -C "$SELF" diff --quiet -- . || ! git -C "$SELF" diff --cached --quiet -- .; then
+        SOURCE_KIND="checkout-dirty"
+      fi
+    else
+      SOURCE_COMMIT="local"
+      SOURCE_KIND="local-files"
+    fi
     return 0
   fi
 
