@@ -429,7 +429,7 @@ def run(driver: str, request: dict[str, Any], timeout: float, worldline_path: Pa
     completed = 0
     last_revision = None
     try:
-        send(process, {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": PROTOCOL, "capabilities": {}, "clientInfo": {"name": "gwcu-action-span", "version": "2.3.0"}}})
+        send(process, {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": PROTOCOL, "capabilities": {}, "clientInfo": {"name": "gwcu-action-span", "version": "2.4.0"}}})
         initialized = recv_for(process, 1, timeout)
         if "error" in initialized:
             return envelope(False, "mcp_initialize_failed", requested=requested, detail=compact(initialized), control=control), 50
