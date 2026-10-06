@@ -160,4 +160,10 @@ bash tests/lifecycle-safety.sh
 bash tests/run.sh
 ```
 
-For changes that affect live GNOME consent/control, also validate on the qualified Ubuntu GNOME Wayland session. CI cannot exercise a real portal prompt.
+For changes that affect live GNOME consent/control, also run:
+
+```bash
+GWCU_LIVE_ACCEPTANCE=1 bash tests/desktop-acceptance.sh
+```
+
+This produces `.gwcu-acceptance/diagnose.json`, `calculator-cold.json`, and `summary.json` with exact-target and timing evidence. CI cannot exercise a real portal prompt or claim this live proof.
