@@ -53,6 +53,7 @@ A change is complete only when those boundaries still agree in code, runtime ins
 10. **`.gwcu` is durable only.** WORLDLINE state, screenshots and task content do not belong there.
 11. **Persistent machine/user truth never belongs in AGENTS.md.**
 12. **Live Cua/WORLDLINE evidence beats cached truth on contradiction.**
+13. **Physical traces are ephemeral receipts, not truth.** `gwcu.trace.v1` may live only in private per-login runtime state; it never enters `.gwcu` or replaces WORLDLINE.
 
 ## Change routing
 
