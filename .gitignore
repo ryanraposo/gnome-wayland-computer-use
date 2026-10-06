@@ -7,3 +7,4 @@ __pycache__/
 # Agent planning artifacts (session-local, not repository content)
 /.hermes/
 /dist/
+/.gwcu-acceptance/
