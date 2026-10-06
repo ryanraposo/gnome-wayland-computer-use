@@ -43,6 +43,21 @@ For a reserved form, your first tool call MUST execute the installed operator su
 
 Everything else is a task. `/computer-use open YouTube and play something` means do the task; `open` is not a subcommand.
 
+
+### Runtime ingress invariant
+
+GWCU owns the **desktop policy and operating contract**; the host runtime owns the exact syntax of its provided `computer_use` tool. Use the runtime's real exposed schema and map this contract onto it.
+
+A tool-method mismatch is **not** permission to discover a second control plane. Do not guess API members, probe generic computer-use examples, or abandon the runtime-provided computer-use surface for raw Cua/internal helpers merely because one assumed method is unavailable.
+
+- Ordinary desktop work stays on the runtime-provided `computer_use` / Cua path.
+- Reserved `/computer-use ...` operators use the installed operator surface exactly once.
+- `computer-use.sh span` is a local composition primitive only after actions and exact targets are already determined.
+- `cua-driver` is actuator plumbing, not an agent discovery surface.
+- When the host computer-use surface is genuinely incompatible with this contract, stop before actuation and report `runtime_contract_mismatch`; use `/computer-use doctor` when the local helper surface is available. Do not probe alternate actuators.
+
+**The skill owns semantics; the runtime owns call shape. Preserve one Cua control plane.**
+
 ## Choosing the path
 
 Route by the state the task depends on. Use the most direct capable surface, and switch surfaces when the target changes.
