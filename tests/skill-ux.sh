@@ -26,6 +26,11 @@ do
 done
 grep -Fq '/computer-use <task>' "$ROOT/SKILL.md" || fail "task-form slash invocation missing"
 grep -Fq 'Everything else is a task.' "$ROOT/SKILL.md" || fail "task/subcommand dispatch rule missing"
+grep -Fq '## Runtime ingress invariant' "$ROOT/SKILL.md" || fail "runtime ingress invariant missing"
+grep -Fq 'A tool-method mismatch is **not** permission to discover a second control plane.' "$ROOT/SKILL.md" || fail "method mismatch can escape GWCU control plane"
+grep -Fq 'The skill owns semantics; the runtime owns call shape. Preserve one Cua control plane.' "$ROOT/SKILL.md" || fail "skill/runtime ownership boundary missing"
+grep -Fq 'runtime_contract_mismatch' "$ROOT/SKILL.md" || fail "runtime contract mismatch boundary missing"
+grep -Fq '`cua-driver` is actuator plumbing, not an agent discovery surface.' "$ROOT/SKILL.md" || fail "raw Cua discovery escape hatch remains"
 
 python3 - "$ROOT" <<'PY' || fail "operator command documentation/completion drift"
 import ast
