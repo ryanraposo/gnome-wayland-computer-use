@@ -61,11 +61,30 @@ def is_calculator(row: dict) -> bool:
     return "calculator" in hay or "gnome-calculator" in hay
 
 
+def write_evidence(payload: dict) -> None:
+    target = os.environ.get("GWCU_ACCEPTANCE_OUTPUT")
+    if not target:
+        return
+    path = pathlib.Path(target)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, separators=(",", ":")) + "\n")
+
+
 def main() -> int:
     if os.environ.get("GWCU_LIVE_CALCULATOR") != "1":
         return skip("set GWCU_LIVE_CALCULATOR=1 to opt into visible desktop control")
     if os.environ.get("XDG_SESSION_TYPE", "").casefold() != "wayland":
         raise SystemExit("not ok - cold Calculator requires the live Wayland session")
+
+    started = time.monotonic()
+    timings: dict[str, int] = {}
+    phase_started = started
+
+    def mark(name: str) -> None:
+        nonlocal phase_started
+        now = time.monotonic()
+        timings[name] = round((now - phase_started) * 1000)
+        phase_started = now
 
     driver = resolve_driver(None)
     if not driver:
@@ -80,6 +99,7 @@ def main() -> int:
     if resolved.returncode:
         raise SystemExit(f"not ok - Calculator did not resolve locally: {resolved.stdout or resolved.stderr}")
     identity = json.loads(resolved.stdout)["result"]
+    mark("resolve_ms")
 
     proc = subprocess.Popen(
         [driver, "mcp"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
@@ -119,6 +139,7 @@ def main() -> int:
             time.sleep(0.05)
         else:
             raise AssertionError("Calculator was not closed before ACQUIRE")
+        mark("cold_close_ms")
 
         before_rows = windows(tool("list_windows"))
         before = {k for row in before_rows if (k := key(row)) is not None}
@@ -144,6 +165,7 @@ def main() -> int:
             time.sleep(0.05)
         if bound is None:
             raise AssertionError(f"ACQUIRE never produced one exact new Calculator window; launch={launched!r}")
+        mark("acquire_ms")
 
         pid, window_id = key(bound)
         assert pid and window_id is not None
@@ -155,6 +177,7 @@ def main() -> int:
         )
         presentation = json.loads(presented.stdout or "{}")
         assert presented.returncode == 0 and presentation.get("ok"), presentation or presented.stderr
+        mark("present_ms")
 
         target = {"kind": "window", "pid": pid, "window_id": window_id}
 
@@ -163,6 +186,7 @@ def main() -> int:
         tool("move_cursor", {"target": target, "x": 64, "y": 64, "session": SESSION})
         cursor = tool("get_agent_cursor_state", {"session": SESSION})
         assert isinstance(cursor, dict) and cursor.get("visible") is True, cursor
+        mark("cursor_ms")
 
         # ACT + VERIFY: exact same native target all the way through.
         tool("type_text", {
@@ -179,8 +203,22 @@ def main() -> int:
         }, 12.0)
         if "5754" not in json.dumps(state, ensure_ascii=False):
             raise AssertionError(f"Calculator did not expose verified result 5754: {state!r}")
+        mark("act_verify_ms")
+        evidence = {
+            "schema": "gwcu.acceptance.v1",
+            "ok": True,
+            "scenario": "calculator-cold",
+            "target": {"pid": pid, "window_id": window_id},
+            "presentation": {"ok": bool(presentation.get("ok")), "code": presentation.get("code")},
+            "cursor_visible": True,
+            "verified_result": "5754",
+            "timings_ms": timings,
+            "total_ms": round((time.monotonic() - started) * 1000),
+        }
+        write_evidence(evidence)
 
         print(f"ok - cold Calculator: closed -> acquired ({pid},{window_id}) -> presented -> cursor visible -> 5754")
+        print("evidence - " + json.dumps(evidence, separators=(",", ":")))
         return 0
     finally:
         if proc.poll() is None:
