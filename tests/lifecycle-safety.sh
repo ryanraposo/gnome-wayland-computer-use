@@ -4,6 +4,34 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 fail(){ printf 'not ok - %s\n' "$1" >&2; exit 1; }; pass(){ printf 'ok - %s\n' "$1"; }
 
+# Published installs are assembled from one exact commit into one
+# checksum-addressed archive. Validate the builder independently of Pages.
+mkdir -p "$TMP/release"
+bash "$ROOT/scripts/build-release.sh" "$TMP/release" >"$TMP/release-build.txt"
+release_version=$(tr -d '[:space:]' <"$ROOT/VERSION")
+release_meta="$TMP/release/gwcu-$release_version.json"
+release_archive="$TMP/release/gwcu-$release_version.tar.gz"
+[ -s "$release_meta" ] && [ -s "$release_archive" ] || fail "release builder did not emit metadata + archive"
+python3 - "$release_meta" "$release_archive" "$release_version" <<'PY' || fail "release archive identity contract invalid"
+import hashlib,json,pathlib,sys,tarfile
+meta_path,archive_path,version=sys.argv[1:]
+meta=json.load(open(meta_path))
+assert meta["schema"]=="gwcu.release.v1"
+assert meta["version"]==version
+assert meta["archive"]==pathlib.Path(archive_path).name
+blob=pathlib.Path(archive_path).read_bytes()
+assert meta["bytes"]==len(blob)
+assert meta["sha256"]==hashlib.sha256(blob).hexdigest()
+with tarfile.open(archive_path,"r:gz") as tf:
+    names={m.name.removeprefix("./") for m in tf.getmembers()}
+    assert "SKILL.md" in names and "VERSION" in names and ".gwcu-release.json" in names
+    internal=json.load(tf.extractfile(next(m for m in tf.getmembers() if m.name.removeprefix("./")==".gwcu-release.json")))
+assert internal["schema"]=="gwcu.release.v1"
+assert internal["version"]==version
+assert internal["commit"]==meta["commit"]
+PY
+pass "release builder emits one commit-addressed SHA-256 archive"
+
 # Official curl-pipe form must not trust ./scripts/teardown.sh from the caller cwd.
 mkdir -p "$TMP/attacker/scripts" "$TMP/home" "$TMP/bin"
 cat >"$TMP/attacker/scripts/teardown.sh" <<'SH'
@@ -114,6 +142,26 @@ import json,sys
 d=json.load(open(sys.argv[1])); assert not d['ok']; assert d['code']=='persistent_authorization_missing'; assert not d['portal']['restore_token']['present']
 PY
 pass "RemoteDesktop authorization requires durable restore token"
+
+# Source integrity must be established before durable install state or package
+# mutation, and verified sources must never fall back to per-file HTTP reads.
+grep -Fq 'prepare_source' "$ROOT/install.sh" || fail "installer has no release source gate"
+grep -Fq 'Remote GWCU source must use HTTPS' "$ROOT/install.sh" || fail "remote source is not HTTPS-only"
+grep -Fq 'release archive SHA-256 mismatch' "$ROOT/install.sh" || fail "release digest is not enforced"
+grep -Fq 'tf.extractall(dest,filter="data")' "$ROOT/install.sh" || fail "archive extraction lacks safe-data filter"
+grep -Fq 'verified source missing: $r' "$ROOT/install.sh" || fail "installed files can escape the verified source"
+grep -Fq 'flock -n 9' "$ROOT/install.sh" || fail "concurrent installs are not fenced"
+! grep -Fq 'else curl -fsSL --retry 3 --retry-delay 1 -o "$d" "$BASE_URL/$r"' "$ROOT/install.sh" || fail "per-file remote fallback can mix releases"
+python3 - "$ROOT/install.sh" <<'PY' || fail "release verification is not ordered before mutation"
+import pathlib,sys
+text=pathlib.Path(sys.argv[1]).read_text()
+gate=text.index("\nprepare_source\n")
+state=text.index('mkdir -p "$STATE"',gate)
+packages=text.index('as_root apt-get update')
+assert gate < state < packages
+assert text.index('flock -n 9',gate) < packages
+PY
+pass "installer verifies one source and locks before durable/system mutation"
 
 # Installer contracts that must survive an in-place upgrade.
 grep -q 'PKGS=(.*git' "$ROOT/install.sh" || fail "Git is not an explicit dependency"
