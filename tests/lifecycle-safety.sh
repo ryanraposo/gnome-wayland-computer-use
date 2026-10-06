@@ -150,6 +150,8 @@ grep -Fq 'Remote GWCU source must use HTTPS' "$ROOT/install.sh" || fail "remote 
 grep -Fq 'release archive SHA-256 mismatch' "$ROOT/install.sh" || fail "release digest is not enforced"
 grep -Fq 'tf.extractall(dest,filter="data")' "$ROOT/install.sh" || fail "archive extraction lacks safe-data filter"
 grep -Fq 'verified source missing: $r' "$ROOT/install.sh" || fail "installed files can escape the verified source"
+grep -Fq 'SOURCE_KIND="checkout-dirty"' "$ROOT/install.sh" || fail "dirty local installs can masquerade as exact commits"
+grep -Fq 'SOURCE_KIND="local-files"' "$ROOT/install.sh" || fail "non-Git local installs lack honest source identity"
 grep -Fq 'flock -n 9' "$ROOT/install.sh" || fail "concurrent installs are not fenced"
 ! grep -Fq 'else curl -fsSL --retry 3 --retry-delay 1 -o "$d" "$BASE_URL/$r"' "$ROOT/install.sh" || fail "per-file remote fallback can mix releases"
 python3 - "$ROOT/install.sh" <<'PY' || fail "release verification is not ordered before mutation"
