@@ -66,7 +66,7 @@ GNOME Wayland uses the `Remote Desktop` portal → EIS/libei for compositor-appr
 
 Examples: `/computer-use open YouTube and play something`, `/computer-use send the message I drafted`.
 
-`computer-use.sh span` is internal-only and returns a redacted `gwcu.trace.v1` physical digest. Detailed agent behavior belongs in `SKILL.md`.
+`/computer-use trace` shows the last redacted physical span plus the canonical path; spans remain internal-only. Detailed agent behavior belongs in `SKILL.md`.
 
 ## Agent routing
 
