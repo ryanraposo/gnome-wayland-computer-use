@@ -14,6 +14,8 @@ b=$(skill_description "$ROOT/runtimes/openai/SKILL.md")
 [ "$a" = "$b" ] || fail "runtime descriptions differ"
 cmp -s "$ROOT/SKILL.md" "$ROOT/runtimes/openai/SKILL.md" || fail "runtime skill payloads drifted"
 grep -Fq 'requires_toolsets: [computer_use]' "$ROOT/SKILL.md" || fail "computer-use is not the sole required toolset"
+grep -Fq "host runtime's actual computer-use tool schema" "$ROOT/agents/openai.yaml" || fail "OpenAI implicit prompt does not defer to the real host tool schema"
+grep -Fq 'never guess a second API/control plane after a method mismatch' "$ROOT/agents/openai.yaml" || fail "OpenAI implicit prompt can still escape GWCU after method mismatch"
 ! grep -Fq 'requires_toolsets: [computer_use, terminal]' "$ROOT/SKILL.md" || fail "terminal still gates skill discovery"
 pass "runtime skills are identical, compact and computer-use scoped"
 
