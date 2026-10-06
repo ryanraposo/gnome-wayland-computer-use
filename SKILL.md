@@ -278,7 +278,7 @@ Every action span returns a `trace` object with schema `gwcu.trace.v1`. This is 
 
 The trace deliberately omits action arguments and result payloads. Typed text, clipboard content, document data, and other task payloads do not belong in the physical trace. The full span result remains available to the immediate caller; the trace is the safe at-a-glance artifact for tests, debugging, and PR evidence.
 
-`/computer-use trace` describes the canonical control path; `gwcu.trace.v1` records what an executed span actually did.
+`/computer-use trace` shows the most recent redacted `gwcu.trace.v1` physical span from ephemeral per-login runtime state, then the canonical control path. WORLDLINE remains the truth model; the trace is a forensic receipt, not another state store.
 
 ## WORLDLINE postconditions
 
