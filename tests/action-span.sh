@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)";TMP=$(mktemp -d);trap 'rm -rf "$TMP"' EXIT
+export XDG_RUNTIME_DIR="$TMP/runtime"
+mkdir -p "$XDG_RUNTIME_DIR"
 SURFACE="$ROOT/scripts/computer-use.sh";WORLD="$ROOT/scripts/worldline.py"
 fail(){ printf 'not ok - %s\n' "$1" >&2;exit 1; };pass(){ printf 'ok - %s\n' "$1"; }
 
@@ -48,8 +50,21 @@ trace=d['trace'];assert trace['schema']=='gwcu.trace.v1';assert trace['completed
 assert [x['name'] for x in trace['actions']]==['click','type_text','key_press'];assert trace['targets']==[{'pid':4242,'window_id':77}]
 assert len(trace['presentations'])==3;assert all(x['ok'] is True for x in trace['presentations'])
 assert trace['redaction']=='action arguments and result payloads omitted'
+assert trace['ok'] is True and trace['code']=='completed' and isinstance(trace['recorded_at_unix_ns'],int)
 assert 'hello' not in json.dumps(trace) and 'ENTER' not in json.dumps(trace)
 PY
+TRACE_FILE="$XDG_RUNTIME_DIR/gnome-wayland-computer-use/last-trace.json"
+[ -s "$TRACE_FILE" ] || fail "last physical trace was not persisted"
+[ "$(stat -c '%a' "$TRACE_FILE")" = 600 ] || fail "last physical trace is not private"
+python3 - "$TRACE_FILE" <<'PY' || fail "persisted trace is not the redacted span digest"
+import json,sys
+d=json.load(open(sys.argv[1]));assert d['schema']=='gwcu.trace.v1' and d['code']=='completed';blob=json.dumps(d);assert 'hello' not in blob and 'ENTER' not in blob
+PY
+bash "$SURFACE" trace >"$TMP/trace.txt"
+grep -Fq 'Last physical span' "$TMP/trace.txt" || fail "trace operator does not surface physical receipt"
+grep -Fq 'action[0]: click' "$TMP/trace.txt" || fail "trace operator omits executed action digest"
+! grep -Fq 'hello' "$TMP/trace.txt" || fail "trace operator leaked typed payload"
+grep -Fq 'Canonical foreground path' "$TMP/trace.txt" || fail "trace operator lost canonical execution contract"
 [ "$(wc -l <"$TMP/present")" -eq 3 ] || fail "each foreground mutation was not presentation-gated"
 pass "default OFF is exact visible takeover before every Cua mutation"
 
