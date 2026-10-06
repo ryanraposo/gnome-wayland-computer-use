@@ -23,7 +23,92 @@ action(){ printf '%s[ACTION]%s %s\n' "$YELLOW" "$RESET" "$*"; }
 die(){ error "$*"; [ -n "${INSTALL_LOG:-}" ] && printf '        details: %s\n' "$INSTALL_LOG" >&2; exit 1; }
 needs_session(){ action "$*"; [ -n "${INSTALL_LOG:-}" ] && printf '         details: %s\n' "$INSTALL_LOG"; exit 20; }
 as_root(){ if command -v pkexec >/dev/null; then pkexec "$@"; elif command -v sudo >/dev/null; then sudo "$@"; else die "pkexec or sudo is required"; fi; }
-get_file(){ local r=$1 d=$2; mkdir -p "$(dirname "$d")"; if [ -n "$SELF" ] && [ -f "$SELF/$r" ]; then cp "$SELF/$r" "$d"; else curl -fsSL --retry 3 --retry-delay 1 -o "$d" "$BASE_URL/$r" || die "download failed: $r"; fi; }
+get_file(){ local r=$1 d=$2; mkdir -p "$(dirname "$d")"; [ -n "$SELF" ] && [ -f "$SELF/$r" ] || die "verified source missing: $r"; cp "$SELF/$r" "$d"; }
+
+SOURCE_KIND=""
+SOURCE_COMMIT=""
+SOURCE_SHA256=""
+prepare_source(){
+  local local_version metadata archive release_root actual expected_size actual_size release_name
+  if [ -n "$SELF" ] && [ -f "$SELF/VERSION" ] && [ -f "$SELF/SKILL.md" ]; then
+    local_version=$(tr -d '[:space:]' <"$SELF/VERSION")
+    [ "$local_version" = "$VERSION" ] || die "Local source version $local_version does not match installer $VERSION"
+    SOURCE_KIND="checkout"
+    SOURCE_COMMIT=$(git -C "$SELF" rev-parse --verify HEAD 2>/dev/null || true)
+    [ -n "$SOURCE_COMMIT" ] || SOURCE_COMMIT="local"
+    return 0
+  fi
+
+  SELF=""
+  case "$BASE_URL" in https://*) ;; *) die "Remote GWCU source must use HTTPS: $BASE_URL" ;; esac
+  command -v curl >/dev/null 2>&1 || die "curl is required to fetch the GWCU release"
+  command -v sha256sum >/dev/null 2>&1 || die "sha256sum is required to verify the GWCU release"
+  metadata="$TMP/gwcu-release.json"
+  archive="$TMP/gwcu-release.tar.gz"
+  curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL --retry 3 --retry-all-errors --connect-timeout 10 --max-time 120 -o "$metadata" "$BASE_URL/dist/gwcu-$VERSION.json" || die "release metadata download failed"
+
+  mapfile -t release_info < <("$PYTHON" - "$metadata" "$VERSION" <<'PY'
+import json,re,sys
+path,expected_version=sys.argv[1:]
+try:
+    d=json.load(open(path))
+except Exception as exc:
+    raise SystemExit(f"invalid release metadata: {exc}")
+if d.get("schema")!="gwcu.release.v1": raise SystemExit("unsupported release metadata schema")
+if d.get("version")!=expected_version: raise SystemExit("release version mismatch")
+archive=d.get("archive")
+if archive!=f"gwcu-{expected_version}.tar.gz": raise SystemExit("unexpected release archive name")
+sha=str(d.get("sha256") or "")
+commit=str(d.get("commit") or "")
+size=d.get("bytes")
+if not re.fullmatch(r"[0-9a-f]{64}",sha): raise SystemExit("invalid release sha256")
+if not re.fullmatch(r"[0-9a-f]{40}",commit): raise SystemExit("invalid release commit")
+if not isinstance(size,int) or size<=0: raise SystemExit("invalid release size")
+print(archive);print(sha);print(commit);print(size)
+PY
+  ) || die "release metadata verification failed"
+  [ "${#release_info[@]}" -eq 4 ] || die "release metadata verification returned incomplete identity"
+  release_name="${release_info[0]}"
+  SOURCE_SHA256="${release_info[1]}"
+  SOURCE_COMMIT="${release_info[2]}"
+  expected_size="${release_info[3]}"
+
+  curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL --retry 3 --retry-all-errors --connect-timeout 10 --max-time 180 -o "$archive" "$BASE_URL/dist/$release_name" || die "release archive download failed"
+  actual_size=$(wc -c <"$archive" | tr -d '[:space:]')
+  [ "$actual_size" = "$expected_size" ] || die "release archive size mismatch"
+  actual=$(sha256sum "$archive" | awk '{print $1}')
+  [ "$actual" = "$SOURCE_SHA256" ] || die "release archive SHA-256 mismatch"
+
+  release_root="$TMP/release"
+  mkdir -p "$release_root"
+  "$PYTHON" - "$archive" "$release_root" <<'PY' || die "release archive extraction rejected"
+import pathlib,sys,tarfile
+archive,dest=sys.argv[1:]
+with tarfile.open(archive,"r:gz") as tf:
+    members=tf.getmembers()
+    for m in members:
+        p=pathlib.PurePosixPath(m.name)
+        if p.is_absolute() or ".." in p.parts:
+            raise SystemExit(f"unsafe release path: {m.name}")
+        if m.issym() or m.islnk() or m.isdev():
+            raise SystemExit(f"unsafe release member type: {m.name}")
+    tf.extractall(dest,filter="data")
+PY
+  [ -f "$release_root/VERSION" ] && [ -f "$release_root/SKILL.md" ] && [ -f "$release_root/.gwcu-release.json" ] || die "verified release is incomplete"
+  local_version=$(tr -d '[:space:]' <"$release_root/VERSION")
+  [ "$local_version" = "$VERSION" ] || die "release payload version mismatch"
+  "$PYTHON" - "$release_root/.gwcu-release.json" "$VERSION" "$SOURCE_COMMIT" <<'PY' || die "release payload identity mismatch"
+import json,sys
+path,version,commit=sys.argv[1:]
+d=json.load(open(path))
+assert d.get("schema")=="gwcu.release.v1"
+assert d.get("version")==version
+assert d.get("commit")==commit
+PY
+  SELF="$release_root"
+  SOURCE_KIND="verified-release"
+  ok "Verified GWCU release $VERSION @ ${SOURCE_COMMIT:0:12} (SHA-256 ${SOURCE_SHA256:0:12}…)"
+}
 portal_has(){ gdbus introspect --session --dest org.freedesktop.portal.Desktop --object-path /org/freedesktop/portal/desktop 2>/dev/null | grep -q "interface org.freedesktop.portal.$1"; }
 resolve_cua(){ command -v cua-driver 2>/dev/null || { [ -x "$HOME/.local/bin/cua-driver" ] && printf '%s\n' "$HOME/.local/bin/cua-driver"; }; }
 
@@ -117,10 +202,9 @@ if $HERMES; then
   done
 fi
 
-STATE="${XDG_STATE_HOME:-$HOME/.local/state}/$APP_ID"; mkdir -p "$STATE"; chmod 700 "$STATE"
+STATE="${XDG_STATE_HOME:-$HOME/.local/state}/$APP_ID"
 PRIMARY="$HOME/.agents/skills/$APP_ID"
-INSTALL_LOG="$STATE/install.log"; touch "$INSTALL_LOG"; chmod 600 "$INSTALL_LOG"
-printf '\n=== %s version=%s pid=%s ===\n' "$(date -Is 2>/dev/null || date)" "$VERSION" "$$" >>"$INSTALL_LOG"
+INSTALL_LOG="$STATE/install.log"
 log(){ printf '%s\n' "$*" >>"$INSTALL_LOG"; }
 run_logged(){ local label=$1; shift; log ">>> $label"; "$@" >>"$INSTALL_LOG" 2>&1; }
 
@@ -261,6 +345,17 @@ if ! $COMPAT; then
   [ "$SESSION_TYPE" = wayland ] || die "Wayland session required"
   printf '%s' "$SESSION_DESKTOP" | grep -qi gnome || die "GNOME session required"
 fi
+
+# Establish one source identity before any package/runtime mutation. Remote
+# installs consume one checksum-addressed archive; local checkouts never mix in
+# remote files.
+prepare_source
+mkdir -p "$STATE"; chmod 700 "$STATE"
+command -v flock >/dev/null 2>&1 || die "flock is required for transactional installation"
+exec 9>"$STATE/install.lock"
+flock -n 9 || die "Another GWCU install is already active"
+touch "$INSTALL_LOG"; chmod 600 "$INSTALL_LOG"
+printf '\n=== %s version=%s pid=%s source=%s commit=%s ===\n' "$(date -Is 2>/dev/null || date)" "$VERSION" "$" "$SOURCE_KIND" "$SOURCE_COMMIT" >>"$INSTALL_LOG"
 
 info "[1/8] Qualifying Ubuntu portal/PipeWire/AT-SPI foundation"
 PKGS=(ca-certificates curl git libglib2.0-bin pipewire pipewire-bin wireplumber xdg-desktop-portal xdg-desktop-portal-gnome python3 python3-dbus python3-gi python3-gst-1.0 gstreamer1.0-tools gstreamer1.0-pipewire gstreamer1.0-plugins-base gstreamer1.0-plugins-good gir1.2-gstreamer-1.0 gir1.2-gst-plugins-base-1.0 gir1.2-gdkpixbuf-2.0 gir1.2-atspi-2.0 at-spi2-core libei1 libxkbcommon0)
