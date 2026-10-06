@@ -22,6 +22,12 @@ jobs:
         run: bash -n install.sh uninstall.sh scripts/*.sh tests/*.sh
       - name: Python syntax check
         run: python3 -m py_compile scripts/*.py runtimes/hermes/__init__.py
+      - name: Release archive contract
+        run: |
+          bash scripts/build-release.sh "$RUNNER_TEMP/gwcu-release"
+          version="$(tr -d '[:space:]' < VERSION)"
+          test -s "$RUNNER_TEMP/gwcu-release/gwcu-$version.tar.gz"
+          test -s "$RUNNER_TEMP/gwcu-release/gwcu-$version.json"
       - name: Skill UX contract
         run: bash ./tests/skill-ux.sh
       - name: Foreground action documentation
@@ -58,6 +64,8 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v6
+      - name: Build verified release archive
+        run: bash scripts/build-release.sh ./dist
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
