@@ -184,5 +184,5 @@ pass "repository/runtime/README authority remains separated"
 
 version=$(tr -d '[:space:]' <"$ROOT/VERSION")
 grep -q "^version: ${version}$" "$ROOT/SKILL.md" || fail "skill version mismatch"
-[ "$version" = 2.3.0 ] || fail "release version is 2.3.0"
+[ "$version" = 2.4.0 ] || fail "release version is 2.4.0"
 pass "version identity is consistent"
