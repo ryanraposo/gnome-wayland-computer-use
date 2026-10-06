@@ -126,7 +126,7 @@ A local revision is cheap. A model re-entry is expensive. When benchmarking, rec
 The installer must remain:
 
 - Ubuntu 26.04 GNOME Wayland qualified;
-- pinned to a deliberate current Cua release;
+- pinned to a deliberately qualified Cua release; advance the pin only after the candidate passes live GNOME acceptance, and never pin an upstream-withdrawn release;
 - remote delivery is one commit-addressed SHA-256 release archive verified before durable/system mutation; never restore per-file network fallback;
 - concurrent installs are locked so two installers cannot mutate the same GWCU state at once;
 - explicit about PipeWire/portal/AT-SPI dependencies;
