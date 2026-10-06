@@ -14,7 +14,10 @@ diagnose="$ROOT/scripts/diagnose.sh"
 for s in "$installer" "$uninstaller" "$teardown" "$diagnose" "$capture" "$ROOT/scripts/observe.sh" "$profile" "$ROOT/scripts/computer-use.sh" "$ROOT/scripts/worldline-capture.sh"; do bash -n "$s" || fail "shell syntax: ${s#$ROOT/}"; done
 python3 -m py_compile "$ROOT"/scripts/*.py "$ROOT/runtimes/hermes/__init__.py" "$ROOT/tests/calculator-cold.py" || fail "Python syntax"
 python3 "$ROOT/tests/calculator-cold.py" >/dev/null || fail "Calculator regression skip contract"
-pass "entrypoints parse"
+rc=0; bash "$ROOT/tests/desktop-acceptance.sh" >"$TMP/live-acceptance-optin" 2>&1 || rc=$?
+[ "$rc" -eq 2 ] || fail "live acceptance did not require explicit opt-in"
+grep -Fq 'GWCU_LIVE_ACCEPTANCE=1' "$TMP/live-acceptance-optin" || fail "live acceptance opt-in guidance missing"
+pass "entrypoints parse and live acceptance fails closed"
 
 [ ! -e "$ROOT/install-core.sh" ] || fail "secondary installer exists"
 ! grep -Eq 'add_pkg ydotool|modprobe uinput|usermod .*input|CUA_DRIVER_RS_ENABLE_WAYLAND|ExecStart=.*cua-driver.*serve' "$installer" || fail "installer creates a shadow control plane"
