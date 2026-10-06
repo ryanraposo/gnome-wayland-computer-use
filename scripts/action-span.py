@@ -19,6 +19,7 @@ from typing import Any
 from mcp_client import recv_for, resolve_driver, send
 
 SCHEMA = "gwcu.action-span.v1"
+TRACE_SCHEMA = "gwcu.trace.v1"
 REQUEST_SCHEMA = "gwcu.action-span.request.v1"
 TRANSACTION_SCHEMA = "gwcu.transaction.v1"
 CONTROL_SCHEMA = "gwcu.control-priority.v3"
@@ -235,11 +236,81 @@ def parse_request(raw: str) -> dict[str, Any]:
     return {"schema": TRANSACTION_SCHEMA if transaction else REQUEST_SCHEMA, "steps": steps, "start": start, "control": control}
 
 
+def physical_trace(requested: int, completed: int, results: list[dict[str, Any]], boundary: Any, revision: Any, control: Any) -> dict[str, Any]:
+    """Return a compact, payload-redacted physical execution digest."""
+    control = control if isinstance(control, dict) else {}
+    presentations = control.get("presentations", [])
+    safe_presentations = []
+    targets = []
+    seen_targets = set()
+    for item in presentations if isinstance(presentations, list) else []:
+        if not isinstance(item, dict):
+            continue
+        target = item.get("target") if isinstance(item.get("target"), dict) else {}
+        pid, window_id = target.get("pid"), target.get("window_id")
+        safe_target = {"pid": pid, "window_id": window_id} if isinstance(pid, int) and isinstance(window_id, int) else None
+        if safe_target is not None:
+            key = (pid, window_id)
+            if key not in seen_targets:
+                targets.append(safe_target)
+                seen_targets.add(key)
+        raw_result = item.get("result") if isinstance(item.get("result"), dict) else {}
+        safe_presentations.append({
+            "index": item.get("index"),
+            "target": safe_target,
+            "reason": item.get("reason"),
+            "ok": raw_result.get("ok"),
+            "code": raw_result.get("code"),
+        })
+
+    safe_actions = []
+    for item in results:
+        if not isinstance(item, dict):
+            continue
+        action_control = item.get("control") if isinstance(item.get("control"), dict) else {}
+        fence = item.get("worldline_fence") if isinstance(item.get("worldline_fence"), dict) else {}
+        wait = item.get("worldline") if isinstance(item.get("worldline"), dict) else {}
+        receipt = item.get("worldline_action") if isinstance(item.get("worldline_action"), dict) else {}
+        safe_actions.append({
+            "index": item.get("index"),
+            "name": item.get("name"),
+            "delivery_mode": action_control.get("applied"),
+            "fallback": bool(action_control.get("fallback", False)),
+            "presented": isinstance(action_control.get("presentation"), dict),
+            "fence_revision": fence.get("revision"),
+            "action_revision": receipt.get("revision"),
+            "postcondition_revision": wait.get("revision"),
+            "postcondition_code": wait.get("code"),
+        })
+
+    return {
+        "schema": TRACE_SCHEMA,
+        "requested": requested,
+        "completed": completed,
+        "mode": control.get("mode"),
+        "visible_required": bool(control.get("visible_required", False)),
+        "targets": targets,
+        "actions": safe_actions,
+        "presentations": safe_presentations,
+        "runtime_overrides": control.get("runtime_overrides", []),
+        "boundary": boundary,
+        "revision": revision,
+        "redaction": "action arguments and result payloads omitted",
+    }
+
+
 def envelope(ok: bool, code: str, **kwargs: Any) -> dict[str, Any]:
-    payload: dict[str, Any] = {"schema": SCHEMA, "ok": ok, "code": code, "requested": kwargs.get("requested", 0), "completed": kwargs.get("completed", 0), "results": kwargs.get("results", []), "boundary": kwargs.get("boundary")}
+    requested = kwargs.get("requested", 0)
+    completed = kwargs.get("completed", 0)
+    results = kwargs.get("results", [])
+    boundary = kwargs.get("boundary")
+    revision = kwargs.get("revision")
+    control = kwargs.get("control")
+    payload: dict[str, Any] = {"schema": SCHEMA, "ok": ok, "code": code, "requested": requested, "completed": completed, "results": results, "boundary": boundary}
     for key in ("detail", "revision", "control"):
         if kwargs.get(key) is not None:
             payload[key] = kwargs[key]
+    payload["trace"] = physical_trace(requested, completed, results, boundary, revision, control)
     return payload
 
 
