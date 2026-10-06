@@ -65,6 +65,13 @@ grep -Fq 'Last physical span' "$TMP/trace.txt" || fail "trace operator does not 
 grep -Fq 'action[0]: click' "$TMP/trace.txt" || fail "trace operator omits executed action digest"
 ! grep -Fq 'hello' "$TMP/trace.txt" || fail "trace operator leaked typed payload"
 grep -Fq 'Canonical foreground path' "$TMP/trace.txt" || fail "trace operator lost canonical execution contract"
+cp "$TRACE_FILE" "$TMP/trace-before-invalid.json"
+set +e
+bash "$SURFACE" span --actions-json '{}' >"$TMP/invalid-span.json"
+invalid_rc=$?
+set -e
+[ "$invalid_rc" -eq 2 ] || fail "malformed span did not fail as invalid_request"
+cmp -s "$TRACE_FILE" "$TMP/trace-before-invalid.json" || fail "invalid syntax overwrote the last meaningful physical trace"
 [ "$(wc -l <"$TMP/present")" -eq 3 ] || fail "each foreground mutation was not presentation-gated"
 pass "default OFF is exact visible takeover before every Cua mutation"
 
