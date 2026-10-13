@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import pathlib
 import re
@@ -175,6 +176,32 @@ def exact_window(
     return matches[0] if len(matches) == 1 else None
 
 
+
+def geometry(window: dict[str, Any]) -> tuple[float, float, float, float] | None:
+    """Geometry is live compositor evidence, never an enduring window identity."""
+    values = [window.get(key) for key in ("x", "y", "w", "h")]
+    if any(
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+        for value in values
+    ):
+        return None
+    if values[2] <= 0 or values[3] <= 0:
+        return None
+    return tuple(values)
+
+
+def presented(window: dict[str, Any] | None) -> bool:
+    return bool(
+        window is not None
+        and window.get("focused") is True
+        and window.get("visible") is True
+        and window.get("minimized") is not True
+        and geometry(window) is not None
+    )
+
+
 def present(pid: int, window_id: int, timeout_ms: int) -> dict[str, Any]:
     if pid <= 0 or not 0 <= window_id <= MAX_WINDOW_ID:
         return envelope(False, "invalid_target", pid=pid, window_id=window_id)
@@ -207,40 +234,39 @@ def present(pid: int, window_id: int, timeout_ms: int) -> dict[str, Any]:
 
         deadline = time.monotonic() + max(0.1, min(timeout_ms, 3000) / 1000)
         last = before
+        previous_geometry = None
         while True:
             current = exact_window(rects(owner), pid, window_id)
             if current is not None:
                 last = current
-                if (
-                    current.get("focused") is True
-                    and current.get("visible") is True
-                    and current.get("minimized") is not True
-                ):
+            if presented(current):
+                fresh_geometry = geometry(current)
+                # A second compositor read prevents treating pre-relocation or
+                # in-flight maximize geometry as safe for coordinate actions.
+                if previous_geometry == fresh_geometry:
                     return envelope(
                         True,
                         "presented",
                         pid=pid,
                         window_id=window_id,
                         helper_api=version,
+                        observed_at_monotonic_ns=time.monotonic_ns(),
                         window={
                             key: current.get(key)
                             for key in (
-                                "title",
-                                "x",
-                                "y",
-                                "w",
-                                "h",
-                                "focused",
-                                "visible",
-                                "minimized",
-                                "stacking",
+                                "title", "x", "y", "w", "h",
+                                "focused", "visible", "minimized", "stacking",
+                                "monitor", "workspace",
                             )
                         },
                     )
+                previous_geometry = fresh_geometry
+            else:
+                previous_geometry = None
             if time.monotonic() >= deadline:
                 return envelope(
                     False,
-                    "focus_not_proved",
+                    "geometry_not_stable" if presented(last) else "focus_not_proved",
                     pid=pid,
                     window_id=window_id,
                     helper_api=version,
@@ -269,11 +295,7 @@ def verify(pid: int, window_id: int) -> dict[str, Any]:
                 window_id=window_id,
                 helper_api=version,
             )
-        good = (
-            current.get("focused") is True
-            and current.get("visible") is True
-            and current.get("minimized") is not True
-        )
+        good = presented(current)
         return envelope(
             good,
             "presented" if good else "not_presented",
@@ -308,6 +330,10 @@ def self_test() -> dict[str, Any]:
     assert exact_window(parsed, 7, 43) is None
     assert first_u32("(uint32 8,)") == 8
     assert quoted("(':1.77',)") == ":1.77"
+    assert geometry({"x": -100, "y": 0, "w": 1920, "h": 1080}) == (-100, 0, 1920, 1080)
+    assert geometry({"x": 0, "y": 0, "w": 0, "h": 100}) is None
+    assert geometry({"x": 0, "y": 0, "w": float("nan"), "h": 100}) is None
+    assert presented(parsed[0]) is False  # no trustworthy geometry
     return envelope(
         True,
         "ok",
@@ -315,6 +341,7 @@ def self_test() -> dict[str, Any]:
             "exact_pid_window_identity",
             "gvariant_scalar_parsing",
             "focused_visible_postcondition",
+            "valid_geometry_and_stable_two_sample_presentation",
             "immutable_dbus_owner_contract",
         ],
     )
