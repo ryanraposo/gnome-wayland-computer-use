@@ -201,12 +201,14 @@ if $HERMES; then
   if $HERMES_ALL_PROFILES; then
     for d in "$HERMES_PROFILE_ROOT/profiles"/*; do [ -d "$d" ] && add_hermes_target "$d"; done
   fi
-  for profile in "${HERMES_PROFILE_NAMES[@]:-}"; do
-    validate_profile_name "$profile"
-    target="$HERMES_PROFILE_ROOT/profiles/$profile"
-    [ -d "$target" ] || die "Hermes profile does not exist: $profile"
-    add_hermes_target "$target"
-  done
+  if [ "${#HERMES_PROFILE_NAMES[@]}" -gt 0 ]; then
+    for profile in "${HERMES_PROFILE_NAMES[@]}"; do
+      validate_profile_name "$profile"
+      target="$HERMES_PROFILE_ROOT/profiles/$profile"
+      [ -d "$target" ] || die "Hermes profile does not exist: $profile"
+      add_hermes_target "$target"
+    done
+  fi
 fi
 
 STATE="${XDG_STATE_HOME:-$HOME/.local/state}/$APP_ID"

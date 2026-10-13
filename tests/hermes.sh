@@ -174,6 +174,7 @@ grep -Fq 'plugins.entries.$APP_ID.granted_capabilities' "$ROOT/install.sh" || fa
 grep -Fq 'plugins.entries.$APP_ID.allow_tool_override' "$ROOT/install.sh" || fail "legacy tool override bridge not installed"
 grep -Fq 'Hermes plugin enabled; computer_use policy is mechanical' "$ROOT/install.sh" || fail "installer does not verify enabled policy"
 ! grep -Fq 'enable it later' "$ROOT/install.sh" || fail "installer still delegates plugin activation to user"
+! grep -Fq '"${HERMES_PROFILE_NAMES[@]:-}"' "$ROOT/install.sh" || fail "installer iterates an empty profile list as one empty name"
 pass "installer enables the exact Hermes policy automatically"
 
 # When a local Hermes source checkout is available, verify there is no plugin
