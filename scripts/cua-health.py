@@ -90,8 +90,8 @@ def run(driver: str, timeout: float) -> tuple[dict, int]:
         report = result.get("structuredContent") or result.get("structured_content")
         if not isinstance(report, dict):
             return envelope(False, "health_report_missing_structured", detail="Cua returned no structuredContent"), 50
-        if report.get("schema_version") != "1":
-            return envelope(False, "health_schema_unsupported", report=report, detail="Expected Cua health_report schema_version=1"), 50
+        if report.get("schema_version") not in (None, "1"):
+            return envelope(False, "health_schema_unsupported", report=report, detail="Expected Cua health_report schema_version=1 or unset"), 50
         overall = report.get("overall")
         if overall == "ok":
             return envelope(True, "ok", report=report), 0

@@ -21,7 +21,7 @@ from typing import Any
 SCHEMA = "gwcu.truths.v1"
 MAX_APPS = 64
 GENERATED_SECTIONS = ("observed", "capabilities", "calibration", "apps")
-ALL_SECTIONS = (*GENERATED_SECTIONS[:-1], "preferences")
+ALL_SECTIONS = (*GENERATED_SECTIONS, "preferences")
 _TMP_COUNTER = itertools.count()
 
 

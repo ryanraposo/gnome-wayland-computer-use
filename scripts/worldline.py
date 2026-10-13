@@ -142,12 +142,12 @@ class AtspiSensor:
 class World:
     def __init__(self):
         self.lock=threading.RLock();self.changed=threading.Condition(self.lock)
-        self.revision=0;self.facts={};self.events=[];self.armed={};self.last=None;self.prev_visual=None;self.versions={};self.sensor=None;self.load()
+        self.revision=0;self.facts={};self.events=[];self.armed={};self.last=None;self.prev_visual=None;self.versions={};self.path_revisions={};self.sensor=None;self.load()
     def load(self):
         try:d=json.loads(statefile().read_text())
         except Exception:return
-        self.revision=int(d.get("revision",0));self.facts=d.get("facts",{});self.events=d.get("events",[]);self.armed=d.get("armed",{});self.last=d.get("last_revision");self.prev_visual=d.get("prev_visual");self.versions=d.get("versions",{})
-    def save(self):save_json(statefile(),{"revision":self.revision,"facts":self.facts,"events":self.events,"armed":self.armed,"last_revision":self.last,"prev_visual":self.prev_visual,"versions":self.versions})
+        self.revision=int(d.get("revision",0));self.facts=d.get("facts",{});self.events=d.get("events",[]);self.armed=d.get("armed",{});self.last=d.get("last_revision");self.prev_visual=d.get("prev_visual");self.versions=d.get("versions",{});self.path_revisions=d.get("path_revisions",{})
+    def save(self):save_json(statefile(),{"revision":self.revision,"facts":self.facts,"events":self.events,"armed":self.armed,"last_revision":self.last,"prev_visual":self.prev_visual,"versions":self.versions,"path_revisions":self.path_revisions})
     def setfact(self,path:str,v:Any,source:str,rev:int,changed:set[str]):
         old=self.facts.get(path);entry={"value":v,"source":source,"revision":rev,"confidence":1.0}
         if value(old)!=v:changed.add(path)
@@ -167,6 +167,10 @@ class World:
             for p,v in e.get("facts",{}).items():
                 if isinstance(p,str):self.setfact(p,v,e["source"],n,changed)
         for p,(v,s) in oracles(q.get("pids") if isinstance(q.get("pids"),list) else [],q.get("paths") if isinstance(q.get("paths"),list) else []).items():self.setfact(p,v,s,n,changed)
+        # Persist oracle results as facts on every revision for soundness
+        for k,(v,s) in oracles().items():
+            if isinstance(k,str) and isinstance(v,(str,int,bool,type(None))):
+                self.setfact(k,v,s,n,changed)
         visual={"requested":bool(q.get("visual")),"ok":False}
         if q.get("visual"):
             r=observer_capture(int(q.get("visual_timeout_ms",1500)));visual.update({"ok":bool(r.get("ok")),"code":r.get("code")})
@@ -177,8 +181,8 @@ class World:
                     self.setfact("visual.frame_hash",d,"pipewire",n,changed);self.setfact("visual.width",rr.get("width"),"pipewire",n,changed);self.setfact("visual.height",rr.get("height"),"pipewire",n,changed);self.prev_visual=d
             else:visual["uncertain"]=True
         self.revision=n
-        for path in changed:self.versions.setdefault(path,{})["changed"]=n
-        for path in invalid:self.versions.setdefault(path,{})["invalidated"]=n
+        for path in changed:self.versions.setdefault(path,{})["changed"]=n;self.path_revisions.setdefault(path,{})["changed"]=n
+        for path in invalid:self.versions.setdefault(path,{})["invalidated"]=n;self.path_revisions.setdefault(path,{})["invalidated"]=n
         expect=q.get("expect") if isinstance(q.get("expect"),list) else []
         sat=[pid_of(p) for p in expect if isinstance(p,dict) and pred(p,self.facts,changed,invalid)]
         unsat=[pid_of(p) for p in expect if isinstance(p,dict) and not pred(p,self.facts,changed,invalid)]
@@ -189,7 +193,10 @@ class World:
             if ready and tx.get("status")!="ready":tx["status"]="ready";tx["ready_revision"]=n;woken.append(ident)
         conflicts=[{"type":"postcondition_unsatisfied","predicate":p} for p in unsat] if q.get("conflict_on_unsatisfied") else []
         if len(self.facts)>MAX_FACTS:
-            for k in sorted(self.facts,key=lambda x:self.facts[x].get("revision",0))[:len(self.facts)-MAX_FACTS]:self.facts.pop(k,None)
+            pruned=set(sorted(self.facts,key=lambda x:self.facts[x].get("revision",0))[:len(self.facts)-MAX_FACTS])
+            for k in pruned:self.facts.pop(k,None)
+            # Synchronously prune versions to avoid _path_touched_since false negatives
+            self.versions={k:v for k,v in self.versions.items() if k not in pruned}
         self.last={"schema":REV,"ok":not conflicts,"revision":n,"previous_revision":n-1,"trigger":str(q.get("trigger") or "manual"),"boundary":{"monotonic_ns":time.monotonic_ns(),"wall_time_ns":time.time_ns()},"events":{"count":len(events),"sources":sources},"changed":sorted(changed),"invalidated":sorted(invalid),"preserved":sorted(before-changed-invalid),"predicates_satisfied":sat,"predicates_unsatisfied":unsat,"woken":woken,"conflicts":conflicts,"uncertain":bool(visual.get("uncertain")),"visual":visual}
         dirty=bool(changed or invalid or events or woken or conflicts or visual.get("changed"))
         if dirty:self.save()
@@ -220,13 +227,21 @@ class World:
             self.armed[ident]={"predicates":ps,"mode":mode,"status":"waiting","armed_revision":self.revision};self.save()
             return {"schema":SCHEMA,"ok":True,"code":"armed","id":ident,"revision":self.revision}
     def _path_touched_since(self,path:str,after:int,kind:str|None=None)->bool:
-        for candidate,clock in self.versions.items():
-            if candidate==path or candidate.startswith(path+".") or path.startswith(candidate+"."):
-                if kind is None:
-                    rev=max(int(clock.get("changed",0)),int(clock.get("invalidated",0)))
-                else:rev=int(clock.get(kind,0))
-                if rev>after:return True
-        return False
+        # O(1) lookup via path_revisions cache; fall back to versions if missing
+        clock=self.path_revisions.get(path)
+        if clock is None:
+            # Fall back to full scan of versions
+            for candidate,clock in self.versions.items():
+                if candidate==path or candidate.startswith(path+".") or path.startswith(candidate+"."):
+                    if kind is None:
+                        rev=max(int(clock.get("changed",0)),int(clock.get("invalidated",0)))
+                    else:rev=int(clock.get(kind,0))
+                    if rev>after:return True
+            return False
+        if kind is None:
+            rev=max(int(clock.get("changed",0)),int(clock.get("invalidated",0)))
+        else:rev=int(clock.get(kind,0))
+        return rev>after
     def _wait_pred(self,p:dict[str,Any],after:int)->bool:
         op=p.get("op","eq");path=p.get("path")
         if not isinstance(path,str) or not path:return False
