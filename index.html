@@ -1,208 +1,174 @@
 <!doctype html>
 <html lang="en">
-
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description"
-        content="Low-latency computer use for Ubuntu 26.04 GNOME Wayland: AX-first automation, smart installed-web-app routing, fast capture, and verified recovery." />
-    <title>gnome-wayland-computer-use</title>
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0 }
-        body {
-            font-family: 'Courier New', Courier, monospace;
-            color: #000;
-            background: #fff;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            min-height: 100vh;
-            padding: 40px 20px
-        }
-        main { max-width: 720px; width: 100% }
-        h1 { font-size: 1.8em; letter-spacing: -.5px; text-align: center }
-        .dog {
-            font-family: 'Courier New', Courier, monospace;
-            white-space: pre;
-            font-size: 14px;
-            line-height: 1.2;
-            text-align: center;
-            margin: 8px 0 18px;
-            color: #000
-        }
-        p { color: #555; font-size: 14px; line-height: 1.6; text-align: center }
-        .learn-more {
-            display: block;
-            width: max-content;
-            max-width: 100%;
-            font-size: 13px;
-            color: #000;
-            margin: 14px auto 20px;
-            text-decoration: none
-        }
-        .learn-more:hover { text-decoration: underline }
-        .fast-path {
-            margin: 0 0 20px;
-            padding: 11px 14px;
-            border: 1px solid #ddd;
-            border-radius: 8px;
-            background: #fafafa;
-            color: #111;
-            text-align: center;
-            font-size: 12px;
-            line-height: 1.55
-        }
-        .modes {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px;
-            margin: 0 0 20px
-        }
-        .mode {
-            border: 1px solid #ddd;
-            border-radius: 8px;
-            padding: 13px 14px;
-            color: #555;
-            font-size: 12px;
-            line-height: 1.55
-        }
-        .mode strong { display: block; color: #000; font-size: 13px; margin-bottom: 3px }
-        .note {
-            margin: 0 0 20px;
-            padding: 10px 14px;
-            border-left: 3px solid #000;
-            background: #f9f9f9;
-            color: #555;
-            font-size: 12px;
-            line-height: 1.55
-        }
-        code { font-family: inherit; color: #000 }
-        .curl-wrap {
-            background: #f5f5f5;
-            border: 1px solid #ddd;
-            border-radius: 8px;
-            padding: 14px 16px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin: 20px 0
-        }
-        .curl-code {
-            font-family: inherit;
-            font-size: 13px;
-            white-space: nowrap;
-            flex: 1;
-            overflow-x: auto;
-            scrollbar-width: none
-        }
-        .curl-code::-webkit-scrollbar { display: none }
-        .curl-btn {
-            flex-shrink: 0;
-            background: none;
-            border: 1px solid #bbb;
-            border-radius: 5px;
-            cursor: pointer;
-            padding: 5px 7px;
-            line-height: 0;
-            color: #666;
-            transition: .15s
-        }
-        .curl-btn:hover { background: #eaeaea; border-color: #888; color: #000 }
-        .links {
-            text-align: center;
-            font-size: 13px;
-            padding: 32px 0 0;
-            color: #999;
-            white-space: nowrap
-        }
-        .links a { color: #000; text-decoration: none }
-        .links a:hover { text-decoration: underline }
-        @media (max-width: 560px) { .modes { grid-template-columns: 1fr } }
-    </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Dependable computer use for Ubuntu 26.04 GNOME Wayland.">
+<meta name="theme-color" content="#0d1016">
+<title>gnome-wayland-computer-use</title>
+<style>
+:root{color-scheme:dark;--bg:#0d1016;--panel:#1d1f24;--panel2:#141820;--ink:#f4f5f7;--muted:#b8bec8;--faint:#7f8793;--line:#303641;--accent:#2f88ff;--max:980px}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;-webkit-font-smoothing:antialiased}
+a{color:var(--accent);text-underline-offset:4px;text-decoration-thickness:1px}
+button{font:inherit}
+.wrap{width:min(var(--max),calc(100% - 44px));margin:auto;padding:14px 0 54px}
+.hero{padding-top:0;text-align:center}
+.mascot-card{min-height:300px;border-radius:18px;background:var(--panel);display:grid;place-items:center;margin:0 0 70px;box-shadow:0 1px 0 rgba(255,255,255,.02) inset}
+.little-guy{white-space:pre;text-align:left;font-size:21px;line-height:1.25;margin:0;color:#fff;transform-origin:50% 100%;transition:transform .16s ease;user-select:none}
+.little-guy:hover{transform:translateY(-3px) rotate(-1deg)}
+h1{font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:clamp(42px,7.5vw,72px);line-height:1.15;letter-spacing:-.035em;margin:0 auto 36px;max-width:940px;font-weight:700;overflow-wrap:anywhere}
+.hero-rule{height:2px;background:var(--line);border:0;margin:0 0 42px}
+.jump{display:flex;justify-content:center;align-items:center;gap:9px 13px;flex-wrap:wrap;font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:clamp(17px,2.8vw,22px);line-height:1.6;margin:0 auto 70px;max-width:900px}
+.jump .dot{color:#f4f5f7}
+.major-rule{height:9px;background:#3a414d;border:0;margin:0 0 65px}
+.description{font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:clamp(22px,3.5vw,31px);line-height:1.6;letter-spacing:-.012em;text-align:left;margin:0 0 70px;color:#f0f1f3}
+.description strong{font-weight:750;color:#fff}
+section{padding:48px 0;border-top:1px solid var(--line)}
+.eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:.14em;color:var(--faint);margin-bottom:9px}
+h2{font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:clamp(27px,4vw,38px);line-height:1.2;letter-spacing:-.025em;margin:0 0 22px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.card{border:1px solid var(--line);background:var(--panel2);border-radius:10px;padding:18px}.card strong{display:block;color:#fff;margin-bottom:6px}.card span{color:var(--muted);font-size:14px}
+.flow{display:grid;grid-template-columns:1fr 1fr;gap:12px}.flow pre,.slash pre{margin:0;border:1px solid var(--line);border-radius:10px;background:var(--panel2);padding:18px;white-space:pre-wrap;font-size:14px;line-height:1.65;color:#d9dde4}
+.slash{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:20px}
+.command{border:1px solid var(--line);border-radius:10px;background:var(--panel2);padding:17px 18px;display:flex;align-items:center;gap:14px;margin-top:18px}.command code{flex:1;overflow:auto;white-space:nowrap;scrollbar-width:none;font-size:13px}.command code::-webkit-scrollbar{display:none}
+.copy{flex:0 0 auto;width:34px;height:32px;display:grid;place-items:center;border:1px solid #4a5260;border-radius:6px;background:#20252d;color:#d8dce2;cursor:pointer}.copy:hover{border-color:#6c7686;color:#fff}
+.note{border-left:3px solid #59616f;padding:7px 0 7px 15px;margin-top:22px;color:var(--muted);font-size:14px}
+footer{padding:42px 0 0;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:flex-end;gap:24px;color:var(--faint);font-size:12px}.footer-links{display:flex;gap:15px;flex-wrap:wrap}.footer-links a{color:#aeb5c0}.tiny-guy{white-space:pre;line-height:1.05;color:#777f8b;font-size:10px;text-align:right}
+@media(max-width:680px){.wrap{width:min(100% - 28px,var(--max));padding-top:10px}.mascot-card{min-height:240px;margin-bottom:48px}.little-guy{font-size:17px}h1{margin-bottom:28px}.hero-rule{margin-bottom:30px}.jump{margin-bottom:48px}.major-rule{margin-bottom:46px}.description{margin-bottom:50px}.grid,.flow,.slash{grid-template-columns:1fr}footer{align-items:flex-start}.tiny-guy{display:none}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.little-guy{transition:none}.little-guy:hover{transform:none}}
+</style>
 </head>
-
 <body>
-    <main>
-        <h1>gnome-wayland-computer-use</h1>
-        <pre class="dog">▄ ▄▄ ▄▄▄▄
+<div class="wrap">
+<main>
+<section class="hero" style="border-top:0;padding-top:0">
+  <div class="mascot-card">
+<pre class="little-guy" aria-label="GWCU little guy">▄  ▄▄  ▄▄▄▄
    ▄▀ 0x0 ▀▄
     █  ───  █
     █  ███  █
      ▀▀   ▀▀</pre>
-        <p style="margin-top:6px">Low-latency ⚕ computer use ⚕ for <strong>Ubuntu 26.04 GNOME Wayland</strong></p>
+  </div>
 
-        <a class="learn-more"
-            href="https://github.com/ryanraposo/gnome-wayland-computer-use#computer-use-operating-model">How does it work? →</a>
+  <h1>gnome-wayland-computer-use</h1>
+  <hr class="hero-rule">
 
-        <div class="fast-path">
-            <strong>Route once → cheapest useful evidence → semantic action span → verify at a real decision boundary.</strong>
-        </div>
+  <nav class="jump" aria-label="Page sections">
+    <a href="#install">Install</a><span class="dot">·</span>
+    <a href="#capabilities">Capabilities</a><span class="dot">·</span>
+    <a href="#performance">Performance</a><span class="dot">·</span>
+    <a href="#how-it-works">How it works</a><span class="dot">·</span>
+    <a href="#diagnose">Diagnose</a><span class="dot">·</span>
+    <a href="#uninstall">Uninstall</a>
+  </nav>
 
-        <div class="modes">
-            <div class="mode">
-                <strong>AX first</strong>
-                Read text, roles, state, and targetable widgets without paying for pixels when accessibility is enough.
-            </div>
-            <div class="mode">
-                <strong>Installed web apps stay apps</strong>
-                PWAs and standalone browser apps keep their own identity instead of collapsing into generic Chrome or Firefox.
-            </div>
-            <div class="mode">
-                <strong>Fast capture</strong>
-                Desktop and screen fallbacks poll for readiness instead of imposing fixed multi-second screenshot sleeps.
-            </div>
-            <div class="mode">
-                <strong>Less ritual</strong>
-                Verified actions continue in deterministic spans; fresh observations happen when the next decision actually needs them.
-            </div>
-        </div>
+  <hr class="major-rule">
 
-        <div class="curl-wrap">
-            <span class="curl-code" id="curl">curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh | bash</span>
-            <button class="curl-btn" id="copy" onclick="copyCurl()" title="Copy to clipboard"
-                aria-label="Copy install command">
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"
-                    stroke-linecap="round" stroke-linejoin="round">
-                    <rect x="3" y="3" width="10" height="12" rx="1" />
-                    <path d="M5 1h6a1 1 0 0 1 1 1v2" />
-                </svg>
-            </button>
-        </div>
+  <p class="description">Agents have variable success using Linux. This project makes computer use dependable on the most popular Linux desktop out there, <strong>Ubuntu 26.</strong></p>
+</section>
 
-        <div class="note">
-            <strong>Runtime-aware:</strong> Hermes on PATH gets the full persistent <code>cua-driver</code> integration.
-            Other agents get the same GNOME host stack plus a portable Agent Skill. First-use routing stays off the network;
-            app identity is cached; capture timing is diagnosable; recovery services restart quickly.
-        </div>
+<section id="capabilities">
+  <div class="eyebrow">capabilities</div>
+  <h2>One machine. One control authority.</h2>
+  <div class="grid">
+    <div class="card"><strong>Cua Driver</strong><span>The only desktop actuator: native apps, browser-backed surfaces, semantics, pixels, pointer, keyboard and verification.</span></div>
+    <div class="card"><strong>WORLDLINE</strong><span>Transient revisions, invalidation, predicates, waits, branches and conflicts.</span></div>
+    <div class="card"><strong>.gwcu</strong><span>Durable repo/workspace truth worth reusing in another session.</span></div>
+    <div class="card"><strong>Visible completion</strong><span>When you ask to see something, the exact Cua target is presented and left on your desktop.</span></div>
+  </div>
+</section>
 
-        <div class="note">
-            <strong>Desktop ≠ screen:</strong> “desktop” means wallpaper and desktop icons. “screen” means the visible display,
-            including windows. The compositor path preserves focus/workspace/window state; compatibility capture restores and verifies it.
-        </div>
+<section id="performance">
+  <div class="eyebrow">performance</div>
+  <h2>Observation is an interrupt, not a ritual.</h2>
+  <div class="flow">
+<pre>ordinary computer use
 
-        <pre class="dog" style="margin-bottom:0">     ▄ ▄▄ ▄▄▄▄
-   ▄▀ 0x0 ▀▄
-    █  ───  █
-    █  ███  █
-     ▀▀   ▀▀</pre>
-        <div class="links">
-            <a href="https://github.com/ryanraposo/gnome-wayland-computer-use">github</a> ·
-            <a href="https://github.com/ryanraposo/gnome-wayland-computer-use/blob/main/PERF_NOTES.md">performance</a> ·
-            <a href="https://github.com/nousresearch/hermes-agent">hermes</a> ·
-            by <a href="https://github.com/ryanraposo">ryanraposo</a>
-        </div>
-    </main>
+observe → model → click
+observe → model → type
+observe → model → verify</pre>
+<pre>GWCU
 
-    <script>
-        function copyCurl() {
-            navigator.clipboard.writeText(document.getElementById('curl').textContent);
-            const b = document.getElementById('copy');
-            b.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5 6 11.5 13 4.5"/></svg>';
-            setTimeout(() => {
-                b.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="10" height="12" rx="1"/><path d="M5 1h6a1 1 0 0 1 1 1v2"/></svg>';
-            }, 1500);
-        }
-    </script>
+model decides → Cua acts
+WORLDLINE revises
+predicate becomes true
+continue locally</pre>
+  </div>
+</section>
+
+<section id="how-it-works">
+  <div class="eyebrow">how it works</div>
+  <h2>Slash it, then talk normally.</h2>
+  <div class="slash">
+<pre>/computer-use open YouTube
+and play something
+
+/computer-use rename this file
+and move it to Downloads</pre>
+<pre>/computer-use status
+/computer-use background
+/computer-use managed status
+/computer-use truths
+/computer-use consent
+/computer-use doctor</pre>
+  </div>
+  <div class="note">Cua changes the desktop — including browser work. WORLDLINE knows what changed. <code>.gwcu</code> remembers durable truth. Background OFF means obvious foreground control; a visible-result request ends with the exact target visibly presented. No hidden browser plane, project RDP/VNC server, <code>ydotool</code>, <code>/dev/uinput</code> fallback, or second actuator.</div>
+</section>
+
+<section id="install">
+  <div class="eyebrow">install</div>
+  <h2>One installer for the full stack.</h2>
+  <div class="command">
+    <code id="install-command">curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh | bash</code>
+    <button class="copy" id="copy" type="button" aria-label="Copy install command" title="Copy install command" onclick="copyInstall()">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="10" height="12" rx="1"/><path d="M5 1h6a1 1 0 0 1 1 1v2"/></svg>
+    </button>
+  </div>
+  <div class="note">Run as the logged-in desktop user. GNOME may show a “Remote Desktop” prompt for local EIS/libei control. Whole-screen observation has its own ScreenCast consent boundary.</div>
+  <div class="note">With Hermes, GWCU owns the <code>computer-use</code> skill and its policy plugin wraps Hermes' existing <code>computer_use</code> tool — it does not replace that tool. The default Hermes home is integrated automatically; additional existing profiles are explicit installer choices. Existing skills are archived before replacement and teardown restores them when possible.</div>
+</section>
+
+<section id="diagnose">
+  <div class="eyebrow">diagnose</div>
+  <h2>Ask the same surface what is wrong.</h2>
+<pre style="margin:0;border:1px solid var(--line);border-radius:10px;background:var(--panel2);padding:18px;color:#d9dde4">/computer-use status
+/computer-use doctor
+/computer-use consent</pre>
+</section>
+
+<section id="uninstall">
+  <div class="eyebrow">uninstall</div>
+  <h2>Leave cleanly.</h2>
+  <div class="command">
+    <code>curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/uninstall.sh | bash</code>
+  </div>
+  <div class="note">Teardown removes GWCU-owned integration across existing Hermes profiles and transient runtime state while preserving Hermes' built-in <code>computer_use</code> tool, unmanaged components and repo/workspace <code>.gwcu</code>. Cua is preserved by default.</div>
+</section>
+</main>
+
+<footer>
+  <div class="footer-links">
+    <a href="https://github.com/ryanraposo/gnome-wayland-computer-use#readme">README</a>
+    <a href="https://github.com/ryanraposo/gnome-wayland-computer-use">GitHub</a>
+    <a href="https://github.com/ryanraposo">ryanraposo</a>
+  </div>
+<pre class="tiny-guy" aria-hidden="true">▄ ▄▄ ▄▄▄▄
+ ▄▀ 0x0 ▀▄
+  ▀▀   ▀▀</pre>
+</footer>
+</div>
+<script>
+function copyInstall(){
+  const text=document.getElementById('install-command').textContent;
+  const button=document.getElementById('copy');
+  navigator.clipboard.writeText(text).then(()=>{
+    const old=button.innerHTML;
+    button.innerHTML='<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5 6 11.5 13 4.5"/></svg>';
+    setTimeout(()=>button.innerHTML=old,1200);
+  }).catch(()=>{});
+}
+</script>
 </body>
-
 </html>
