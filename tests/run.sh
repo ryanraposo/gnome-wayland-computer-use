@@ -172,4 +172,8 @@ grep -qi 'valid until invalidated' "$ROOT/README.md" || fail "README lost invali
 for retired in WORLDLINE.md GWCU.md DETERMINISM.md CAPABILITIES.md PERF_NOTES.md references/skill-ux-contract.md; do [ ! -e "$ROOT/$retired" ] || fail "retired project doc remains: $retired"; done
 pass "README is the sole public project documentation surface"
 
+"$ROOT/scripts/present-window.py" self-test >/dev/null || fail "presentation geometry self-test"
+python3 "$ROOT/tests/mutter-presentation.py" >/dev/null || fail "Mutter presentation regression tests"
+pass "Mutter 50/51 focus and geometry regressions"
+
 printf 'ok - regression suite complete (%d checks)\n' "$passed"
