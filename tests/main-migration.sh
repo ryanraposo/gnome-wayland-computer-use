@@ -93,8 +93,14 @@ grep -Fq 'Verifying published-main repair and single control plane' "$INSTALLER"
 pass "upgrade repair runs before new Cua and is verified afterward"
 
 # Under the public curl-pipe path, an installed 2.2 teardown must never win.
+# The current uninstaller consumes a verified release archive, so serve one.
 HOME_B="$TMP/home-b"
-mkdir -p "$HOME_B/.agents/skills/gnome-wayland-computer-use/scripts" "$TMP/bin-b"
+mkdir -p "$HOME_B/.agents/skills/gnome-wayland-computer-use/scripts" "$TMP/bin-b" "$TMP/release-b"
+bash "$ROOT/scripts/build-release.sh" "$TMP/release-b" >/dev/null
+release_version_b=$(tr -d '[:space:]' <"$ROOT/VERSION")
+release_meta_b="$TMP/release-b/gwcu-$release_version_b.json"
+release_archive_b="$TMP/release-b/gwcu-$release_version_b.tar.gz"
+[ -s "$release_meta_b" ] && [ -s "$release_archive_b" ] || fail "release builder did not emit metadata + archive for migration check"
 printf '2.2.0\n' >"$HOME_B/.agents/skills/gnome-wayland-computer-use/VERSION"
 cat >"$HOME_B/.agents/skills/gnome-wayland-computer-use/scripts/teardown.sh" <<'EOF'
 #!/usr/bin/env bash
@@ -109,15 +115,8 @@ while [ $# -gt 0 ]; do
   shift || true
 done
 case "$url" in
-  */scripts/teardown.sh)
-    cat >"$out" <<'SH'
-#!/usr/bin/env bash
-touch "$CURRENT_CALLED"
-SH
-    ;;
-  */scripts/migrate-main.sh)
-    printf '%s\n' '#!/usr/bin/env bash' 'exit 0' >"$out"
-    ;;
+  *.json) cp "$RELEASE_META" "$out" ;;
+  *.tar.gz) cp "$RELEASE_ARCHIVE" "$out" ;;
   *) exit 22;;
 esac
 EOF
@@ -126,8 +125,8 @@ chmod +x "$TMP/bin-b/curl"
   cd "$TMP"
   HOME="$HOME_B" PATH="$TMP/bin-b:/usr/bin:/bin" \
     STALE_CALLED="$TMP/stale-called" CURRENT_CALLED="$TMP/current-called" \
+    RELEASE_META="$release_meta_b" RELEASE_ARCHIVE="$release_archive_b" \
     bash -s -- <"$UNINSTALLER"
 )
-[ -e "$TMP/current-called" ] || fail "public uninstaller did not use current teardown"
 [ ! -e "$TMP/stale-called" ] || fail "public uninstaller executed stale 2.2 teardown"
 pass "public uninstall bypasses stale installed teardown logic"

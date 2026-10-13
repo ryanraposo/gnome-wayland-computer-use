@@ -66,7 +66,7 @@ GNOME Wayland uses the `Remote Desktop` portal → EIS/libei for compositor-appr
 
 Examples: `/computer-use open YouTube and play something`, `/computer-use send the message I drafted`.
 
-`/computer-use trace` shows the last redacted physical span plus the canonical path; spans remain internal-only. Detailed agent behavior belongs in `SKILL.md`.
+`/computer-use trace` shows the last redacted physical span plus the canonical path (`computer-use.sh span` stays internal-only). Detailed agent behavior belongs in `SKILL.md`.
 
 ## Agent routing
 
@@ -117,7 +117,7 @@ COMPLETE   present + verify the final visible result when required
 
 **No exact `(pid, window_id)` proof, no focus-bound input.** Visible-result requests end visibly. A background-unavailable fallback may escalate through the same PRESENT gate once.
 
-The exhaustive foreground action matrix belongs in `SKILL.md`. Direct Hermes native actions are mechanically gated by the policy plugin, while local action spans discover every Cua tool exposing `delivery_mode` from the runtime MCP schema so new foreground-capable Cua tools inherit the gate without a hand-maintained list.
+The exhaustive foreground action matrix belongs in `SKILL.md`. Hermes native actions are gated by the policy plugin; local spans cover every Cua tool exposing `delivery_mode`, so new tools inherit the gate.
 
 ## WORLDLINE
 

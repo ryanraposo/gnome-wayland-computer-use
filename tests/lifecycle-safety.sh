@@ -99,6 +99,7 @@ grep -Fq 'refusing uninstall because current release integrity could not be prov
 pass "uninstall integrity failure is terminal and cannot downgrade"
 
 # Teardown must preserve every unmarked skill directory, including profiles.
+rm -rf "$TMP/home"
 mkdir -p "$TMP/home/.agents/skills/gnome-wayland-computer-use" \
          "$TMP/home/.hermes/skills/computer-use" \
          "$TMP/home/.hermes/skills/gnome-wayland-computer-use" \
