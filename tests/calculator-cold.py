@@ -181,20 +181,22 @@ def main() -> int:
 
         target = {"kind": "window", "pid": pid, "window_id": window_id}
 
-        # VISIBLE CURSOR: move the compositor-owned Cua agent cursor, then read
-        # its independent semantic state rather than inferring visibility.
-        tool("move_cursor", {"target": target, "x": 64, "y": 64, "session": SESSION})
+        # Exercise Cua's cursor route. Linux may report an unverifiable move
+        # and omit the visibility field, so preserve the exact evidence.
+        cursor_move = tool("move_cursor", {"target": target, "x": 64, "y": 64, "session": SESSION})
         cursor = tool("get_agent_cursor_state", {"session": SESSION})
-        assert isinstance(cursor, dict) and cursor.get("visible") is True, cursor
+        assert isinstance(cursor_move, dict) and cursor_move.get("route"), cursor_move
+        assert isinstance(cursor, dict) and cursor.get("enabled") is True, cursor
+        cursor_visible = cursor.get("visible") if isinstance(cursor.get("visible"), bool) else None
         mark("cursor_ms")
 
         # ACT + VERIFY: exact same native target all the way through.
         tool("type_text", {
-            "target": target, "pid": pid, "window_id": window_id,
+            "target": target,
             "text": "137*42", "delivery_mode": "foreground", "session": SESSION,
         })
         tool("press_key", {
-            "target": target, "pid": pid, "window_id": window_id,
+            "target": target,
             "key": "return", "delivery_mode": "foreground", "session": SESSION,
         })
         state = tool("get_window_state", {
@@ -210,14 +212,19 @@ def main() -> int:
             "scenario": "calculator-cold",
             "target": {"pid": pid, "window_id": window_id},
             "presentation": {"ok": bool(presentation.get("ok")), "code": presentation.get("code")},
-            "cursor_visible": True,
+            "cursor": {
+                "enabled": True,
+                "visible": cursor_visible,
+                "move_route": cursor_move.get("route"),
+                "move_effect": cursor_move.get("effect"),
+            },
             "verified_result": "5754",
             "timings_ms": timings,
             "total_ms": round((time.monotonic() - started) * 1000),
         }
         write_evidence(evidence)
 
-        print(f"ok - cold Calculator: closed -> acquired ({pid},{window_id}) -> presented -> cursor visible -> 5754")
+        print(f"ok - cold Calculator: closed -> acquired ({pid},{window_id}) -> presented -> cursor routed -> 5754")
         print("evidence - " + json.dumps(evidence, separators=(",", ":")))
         return 0
     finally:

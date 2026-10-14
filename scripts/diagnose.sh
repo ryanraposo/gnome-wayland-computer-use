@@ -2,10 +2,12 @@
 # diagnose.sh — one compact verdict: desktop env + presentation + observation + WORLDLINE + Cua identity.
 set -euo pipefail
 MACHINE=false
+INSTALL_REPAIR=false
 for arg in "$@"; do
     case "$arg" in
         --machine|--json) MACHINE=true ;;
-        --help|-h) echo "usage: $0 [--machine|--json]"; exit 0 ;;
+        --install-repair) INSTALL_REPAIR=true ;;
+        --help|-h) echo "usage: $0 [--machine|--json] [--install-repair]"; exit 0 ;;
         *) echo "unknown option: $arg" >&2; exit 2 ;;
     esac
 done
@@ -19,9 +21,10 @@ PRESENTER="$ROOT/scripts/present-window.py"
 
 set +e
 OUTPUT=$(
-"$PYTHON" - "$HEALTH" "$WORLDLINE" "$PRESENTER" <<'PY'
+"$PYTHON" - "$HEALTH" "$WORLDLINE" "$PRESENTER" "$INSTALL_REPAIR" <<'PY'
 import json, os, pathlib, re, shlex, shutil, stat, subprocess, sys, time
 health_script,worldline_script,presenter_script=sys.argv[1:4]
+install_repair_requested=sys.argv[4]=="true"
 SEMVER=re.compile(r"\b(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)\b")
 ENV_KEYS=("DISPLAY","WAYLAND_DISPLAY","XDG_SESSION_TYPE","XDG_CURRENT_DESKTOP","XDG_RUNTIME_DIR")
 GATEWAY_MARKERS=("hermes gateway run","gateway.run","gateway/run.py","hermes-gateway")
@@ -147,12 +150,6 @@ def gateways_snapshot():
           "attestation":a.get("_path")})
     return rows
 
-def parent_is_installer():
-    try:
-        cmd=pathlib.Path(f"/proc/{os.getppid()}/cmdline").read_bytes().replace(b"\0",b" ").decode(errors="replace")
-    except OSError:return False
-    return "install.sh" in cmd
-
 def managed_hermes_homes():
     homes=[]
     roots=[pathlib.Path(os.environ.get("HERMES_HOME") or pathlib.Path.home()/".hermes"),pathlib.Path.home()/".hermes"]
@@ -227,7 +224,7 @@ if not cua:
     if candidate.is_file() and os.access(candidate,os.X_OK):cua=str(candidate)
 cua=real(cua)
 repair={"attempted":False,"ok":True}
-if parent_is_installer() and cua:
+if install_repair_requested and cua:
     repair=install_repair(cua)
 env_proof=environment_snapshot()
 shell_env=((env_proof.get("shell") or {}).get("values") or {})

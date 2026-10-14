@@ -530,7 +530,7 @@ if ! $COMPAT; then
   if [ "$rc" -ne 0 ] && doctor_mentions_drm "$DOCTOR_OUT" "$DOCTOR_ERR" && ! id -nG "$LOGIN_USER" | tr ' ' '\n' | grep -qx video; then if $EXPLICIT_UNATTENDED || { printf 'Cua reported DRM access trouble. Add %s to video group? [Y/n] ' "$LOGIN_USER" >/dev/tty; read -r x </dev/tty || x=""; [[ ! "$x" =~ ^[nN] ]]; }; then as_root adduser "$LOGIN_USER" video; : >"$STATE/video-group-added"; needs_session "DRM access repaired. Sign out/in once, then rerun install.sh to complete the live proof."; fi; fi
   [ "$rc" -eq 0 ] || { cat "$DOCTOR_ERR" >&2 || true; die "cua-driver doctor failed"; }
   "$PRIMARY/scripts/cua-health.py" --driver "$CUA" >"$STATE/cua-health.json" || die "Cua health_report failed"
-  DIAG_OUT="$STATE/diagnose.json"; diag_rc=0; "$PRIMARY/scripts/diagnose.sh" --machine >"$DIAG_OUT" 2>>"$INSTALL_LOG" || diag_rc=$?
+  DIAG_OUT="$STATE/diagnose.json"; diag_rc=0; "$PRIMARY/scripts/diagnose.sh" --machine --install-repair >"$DIAG_OUT" 2>>"$INSTALL_LOG" || diag_rc=$?
   DIAG_CODE=$("$PYTHON" - "$DIAG_OUT" <<'PY'
 import json,sys
 try:print(json.load(open(sys.argv[1])).get("code","invalid"))

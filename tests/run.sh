@@ -73,6 +73,7 @@ grep -Fq '[hermes,"gateway","restart","--force"]' "$diagnose" || fail "affected 
 grep -Fq '/proc/{pid}/environ' "$diagnose" || fail "running gateway environment is not proved"
 grep -Fq 'installed == hermes_selected == gateway_backend == doctor_reported' "$diagnose" || fail "Cua identity invariant missing"
 grep -Fq 'cua_identity_split_brain' "$diagnose" || fail "split-brain readiness failure missing"
+grep -Fq '"$PRIMARY/scripts/diagnose.sh" --machine --install-repair' "$installer" || fail "installer does not request Cua/Hermes identity repair"
 grep -Fq 'pipewire.service' "$diagnose" && grep -Fq 'wireplumber.service' "$diagnose" || fail "observation repair does not name exact services"
 pass "install repair synchronizes and proves live gateway/Cua identity"
 
@@ -161,6 +162,21 @@ HOME="$TMP/home" XDG_SESSION_TYPE=x11 XDG_CURRENT_DESKTOP=KDE "$diagnose" --mach
 python3 - "$TMP/diag.json" <<'PY' || fail "diagnostic envelope invalid"
 import json,sys
 d=json.load(open(sys.argv[1]));assert not d['ok'] and not d['host']['ok'];assert 'presentation' in d and 'desktop_environment' in d and 'identity' in d['cua']
+PY
+python3 - "$TMP/diag.json" <<'PY' || fail "ordinary diagnosis attempted install repair"
+import json,sys
+assert json.load(open(sys.argv[1]))['install_repair']['attempted'] is False
+PY
+mkdir -p "$TMP/home/.local/bin"
+ln -s "$TMP/fake-cua" "$TMP/home/.local/bin/cua-driver"
+rc=0
+HOME="$TMP/home" XDG_SESSION_TYPE=x11 XDG_CURRENT_DESKTOP=KDE "$diagnose" --machine --install-repair >"$TMP/diag-repair.json" 2>/dev/null || rc=$?
+[ "$rc" -ne 0 ] || fail "install repair succeeded outside GNOME Wayland"
+python3 - "$TMP/diag-repair.json" <<'PY' || fail "explicit install repair was not attempted and safely refused"
+import json,sys
+repair=json.load(open(sys.argv[1]))['install_repair']
+assert repair['attempted'] is True and repair['ok'] is False
+assert 'XDG_SESSION_TYPE is not wayland' in repair['failures']
 PY
 XDG_RUNTIME_DIR="$TMP/runtime" python3 "$ROOT/scripts/observer.py" self-test >/dev/null || fail "observer self-test"
 XDG_RUNTIME_DIR="$TMP/world" python3 "$worldline" self-test >/dev/null || fail "WORLDLINE self-test"
