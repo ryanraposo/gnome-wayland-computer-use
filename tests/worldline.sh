@@ -33,7 +33,8 @@ def rpc(op,args=None,version=1):
         return json.loads(s.makefile().readline())
 old=rpc('event',{'key':'task.done','value':True},99)
 assert old['error']['code']=='protocol_mismatch'
-baseline=rpc('fence')['result']['revision']
+fence=rpc('fence')['result']
+baseline=fence['revision']
 rpc('event',{'event':{'source':'atspi','facts':{'ui.focus.name':'Editor'}}})
 ready=rpc('wait',{'after_revision':baseline,'predicates':[{'path':'ui.focus.name','op':'eq','value':'Editor','fresh_after':baseline}]})
 assert ready['result']['code']=='ready'
@@ -42,7 +43,7 @@ assert stale['result']['code']=='pending'
 rpc('event',{'event':{'source':'atspi','facts':{'ui.focus.name':'Other'}}})
 conflict=rpc('wait',{'after_revision':ready['result']['revision'],'predicates':[{'path':'never','op':'exists'}],'conflict_paths':['ui.focus']})
 assert conflict['result']['code']=='conflict'
-receipt=rpc('receipt',{'owner':'cua','action_id':'sample','before_revision':baseline,'action_ok':False,'predicate':{'path':'ui.focus.name','op':'eq','value':'Other'}})['result']
+receipt=rpc('receipt',{'owner':'cua','action_id':'sample','domain_id':fence['domain_id'],'before_revision':baseline,'action_ok':False,'predicate':{'path':'ui.focus.name','op':'eq','value':'Other'}})['result']
 assert receipt['outcome']=='failed' and receipt['revision_domain']=='worldline'
 print('ok - one socket rejects skew and preserves causal revisions')
 PY
@@ -53,3 +54,13 @@ d=json.load(open(sys.argv[1]))
 assert d['ok'] and isinstance(d['revision'],int)
 PY
 printf 'ok - GWCU client reads standalone WORLDLINE\n'
+kill "$server" 2>/dev/null || true
+wait "$server" 2>/dev/null || true
+if python3 "$ROOT/scripts/worldline.py" self-test >"$TMP/missing.json"; then
+  printf 'GWCU accepted a missing standalone service\n' >&2; exit 1
+fi
+python3 - "$TMP/missing.json" <<'PY'
+import json,sys
+assert json.load(open(sys.argv[1]))['code']=='worldline_unavailable'
+PY
+printf 'ok - missing service fails closed\n'

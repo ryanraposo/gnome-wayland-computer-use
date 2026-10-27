@@ -29,7 +29,10 @@ log=os.environ.get('FAKE_PRESENTER_LOG')
 if log:pathlib.Path(log).open('a').write(' '.join(sys.argv[1:])+'\n')
 if os.environ.get('PRESENTER_FAIL')=='1':
  print(json.dumps({'schema':'gwcu.presentation.v1','ok':False,'code':'focus_not_proved'}));raise SystemExit(30)
-print(json.dumps({'schema':'gwcu.presentation.v1','ok':True,'code':'presented'}))
+pid=int(sys.argv[sys.argv.index('--pid')+1]);window_id=int(sys.argv[sys.argv.index('--window-id')+1])
+print(json.dumps({'schema':'gwcu.presentation.v1','ok':True,'code':'presented',
+                  'pid':pid,'window_id':window_id,
+                  'window':{'focused':True,'visible':True,'minimized':False}}))
 PY
 chmod +x "$TMP/fake-presenter"
 

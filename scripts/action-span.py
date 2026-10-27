@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from mcp_client import recv_for, resolve_driver, send
-from worldline import call as standalone_worldline_call
+from worldline import call as standalone_worldline_call, socket_path as worldline_client_socket
 
 SCHEMA = "gwcu.action-span.v1"
 TRACE_SCHEMA = "gwcu.trace.v1"
@@ -79,9 +79,7 @@ def resolve_control(control: dict[str, Any]) -> dict[str, Any]:
 def worldline_socket(value: str | None) -> Path:
     if value:
         return Path(value)
-    return Path(os.getenv("WORLDLINE_SOCKET") or
-                Path(os.getenv("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"))
-                / "worldline" / "worldline.sock")
+    return worldline_client_socket()
 
 
 def presenter_path(value: str | None) -> Path:
@@ -120,6 +118,13 @@ def present_exact(path: Path, target: tuple[int, int], timeout: float) -> dict[s
         value = {"ok": False, "code": "presentation_invalid_output", "detail": proc.stdout[:1024]}
     if proc.returncode != 0 and value.get("ok") is not False:
         value = {"ok": False, "code": "presentation_failed", "detail": proc.stderr[:1024]}
+    if value.get("ok") is True and (
+            value.get("pid") != pid or value.get("window_id") != window_id
+            or not isinstance(value.get("window"), dict)
+            or value["window"].get("focused") is not True
+            or value["window"].get("visible") is not True
+            or value["window"].get("minimized") is True):
+        value = {"ok": False, "code": "presentation_identity_mismatch"}
     return value
 
 
@@ -414,7 +419,8 @@ def run(driver: str, request: dict[str, Any], timeout: float, worldline_path: Pa
     last_exact_target: tuple[int, int] | None = None
     try:
         hello = worldline_call(worldline_path, {"op": "hello"}, 2)
-        if not hello.get("ok") or hello.get("revision_domain") != "worldline":
+        if (not hello.get("ok") or hello.get("revision_domain") != "worldline"
+                or not isinstance(hello.get("domain_id"), str)):
             raise RuntimeError("standalone WORLDLINE protocol unavailable")
     except Exception as exc:
         return envelope(False, "worldline_unavailable", requested=requested,
@@ -546,7 +552,13 @@ def run(driver: str, request: dict[str, Any], timeout: float, worldline_path: Pa
                 last_revision = wait_result.get("revision", last_revision)
                 if not wait_result.get("ok"):
                     return fail_boundary(control, presentations, requested, completed, results, f"worldline_{wait_result.get('code', 'failure')}", index=index, revision=last_revision)
-            witness_spec = (step.get("await", {}).get("predicates") or [None])[0]
+            independent_paths = {w.get("path") for w in (wait_result or {}).get("witnesses", [])
+                                 if isinstance(w, dict) and
+                                 (w.get("evidence") or {}).get("source") not in ("cua", "rpc:cua")}
+            witness_spec = next((p for p in (wait_result or {}).get("matched_predicates", [])
+                                 if isinstance(p, dict) and p.get("path") in independent_paths
+                                 and p.get("op", "eq") not in
+                                 ("changed", "invalid", "missing")), None)
             if isinstance(witness_spec, dict):
                 try:
                     record["causal_receipt"] = worldline_call(worldline_path, {

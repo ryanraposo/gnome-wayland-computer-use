@@ -16,7 +16,7 @@ MAX_RESPONSE = 1 << 20
 
 def socket_path() -> Path:
     return Path(os.getenv("WORLDLINE_SOCKET") or
-                Path(os.getenv("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"))
+                Path(os.getenv("XDG_RUNTIME_DIR", f"/tmp/worldline-{os.getuid()}"))
                 / "worldline" / "worldline.sock")
 
 
