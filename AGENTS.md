@@ -72,9 +72,9 @@ Current-state knowledge / control loop:
 
 ```text
 README.md
-scripts/worldline.py
+scripts/worldline.py (standalone socket client; no embedded daemon)
 scripts/worldline-capture.sh
-systemd/user/gnome-wayland-computer-use-worldline.*
+WORLDLINE repository: worldline.service and its one revision store
 ```
 
 Visual observation:

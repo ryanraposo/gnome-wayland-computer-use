@@ -53,9 +53,9 @@ pass "Ubuntu portal/accessibility foundation is explicit"
 for shipped in scripts/action-span.py scripts/worldline.py scripts/worldline-capture.sh scripts/present-window.py README.md; do grep -q "$shipped" "$installer" || fail "installer omits $shipped"; done
 grep -q 'present-window.py" self-test' "$installer" || fail "presentation self-test missing"
 grep -q 'present-window.py" status' "$installer" || fail "live presentation qualification missing"
-grep -q 'enable --now gnome-wayland-computer-use-worldline.socket' "$installer" || fail "WORLDLINE socket not enabled"
+grep -q 'Install and start standalone WORLDLINE first' "$installer" || fail "standalone WORLDLINE dependency missing"
 grep -q 'enable --now gnome-wayland-computer-use-observer.socket' "$installer" || fail "observer socket not enabled"
-grep -Fq 'ensure_user_daemon worldline "WORLDLINE"' "$installer" || fail "WORLDLINE automatic repair missing"
+! grep -Fq 'enable --now gnome-wayland-computer-use-worldline.socket' "$installer" || fail "embedded WORLDLINE socket still enabled"
 grep -Fq 'journalctl --user -u "$service_unit"' "$installer" || fail "daemon failure capsule lacks journal evidence"
 python3 "$presenter" self-test >/dev/null || fail "presentation primitive self-test"
 grep -Fq 'focused' "$presenter" && grep -Fq 'visible' "$presenter" && grep -Fq 'minimized' "$presenter" || fail "presenter does not prove visible focus"
@@ -120,8 +120,8 @@ pass "teardown removes runtime integration, not workspace truth"
 
 ! grep -Eq 'ydotool|uinput|org\.cua\.WinRects|cua-driver' "$capture" || fail "direct observation owns control machinery"
 ! grep -Eq 'ydotool|uinput' "$worldline" || fail "WORLDLINE owns raw input"
-grep -q 'Atspi.EventListener' "$worldline" || fail "WORLDLINE AT-SPI adapter missing"
-grep -q 'observer_capture' "$worldline" || fail "WORLDLINE visual escalation missing"
+grep -q 'standalone WORLDLINE' "$worldline" || fail "WORLDLINE standalone client missing"
+! grep -q 'def serve' "$worldline" || fail "embedded WORLDLINE daemon remains"
 pass "read-only sensors stay read-only"
 
 cat >"$TMP/fake-cua" <<'PY'
@@ -179,8 +179,10 @@ assert repair['attempted'] is True and repair['ok'] is False
 assert 'XDG_SESSION_TYPE is not wayland' in repair['failures']
 PY
 XDG_RUNTIME_DIR="$TMP/runtime" python3 "$ROOT/scripts/observer.py" self-test >/dev/null || fail "observer self-test"
-XDG_RUNTIME_DIR="$TMP/world" python3 "$worldline" self-test >/dev/null || fail "WORLDLINE self-test"
-pass "diagnostics and read-only runtimes self-test"
+if XDG_RUNTIME_DIR="$TMP/world" python3 "$worldline" self-test >/dev/null; then
+  fail "missing standalone WORLDLINE service passed readiness"
+fi
+pass "diagnostics and observer self-test; missing WORLDLINE fails closed"
 
 for f in SKILL.md runtimes/openai/SKILL.md README.md; do grep -qi 'Cua' "$ROOT/$f" || fail "$f lost Cua"; grep -qi 'WORLDLINE' "$ROOT/$f" || fail "$f lost WORLDLINE"; grep -qi 'No X11' "$ROOT/$f" || fail "$f lost GNOME Wayland qualification"; grep -qi 'Remote Desktop' "$ROOT/$f" || fail "$f lost consent model"; done
 grep -qi 'Observation is an interrupt' "$ROOT/README.md" || fail "README lost core inversion"

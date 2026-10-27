@@ -247,10 +247,10 @@ failing_observation_services=[]
 if not pw:failing_observation_services.append("pipewire.service")
 if not wp:failing_observation_services.append("wireplumber.service")
 
-worldline_socket=active_unit("gnome-wayland-computer-use-worldline.socket")
 worldline_rc,worldline_out,worldline_err=run([sys.executable,worldline_script,"request","--json",'{"op":"status"}'],5)
 try: worldline=json.loads(worldline_out) if worldline_out else None
 except Exception: worldline={"ok":False,"code":"invalid_output","detail":worldline_out[:1024]}
+worldline_socket=bool(worldline_rc==0 and isinstance(worldline,dict) and worldline.get("ok"))
 worldline_ok=worldline_socket and worldline_rc==0 and isinstance(worldline,dict) and bool(worldline.get("ok"))
 
 winrects_dir=pathlib.Path(os.environ.get("XDG_DATA_HOME",str(pathlib.Path.home()/".local/share")))/"gnome-shell/extensions/winrects@cua"

@@ -1,69 +1,55 @@
 #!/usr/bin/env bash
+# Cross-repository socket acceptance, using the actual standalone dispatcher.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
-fail(){ printf 'not ok - %s\n' "$1" >&2; exit 1; }
-pass(){ printf 'ok - %s\n' "$1"; }
-world="$ROOT/scripts/worldline.py"
-
-python3 -m py_compile "$world" || fail "WORLDLINE parses"
-XDG_RUNTIME_DIR="$TMP/self" python3 "$world" self-test >"$TMP/self.json"
-python3 - "$TMP/self.json" <<'PY' || fail "WORLDLINE self-test envelope"
-import json,sys
-d=json.load(open(sys.argv[1])); assert d["schema"]=="gwcu.worldline.v1" and d["ok"] and d["code"]=="self_test_ok"
+WORLDLINE_SOURCE="${WORLDLINE_SOURCE:-$ROOT/../WORLDLINE}"
+TMP="$(mktemp -d)"
+trap 'kill "$server" 2>/dev/null || true' EXIT
+[ -f "$WORLDLINE_SOURCE/src/worldline/daemon.py" ] || {
+  printf 'WORLDLINE_SOURCE must name the standalone repository\n' >&2; exit 2;
+}
+export PYTHONPATH="$WORLDLINE_SOURCE/src"
+export WORLDLINE_SOCKET="$TMP/worldline.sock"
+python3 - "$WORLDLINE_SOCKET" <<'PY' &
+import asyncio,sys
+from worldline.daemon import WorldlineDaemon
+async def main():
+    daemon=WorldlineDaemon()
+    server=await asyncio.start_unix_server(daemon.handle,path=sys.argv[1])
+    async with server: await server.serve_forever()
+asyncio.run(main())
 PY
-pass "WORLDLINE reducer/wait self-test"
-
-mkdir -p "$TMP/runtime"
-XDG_RUNTIME_DIR="$TMP/runtime" GWCU_WORLDLINE_IDLE_SECONDS=30 python3 "$world" serve >"$TMP/server.out" 2>"$TMP/server.err" &
-pid=$!
-for _ in $(seq 1 50); do [ -S "$TMP/runtime/gnome-wayland-computer-use/worldline.sock" ] && break; sleep .02; done
-[ -S "$TMP/runtime/gnome-wayland-computer-use/worldline.sock" ] || fail "WORLDLINE private socket appeared"
-
-XDG_RUNTIME_DIR="$TMP/runtime" python3 "$world" request --json '{"op":"wait","timeout_ms":2000,"predicates":[{"id":"done","path":"task.download.done","op":"eq","value":true}]}' >"$TMP/wait.json" &
-waiter=$!
-sleep .05
-XDG_RUNTIME_DIR="$TMP/runtime" python3 "$world" request --json '{"op":"event","event":{"source":"task","type":"download-complete","facts":{"task.download.done":true},"invalidates":["ui.semantic"]}}' >"$TMP/event.json"
-wait "$waiter"
-
-python3 - "$TMP/event.json" "$TMP/wait.json" <<'PY' || fail "event-driven wake invalid"
-import json,sys
-e=json.load(open(sys.argv[1])); w=json.load(open(sys.argv[2]))
-assert e["ok"] and e["code"]=="applied" and e["revision"]>=1
-assert w["ok"] and w["code"]=="ready" and "done" in w["predicates"]
-assert w["revision"]>=e["revision"]
+server=$!
+for _ in $(seq 1 100); do [ -S "$WORLDLINE_SOCKET" ] && break; sleep .02; done
+[ -S "$WORLDLINE_SOCKET" ] || { printf 'standalone socket did not start\n' >&2; exit 1; }
+python3 "$ROOT/scripts/worldline.py" self-test >/dev/null
+python3 - "$WORLDLINE_SOCKET" <<'PY'
+import json,socket,sys
+path=sys.argv[1]
+def rpc(op,args=None,version=1):
+    with socket.socket(socket.AF_UNIX) as s:
+        s.connect(path)
+        s.sendall((json.dumps({'protocol':version,'op':op,'args':args or {}})+'\n').encode())
+        return json.loads(s.makefile().readline())
+old=rpc('event',{'key':'task.done','value':True},99)
+assert old['error']['code']=='protocol_mismatch'
+baseline=rpc('fence')['result']['revision']
+rpc('event',{'event':{'source':'atspi','facts':{'ui.focus.name':'Editor'}}})
+ready=rpc('wait',{'after_revision':baseline,'predicates':[{'path':'ui.focus.name','op':'eq','value':'Editor','fresh_after':baseline}]})
+assert ready['result']['code']=='ready'
+stale=rpc('wait',{'after_revision':ready['result']['revision'],'predicates':[{'path':'ui.focus.name','op':'eq','value':'Editor','fresh_after':ready['result']['revision']}]})
+assert stale['result']['code']=='pending'
+rpc('event',{'event':{'source':'atspi','facts':{'ui.focus.name':'Other'}}})
+conflict=rpc('wait',{'after_revision':ready['result']['revision'],'predicates':[{'path':'never','op':'exists'}],'conflict_paths':['ui.focus']})
+assert conflict['result']['code']=='conflict'
+receipt=rpc('receipt',{'owner':'cua','action_id':'sample','before_revision':baseline,'action_ok':False,'predicate':{'path':'ui.focus.name','op':'eq','value':'Other'}})['result']
+assert receipt['outcome']=='failed' and receipt['revision_domain']=='worldline'
+print('ok - one socket rejects skew and preserves causal revisions')
 PY
-pass "event ingestion advances WORLDLINE and wakes a blocking predicate wait"
-
-XDG_RUNTIME_DIR="$TMP/runtime" python3 "$world" request --json '{"op":"wait","timeout_ms":50,"branches":[{"id":"downloaded","predicates":[{"path":"task.download.done","op":"eq","value":true}]},{"id":"dialog","predicates":[{"path":"ui.dialog.name","op":"exists"}]}]}' >"$TMP/branch.json"
-python3 - "$TMP/branch.json" <<'PY' || fail "branch selection invalid"
+python3 "$ROOT/scripts/worldline.py" request --json '{"op":"status"}' >"$TMP/status.json"
+python3 - "$TMP/status.json" <<'PY'
 import json,sys
-d=json.load(open(sys.argv[1])); assert d["ok"] and d["matched_branch"]=="downloaded"
+d=json.load(open(sys.argv[1]))
+assert d['ok'] and isinstance(d['revision'],int)
 PY
-pass "WORLDLINE resolves predetermined branches locally"
-
-XDG_RUNTIME_DIR="$TMP/runtime" python3 "$world" request --json '{"op":"event","event":{"source":"task","facts":{"task.fresh":true}}}' >"$TMP/stale-seed.json"
-stale_rev=$(python3 - "$TMP/stale-seed.json" <<'PY'
-import json,sys
-print(json.load(open(sys.argv[1]))["revision"])
-PY
-)
-set +e
-XDG_RUNTIME_DIR="$TMP/runtime" python3 "$world" request --json '{"op":"wait","timeout_ms":40,"predicates":[{"path":"task.fresh","op":"eq","value":true,"fresh_after":'"$stale_rev"'}]}' >"$TMP/stale-wait.json"
-stale_rc=$?
-set -e
-[ "$stale_rc" -ne 0 ] || fail "stale fact satisfied a fresh wait"
-grep -q '"code":"timeout"' "$TMP/stale-wait.json" || fail "stale fresh wait did not time out"
-XDG_RUNTIME_DIR="$TMP/runtime" python3 "$world" request --json '{"op":"event","event":{"source":"task","facts":{"task.fresh":true}}}' >/dev/null
-XDG_RUNTIME_DIR="$TMP/runtime" python3 "$world" request --json '{"op":"wait","timeout_ms":100,"predicates":[{"path":"task.fresh","op":"eq","value":true,"fresh_after":'"$stale_rev"'}]}' >"$TMP/fresh-wait.json"
-grep -q '"code":"ready"' "$TMP/fresh-wait.json" || fail "freshly re-observed fact did not satisfy fresh wait"
-pass "fresh_after rejects cached truth until the fact is observed in a newer revision"
-
-XDG_RUNTIME_DIR="$TMP/runtime" python3 "$world" request --json '{"op":"close"}' >/dev/null || true
-wait "$pid" || true
-
-grep -q 'WORLDLINE never injects input' "$world" || fail "WORLDLINE authority boundary missing"
-! grep -Eq 'ydotool|/dev/uinput|uinput' "$world" || fail "WORLDLINE contains raw input path"
-grep -q 'op=="wait"' "$world" || fail "WORLDLINE wait operation missing"
-grep -q 'Thread(target=client' "$world" || fail "WORLDLINE server cannot ingest events while waiting"
-pass "WORLDLINE remains read-only while owning contingent continuation"
+printf 'ok - GWCU client reads standalone WORLDLINE\n'
