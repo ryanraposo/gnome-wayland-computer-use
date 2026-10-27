@@ -36,6 +36,11 @@ jobs:
         run: bash ./tests/latency-routing.sh
       - name: Truth scope isolation
         run: bash ./tests/truth-scope.sh
+      - name: Standalone WORLDLINE test dependency
+        run: |
+          git clone --quiet https://github.com/ryanraposo/WORLDLINE.git "$RUNNER_TEMP/worldline"
+          git -C "$RUNNER_TEMP/worldline" checkout --quiet 56ca67c
+          echo "WORLDLINE_SOURCE=$RUNNER_TEMP/worldline" >> "$GITHUB_ENV"
       - name: One-call action spans
         run: bash ./tests/action-span.sh
       - name: WORLDLINE revision runtime

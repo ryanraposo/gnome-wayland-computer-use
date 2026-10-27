@@ -143,6 +143,19 @@ Scope order: `GWCU_SCOPE_ROOT` → Git worktree root → nearest ancestor alread
 curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh | bash
 ```
 
+## Update
+
+From the existing checkout, after updating standalone WORLDLINE, run:
+
+```bash
+./update.sh
+```
+
+This fast forwards the current branch and reruns the local installer to update
+the installed skill, policy and runtime. It stops if the checkout has local
+changes. The installer may request desktop consent or a GNOME sign-out/sign-in;
+follow its `Next:` guidance and rerun `./update.sh` after signing back in.
+
 Install and start [standalone WORLDLINE](https://github.com/ryanraposo/WORLDLINE) first. The installer verifies its versioned socket, then qualifies Ubuntu 26.04 GNOME Wayland, installs/reuses pinned Cua and its helper, establishes portal consent, installs the skill/runtime and Hermes policy, enables the visual observer, retires the embedded GWCU WORLDLINE units, and live-proves readiness.
 
 Other runtimes can call `scripts/gwcu-exec` with a JSON action span on stdin. The executable owns exact foreground admission and Cua action delivery; its redacted trace and WORLDLINE causal receipts describe the outcome without requiring the text of this skill.

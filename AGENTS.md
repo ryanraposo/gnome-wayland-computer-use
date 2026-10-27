@@ -14,6 +14,8 @@ For an approved installation:
 
 1. Confirm the target is the local desktop the user intends to equip. GWCU's qualified target is Ubuntu 26.04 GNOME Wayland.
 2. Read `README.md`, then use the repository's `install.sh`. Do not invent a parallel setup path.
+   For an existing checkout update, use `./update.sh` after standalone
+   WORLDLINE is updated; it fetches the current branch and reruns `install.sh`.
 3. Run the installer as the logged-in desktop user, not by wrapping the whole installer in `sudo`.
 4. Preserve unrelated agent/runtime configuration. Let the installer select the supported integration it actually finds.
 5. Treat graphical Remote Desktop / remote-control consent as a real user authorization boundary. Explain the prompt and let the user approve it.
