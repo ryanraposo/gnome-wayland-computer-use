@@ -119,6 +119,12 @@ click Save → document.dirty == false → predicate satisfied → continue
 
 Standalone WORLDLINE owns one private socket and revision store for GWCU and other consumers. It reads AT-SPI, direct host facts and exact Cua GNOME compositor frames, with ScreenCast/PipeWire evidence when requested. GWCU's observer remains a separate visual sensor.
 
+Horner can use the same WORLDLINE protocol 1 socket for its foreground and
+body receipts. A receipt is valid only in the daemon instance named by its
+`domain_id`; nested Horner DevKits use their own socket and revision domain.
+The receipt's `claim` states the proved boundary: verified foreground focus
+does not prove that a click achieved the user's application goal.
+
 For awaited actions, the runtime seals a WORLDLINE fence after presentation and immediately before Cua mutates the target. Postconditions must then be evidenced in a newer revision: a cached fact that was already true before the action cannot complete the action.
 
 ## `.gwcu`
@@ -151,6 +157,17 @@ Install and start [standalone WORLDLINE](https://github.com/ryanraposo/WORLDLINE
 Other runtimes can call `scripts/gwcu-exec` with a JSON action span on stdin. The executable owns exact foreground admission and Cua action delivery; its redacted trace and WORLDLINE causal receipts describe the outcome without requiring the text of this skill.
 
 `READY // PROVED` requires the installed Cua identity, Hermes-selected identity, running gateway backend identity and doctor-reported identity to agree. A split-brain version/path state fails readiness.
+
+For an existing local checkout, `bash install.sh` repairs its installed
+observer socket and imports the live desktop environment into systemd and
+affected Hermes gateways. Check the result with
+`bash scripts/computer-use.sh doctor`; `desktop_environment_unproved` means
+the gateway still lacks the GNOME session environment, and
+`observation_degraded` identifies unavailable observer components. The live
+Calculator acceptance test additionally proves exact window presentation,
+an observed application result, and removal of its named agent cursor session.
+Its cursor visibility field may remain unverified even when the input result
+is verified.
 
 If the GNOME helper needs a session reload, the installer asks for one sign-out/sign-in and does not claim fully proved readiness until rerun.
 

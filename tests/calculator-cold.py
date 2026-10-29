@@ -120,12 +120,15 @@ def main() -> int:
     def tool(name: str, args: dict | None = None, timeout: float = 8.0):
         return structured(rpc("tools/call", {"name": name, "arguments": args or {}}, timeout))
 
+    session_ended = False
     try:
         rpc("initialize", {
             "protocolVersion": PROTOCOL, "capabilities": {},
             "clientInfo": {"name": "gwcu-calculator-cold", "version": "1"},
         })
         send(proc, {"jsonrpc": "2.0", "method": "notifications/initialized"})
+        started_session = tool("start_session", {"session": SESSION})
+        assert isinstance(started_session, dict) and started_session.get("active") is True, started_session
 
         # Establish a genuinely cold start using Cua itself, never a shell kill.
         existing = [row for row in windows(tool("list_windows")) if is_calculator(row)]
@@ -206,6 +209,11 @@ def main() -> int:
         if "5754" not in json.dumps(state, ensure_ascii=False):
             raise AssertionError(f"Calculator did not expose verified result 5754: {state!r}")
         mark("act_verify_ms")
+        ended_session = tool("end_session", {"session": SESSION})
+        assert isinstance(ended_session, dict) and ended_session.get("active") is False, ended_session
+        session_ended = True
+        cleared_cursor = tool("get_agent_cursor_state", {"session": SESSION})
+        assert isinstance(cleared_cursor, dict) and cleared_cursor.get("position") is None, cleared_cursor
         evidence = {
             "schema": "gwcu.acceptance.v1",
             "ok": True,
@@ -217,6 +225,8 @@ def main() -> int:
                 "visible": cursor_visible,
                 "move_route": cursor_move.get("route"),
                 "move_effect": cursor_move.get("effect"),
+                "session_ended": session_ended,
+                "position_cleared": True,
             },
             "verified_result": "5754",
             "timings_ms": timings,
@@ -229,6 +239,11 @@ def main() -> int:
         return 0
     finally:
         if proc.poll() is None:
+            if not session_ended:
+                try:
+                    tool("end_session", {"session": SESSION})
+                except Exception as exc:
+                    print(f"warning - Calculator cursor cleanup failed: {exc}", file=sys.stderr)
             proc.terminate()
             try:
                 proc.wait(timeout=1)
