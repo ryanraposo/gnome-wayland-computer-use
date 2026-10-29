@@ -35,16 +35,6 @@ GWCU uses **Cua Driver's MCP/tool surface** for computer use; GWCU itself is not
 | **WORLDLINE** | Transient revisioned state, invalidation, predicates, waits and conflicts. Read-only: it never injects input. |
 | **`.gwcu`** | Durable low-churn machine/workspace truth such as stable identity, capabilities, calibration and preferences. |
 
-The short form is:
-
-```text
-skill decides the contract
-→ policy/runtime enforce it
-→ Cua acts
-→ WORLDLINE knows what changed
-→ .gwcu remembers stable truth
-```
-
 GNOME Wayland uses the `Remote Desktop` portal → EIS/libei for compositor-approved local input. GWCU installs no RDP/VNC server or raw-input daemon. **No X11 or XWayland session is required.**
 
 ## Use it
@@ -171,14 +161,3 @@ curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/uninstall.sh 
 ```
 
 Public uninstall uses the same verified release source. Teardown removes GWCU-managed integration/transient state, restores archives where possible, preserves workspace `.gwcu`, and leaves built-in `computer_use` alone. Cua is preserved by default; `--remove-cua` removes a GWCU-provisioned copy and `--purge-cua` is explicit full purge.
-
-## Invariants
-
-- `SKILL.md` is the canonical agent contract; README explains the system at a human level.
-- Cua is the sole desktop actuator; GWCU is not a second MCP control plane.
-- A specific user browser session stays on one Cua actuation path while it is being manipulated.
-- Foreground uses exact target identity plus persistent PRESENT proof.
-- Visible requests end visibly.
-- WORLDLINE knows; it never acts.
-- Direct truth beats pixels; model calls happen at decision boundaries.
-- `.gwcu` stores durable truth only.

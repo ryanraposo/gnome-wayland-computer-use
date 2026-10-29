@@ -38,8 +38,8 @@ baseline=fence['revision']
 rpc('event',{'event':{'source':'atspi','facts':{'ui.focus.name':'Editor'}}})
 ready=rpc('wait',{'after_revision':baseline,'predicates':[{'path':'ui.focus.name','op':'eq','value':'Editor','fresh_after':baseline}]})
 assert ready['result']['code']=='ready'
-stale=rpc('wait',{'after_revision':ready['result']['revision'],'predicates':[{'path':'ui.focus.name','op':'eq','value':'Editor','fresh_after':ready['result']['revision']}]})
-assert stale['result']['code']=='pending'
+stale=rpc('wait',{'after_revision':ready['result']['revision'],'timeout_ms':1,'predicates':[{'path':'ui.focus.name','op':'eq','value':'Editor','fresh_after':ready['result']['revision']}]})
+assert stale['result']['code']=='timeout'
 rpc('event',{'event':{'source':'atspi','facts':{'ui.focus.name':'Other'}}})
 conflict=rpc('wait',{'after_revision':ready['result']['revision'],'predicates':[{'path':'never','op':'exists'}],'conflict_paths':['ui.focus']})
 assert conflict['result']['code']=='conflict'
