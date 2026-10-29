@@ -35,16 +35,6 @@ GWCU uses **Cua Driver's MCP/tool surface** for computer use; GWCU itself is not
 | **WORLDLINE** | Transient revisioned state, invalidation, predicates, waits and conflicts. Read-only: it never injects input. |
 | **`.gwcu`** | Durable low-churn machine/workspace truth such as stable identity, capabilities, calibration and preferences. |
 
-The short form is:
-
-```text
-skill decides the contract
-→ policy/runtime enforce it
-→ Cua acts
-→ WORLDLINE knows what changed
-→ .gwcu remembers stable truth
-```
-
 GNOME Wayland uses the `Remote Desktop` portal → EIS/libei for compositor-approved local input. GWCU installs no RDP/VNC server or raw-input daemon. **No X11 or XWayland session is required.**
 
 ## Use it
@@ -127,7 +117,7 @@ WORLDLINE turns repeated observation loops into local predicate-driven continuat
 click Save → document.dirty == false → predicate satisfied → continue
 ```
 
-It prefers direct truth from AT-SPI, filesystem/process state, D-Bus, settings, network and task watchers, with ScreenCast/PipeWire visual evidence only when needed. It is socket-activated and read-only.
+Standalone WORLDLINE owns one private socket and revision store for GWCU and other consumers. It reads AT-SPI, direct host facts and exact Cua GNOME compositor frames, with ScreenCast/PipeWire evidence when requested. GWCU's observer remains a separate visual sensor.
 
 For awaited actions, the runtime seals a WORLDLINE fence after presentation and immediately before Cua mutates the target. Postconditions must then be evidenced in a newer revision: a cached fact that was already true before the action cannot complete the action.
 
@@ -143,7 +133,22 @@ Scope order: `GWCU_SCOPE_ROOT` → Git worktree root → nearest ancestor alread
 curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh | bash
 ```
 
-The installer first verifies one commit-addressed SHA-256 release archive, then qualifies Ubuntu 26.04 GNOME Wayland, installs/reuses pinned Cua plus its helper, establishes portal consent, installs the skill/runtime and Hermes policy, synchronizes live desktop environment into the user systemd/DBus activation environment, restarts affected Hermes gateways, enables WORLDLINE/observation, repairs older GWCU artifacts, and live-proves readiness.
+## Update
+
+From the existing checkout, after updating standalone WORLDLINE, run:
+
+```bash
+./update.sh
+```
+
+This fast forwards the current branch and reruns the local installer to update
+the installed skill, policy and runtime. It stops if the checkout has local
+changes. The installer may request desktop consent or a GNOME sign-out/sign-in;
+follow its `Next:` guidance and rerun `./update.sh` after signing back in.
+
+Install and start [standalone WORLDLINE](https://github.com/ryanraposo/WORLDLINE) first. The installer verifies its versioned socket, then qualifies Ubuntu 26.04 GNOME Wayland, installs/reuses pinned Cua and its helper, establishes portal consent, installs the skill/runtime and Hermes policy, enables the visual observer, retires the embedded GWCU WORLDLINE units, and live-proves readiness.
+
+Other runtimes can call `scripts/gwcu-exec` with a JSON action span on stdin. The executable owns exact foreground admission and Cua action delivery; its redacted trace and WORLDLINE causal receipts describe the outcome without requiring the text of this skill.
 
 `READY // PROVED` requires the installed Cua identity, Hermes-selected identity, running gateway backend identity and doctor-reported identity to agree. A split-brain version/path state fails readiness.
 
@@ -156,14 +161,3 @@ curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/uninstall.sh 
 ```
 
 Public uninstall uses the same verified release source. Teardown removes GWCU-managed integration/transient state, restores archives where possible, preserves workspace `.gwcu`, and leaves built-in `computer_use` alone. Cua is preserved by default; `--remove-cua` removes a GWCU-provisioned copy and `--purge-cua` is explicit full purge.
-
-## Invariants
-
-- `SKILL.md` is the canonical agent contract; README explains the system at a human level.
-- Cua is the sole desktop actuator; GWCU is not a second MCP control plane.
-- A specific user browser session stays on one Cua actuation path while it is being manipulated.
-- Foreground uses exact target identity plus persistent PRESENT proof.
-- Visible requests end visibly.
-- WORLDLINE knows; it never acts.
-- Direct truth beats pixels; model calls happen at decision boundaries.
-- `.gwcu` stores durable truth only.

@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from mcp_client import recv_for, resolve_driver, send
+from worldline import call as standalone_worldline_call, socket_path as worldline_client_socket
 
 SCHEMA = "gwcu.action-span.v1"
 TRACE_SCHEMA = "gwcu.trace.v1"
@@ -78,7 +79,7 @@ def resolve_control(control: dict[str, Any]) -> dict[str, Any]:
 def worldline_socket(value: str | None) -> Path:
     if value:
         return Path(value)
-    return Path(os.getenv("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "gnome-wayland-computer-use" / "worldline.sock"
+    return worldline_client_socket()
 
 
 def presenter_path(value: str | None) -> Path:
@@ -86,22 +87,7 @@ def presenter_path(value: str | None) -> Path:
 
 
 def worldline_call(path: Path, payload: dict[str, Any], timeout: float) -> dict[str, Any]:
-    client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    client.settimeout(timeout)
-    try:
-        client.connect(str(path))
-        client.sendall((compact(payload) + "\n").encode())
-        data = bytearray()
-        while b"\n" not in data and len(data) <= MAX_RESPONSE:
-            chunk = client.recv(65536)
-            if not chunk:
-                break
-            data.extend(chunk)
-    finally:
-        client.close()
-    if not data:
-        raise RuntimeError("WORLDLINE closed without response")
-    return json.loads(bytes(data).split(b"\n", 1)[0])
+    return standalone_worldline_call(payload, path=path, timeout=timeout)
 
 
 def exact_target(arguments: dict[str, Any]) -> tuple[int, int] | None:
@@ -132,6 +118,13 @@ def present_exact(path: Path, target: tuple[int, int], timeout: float) -> dict[s
         value = {"ok": False, "code": "presentation_invalid_output", "detail": proc.stdout[:1024]}
     if proc.returncode != 0 and value.get("ok") is not False:
         value = {"ok": False, "code": "presentation_failed", "detail": proc.stderr[:1024]}
+    if value.get("ok") is True and (
+            value.get("pid") != pid or value.get("window_id") != window_id
+            or not isinstance(value.get("window"), dict)
+            or value["window"].get("focused") is not True
+            or value["window"].get("visible") is not True
+            or value["window"].get("minimized") is True):
+        value = {"ok": False, "code": "presentation_identity_mismatch"}
     return value
 
 
@@ -272,6 +265,7 @@ def physical_trace(ok: bool, code: str, requested: int, completed: int, results:
         fence = item.get("worldline_fence") if isinstance(item.get("worldline_fence"), dict) else {}
         wait = item.get("worldline") if isinstance(item.get("worldline"), dict) else {}
         receipt = item.get("worldline_action") if isinstance(item.get("worldline_action"), dict) else {}
+        causal = item.get("causal_receipt") if isinstance(item.get("causal_receipt"), dict) else {}
         safe_actions.append({
             "index": item.get("index"),
             "name": item.get("name"),
@@ -282,6 +276,8 @@ def physical_trace(ok: bool, code: str, requested: int, completed: int, results:
             "action_revision": receipt.get("revision"),
             "postcondition_revision": wait.get("revision"),
             "postcondition_code": wait.get("code"),
+            "outcome": causal.get("outcome", "unverified"),
+            "observation_source": (causal.get("observation") or {}).get("evidence", {}).get("source"),
         })
 
     return {
@@ -422,6 +418,14 @@ def run(driver: str, request: dict[str, Any], timeout: float, worldline_path: Pa
     presentations: list[dict[str, Any]] = []
     last_exact_target: tuple[int, int] | None = None
     try:
+        hello = worldline_call(worldline_path, {"op": "hello"}, 2)
+        if (not hello.get("ok") or hello.get("revision_domain") != "worldline"
+                or not isinstance(hello.get("domain_id"), str)):
+            raise RuntimeError("standalone WORLDLINE protocol unavailable")
+    except Exception as exc:
+        return envelope(False, "worldline_unavailable", requested=requested,
+                        detail=str(exc), control=control), 50
+    try:
         process = subprocess.Popen([driver, "mcp"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, encoding="utf-8", errors="replace", bufsize=1)
     except OSError as exc:
         return envelope(False, "driver_unavailable", requested=requested, detail=str(exc), control=control), 50
@@ -468,14 +472,13 @@ def run(driver: str, request: dict[str, Any], timeout: float, worldline_path: Pa
                 if not presentation.get("ok"):
                     return fail_boundary(control, presentations, requested, completed, results, "presentation_not_proved", index=index, name=action["name"], detail=compact(presentation), revision=last_revision)
 
-            if "await" in step:
-                try:
-                    fence_result = worldline_call(worldline_path, {"op": "fence", "trigger": f"before:{action['name']}"}, 3)
-                    if not fence_result.get("ok") or not isinstance(fence_result.get("revision"), int):
-                        raise RuntimeError(compact(fence_result))
-                    baseline = fence_result["revision"]
-                except Exception as exc:
-                    return envelope(False, "worldline_boundary", requested=requested, completed=completed, results=results, boundary={"index": index, "reason": "worldline_fence_failed"}, detail=str(exc), revision=last_revision, control=control), 50
+            try:
+                fence_result = worldline_call(worldline_path, {"op": "fence", "trigger": f"before:{action['name']}"}, 3)
+                if not fence_result.get("ok") or not isinstance(fence_result.get("revision"), int):
+                    raise RuntimeError(compact(fence_result))
+                baseline = fence_result["revision"]
+            except Exception as exc:
+                return envelope(False, "worldline_boundary", requested=requested, completed=completed, results=results, boundary={"index": index, "reason": "worldline_fence_failed"}, detail=str(exc), revision=last_revision, control=control), 50
 
             send(process, {"jsonrpc": "2.0", "id": request_id, "method": "tools/call", "params": {"name": action["name"], "arguments": arguments}})
             response = recv_for(process, request_id, timeout)
@@ -491,14 +494,13 @@ def run(driver: str, request: dict[str, Any], timeout: float, worldline_path: Pa
                     return fail_boundary(control, presentations, requested, completed, results, "presentation_not_proved_for_fallback", index=index, name=action["name"], detail=compact(presentation), revision=last_revision)
                 overrides.append({"index": index, "from": "background", "to": "foreground", "reason": "cua_background_unavailable"})
                 arguments["delivery_mode"] = "foreground"
-                if "await" in step:
-                    try:
-                        fence_result = worldline_call(worldline_path, {"op": "fence", "trigger": f"before:{action['name']}:foreground-fallback"}, 3)
-                        if not fence_result.get("ok") or not isinstance(fence_result.get("revision"), int):
-                            raise RuntimeError(compact(fence_result))
-                        baseline = fence_result["revision"]
-                    except Exception as exc:
-                        return envelope(False, "worldline_boundary", requested=requested, completed=completed, results=results, boundary={"index": index, "reason": "worldline_fence_failed_for_fallback"}, detail=str(exc), revision=last_revision, control=control), 50
+                try:
+                    fence_result = worldline_call(worldline_path, {"op": "fence", "trigger": f"before:{action['name']}:foreground-fallback"}, 3)
+                    if not fence_result.get("ok") or not isinstance(fence_result.get("revision"), int):
+                        raise RuntimeError(compact(fence_result))
+                    baseline = fence_result["revision"]
+                except Exception as exc:
+                    return envelope(False, "worldline_boundary", requested=requested, completed=completed, results=results, boundary={"index": index, "reason": "worldline_fence_failed_for_fallback"}, detail=str(exc), revision=last_revision, control=control), 50
                 send(process, {"jsonrpc": "2.0", "id": request_id, "method": "tools/call", "params": {"name": action["name"], "arguments": arguments}})
                 response = recv_for(process, request_id, timeout)
                 request_id += 1
@@ -510,9 +512,19 @@ def run(driver: str, request: dict[str, Any], timeout: float, worldline_path: Pa
                 record["worldline_fence"] = fence_result
             results.append(record)
             if failed:
+                if isinstance(baseline, int):
+                    try:
+                        record["causal_receipt"] = worldline_call(worldline_path, {
+                            "op": "receipt", "owner": "cua", "action_id": f"{index}:{action['name']}",
+                            "before_revision": baseline, "domain_id": fence_result["domain_id"],
+                            "action_ok": False,
+                            "predicate": {"path": "cua.action.outcome", "op": "exists"}}, 3)
+                    except Exception:
+                        pass
                 control["runtime_overrides"] = overrides
                 return fail_boundary(control, presentations, requested, completed, results, reason or "cua_failure", index=index, name=action["name"], revision=last_revision)
             completed += 1
+            record["outcome"] = "unverified"
 
             wait_result = None
             if "await" in step:
@@ -531,6 +543,7 @@ def run(driver: str, request: dict[str, Any], timeout: float, worldline_path: Pa
                     return envelope(False, "worldline_boundary", requested=requested, completed=completed, results=results, boundary={"index": index, "reason": "worldline_action_receipt_failed"}, detail=str(exc), revision=last_revision, control=control), 50
                 spec = freshen_wait_spec(dict(step["await"]), baseline)
                 spec["op"] = "wait"
+                spec["domain_id"] = fence_result["domain_id"]
                 try:
                     wait_result = worldline_call(worldline_path, spec, max(1, min(float(spec.get("timeout_ms", 5000)) / 1000 + 2, 122)))
                 except Exception as exc:
@@ -539,6 +552,36 @@ def run(driver: str, request: dict[str, Any], timeout: float, worldline_path: Pa
                 last_revision = wait_result.get("revision", last_revision)
                 if not wait_result.get("ok"):
                     return fail_boundary(control, presentations, requested, completed, results, f"worldline_{wait_result.get('code', 'failure')}", index=index, revision=last_revision)
+            independent_paths = {w.get("path") for w in (wait_result or {}).get("witnesses", [])
+                                 if isinstance(w, dict) and
+                                 (w.get("evidence") or {}).get("source") not in ("cua", "rpc:cua")}
+            witness_spec = next((p for p in (wait_result or {}).get("matched_predicates", [])
+                                 if isinstance(p, dict) and p.get("path") in independent_paths
+                                 and p.get("op", "eq") not in
+                                 ("changed", "invalid", "missing")), None)
+            if isinstance(witness_spec, dict):
+                try:
+                    record["causal_receipt"] = worldline_call(worldline_path, {
+                        "op": "receipt", "owner": "cua", "action_id": f"{index}:{action['name']}",
+                        "before_revision": baseline, "domain_id": fence_result["domain_id"],
+                        "action_ok": True,
+                        "predicate": witness_spec}, 3)
+                    record["outcome"] = record["causal_receipt"].get("outcome", "unverified")
+                except Exception as exc:
+                    return fail_boundary(control, presentations, requested, completed, results,
+                                         "worldline_receipt_failed", index=index,
+                                         detail=str(exc), revision=last_revision)
+            else:
+                try:
+                    record["causal_receipt"] = worldline_call(worldline_path, {
+                        "op": "receipt", "owner": "cua", "action_id": f"{index}:{action['name']}",
+                        "before_revision": baseline, "domain_id": fence_result["domain_id"],
+                        "action_ok": True,
+                        "predicate": {"path": "cua.action.outcome", "op": "exists"}}, 3)
+                except Exception as exc:
+                    return fail_boundary(control, presentations, requested, completed, results,
+                                         "worldline_receipt_failed", index=index,
+                                         detail=str(exc), revision=last_revision)
             index = next_index(step, index, wait_result, requested)
 
         # Visible completion is independent from intermediate delivery mode.

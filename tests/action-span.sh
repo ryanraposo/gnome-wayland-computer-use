@@ -5,6 +5,22 @@ export XDG_RUNTIME_DIR="$TMP/runtime"
 mkdir -p "$XDG_RUNTIME_DIR"
 SURFACE="$ROOT/scripts/computer-use.sh";WORLD="$ROOT/scripts/worldline.py"
 fail(){ printf 'not ok - %s\n' "$1" >&2;exit 1; };pass(){ printf 'ok - %s\n' "$1"; }
+WORLDLINE_SOURCE="${WORLDLINE_SOURCE:-$ROOT/../WORLDLINE}"
+[ -f "$WORLDLINE_SOURCE/src/worldline/daemon.py" ] || fail "standalone WORLDLINE source unavailable"
+export PYTHONPATH="$WORLDLINE_SOURCE/src"
+export WORLDLINE_SOCKET="$TMP/runtime/worldline.sock"
+python3 - "$WORLDLINE_SOCKET" <<'PY' >/dev/null 2>&1 & wpid=$!
+import asyncio,sys
+from worldline.daemon import WorldlineDaemon
+async def main():
+    daemon=WorldlineDaemon()
+    server=await asyncio.start_unix_server(daemon.handle,path=sys.argv[1])
+    async with server: await server.serve_forever()
+asyncio.run(main())
+PY
+for _ in $(seq 1 50);do [ -S "$WORLDLINE_SOCKET" ]&&break;sleep .02;done
+[ -S "$WORLDLINE_SOCKET" ] || fail "standalone WORLDLINE did not start"
+SOCK="$WORLDLINE_SOCKET"
 
 cat >"$TMP/fake-presenter" <<'PY'
 #!/usr/bin/env python3
@@ -13,7 +29,10 @@ log=os.environ.get('FAKE_PRESENTER_LOG')
 if log:pathlib.Path(log).open('a').write(' '.join(sys.argv[1:])+'\n')
 if os.environ.get('PRESENTER_FAIL')=='1':
  print(json.dumps({'schema':'gwcu.presentation.v1','ok':False,'code':'focus_not_proved'}));raise SystemExit(30)
-print(json.dumps({'schema':'gwcu.presentation.v1','ok':True,'code':'presented'}))
+pid=int(sys.argv[sys.argv.index('--pid')+1]);window_id=int(sys.argv[sys.argv.index('--window-id')+1])
+print(json.dumps({'schema':'gwcu.presentation.v1','ok':True,'code':'presented',
+                  'pid':pid,'window_id':window_id,
+                  'window':{'focused':True,'visible':True,'minimized':False}}))
 PY
 chmod +x "$TMP/fake-presenter"
 
@@ -31,7 +50,7 @@ for line in sys.stdin:
   name=q['params']['name'];args=q['params']['arguments']
   with log.open('a') as f:f.write(name+' '+json.dumps(args,separators=(',',':'))+'\n')
   if name=='click' and os.environ.get('EMIT_AFTER_CLICK'):
-   s=socket.socket(socket.AF_UNIX);s.connect(os.environ['WORLDLINE_SOCKET']);s.sendall((json.dumps({'op':'event','event':{'source':'test-ui','facts':{'ui.dialog':'ready'}}})+'\n').encode());s.recv(65536);s.close()
+   s=socket.socket(socket.AF_UNIX);s.connect(os.environ['WORLDLINE_SOCKET']);s.sendall((json.dumps({'protocol':1,'op':'event','args':{'event':{'source':'test-ui','facts':{'ui.dialog':'ready'}}}})+'\n').encode());s.recv(65536);s.close()
   if os.environ.get('BACKGROUND_FAIL_ONCE')=='1' and args.get('delivery_mode')=='background' and not bg_failed:
    bg_failed=True;structured={'ok':False,'code':'background_unavailable','foreground_required':True}
   else:structured={'ok':os.environ.get('FAIL_ON')!=name,'tool':name,'delivery_mode':args.get('delivery_mode')}
@@ -138,9 +157,7 @@ grep -q '"delivery_mode":"background"' "$TMP/calls" && grep -q '"delivery_mode":
 [ "$(wc -l <"$TMP/present")" -eq 1 ] || fail "foreground fallback skipped exact presentation"
 pass "background-unavailable falls forward only after exact visible takeover"
 
-mkdir -p "$TMP/runtime";XDG_RUNTIME_DIR="$TMP/runtime" GWCU_WORLDLINE_IDLE_SECONDS=30 python3 "$WORLD" serve >/dev/null 2>&1 & wpid=$!
-for _ in $(seq 1 50);do [ -S "$TMP/runtime/gnome-wayland-computer-use/worldline.sock" ]&&break;sleep .02;done
-SOCK="$TMP/runtime/gnome-wayland-computer-use/worldline.sock";: >"$TMP/calls"
+: >"$TMP/calls"
 XDG_RUNTIME_DIR="$TMP/runtime" python3 "$WORLD" request --json '{"op":"event","event":{"source":"test-ui","facts":{"ui.dialog":"ready"}}}' >/dev/null
 STALE_TX='{"schema":"gwcu.transaction.v1","steps":[{"action":{"name":"click","arguments":{"pid":4242,"window_id":77,"x":10,"y":20}},"await":{"timeout_ms":60,"after_revision":0,"predicates":[{"path":"ui.dialog","op":"eq","value":"ready","fresh_after":0}]}}]}'
 set +e
@@ -159,6 +176,7 @@ d=json.load(open(sys.argv[1]));assert d['ok'] and d['completed']==2;first=d['res
 trace=d['trace'];assert trace['actions'][0]['fence_revision'] is not None;assert trace['actions'][0]['action_revision'] is not None;assert trace['actions'][0]['postcondition_revision'] is not None;assert trace['actions'][0]['postcondition_code']=='ready'
 PY
 pass "one outer call performs Cua action -> WORLDLINE wait -> local continuation"
-XDG_RUNTIME_DIR="$TMP/runtime" python3 "$WORLD" request --json '{"op":"close"}' >/dev/null||true;wait "$wpid"||true
+kill "$wpid" 2>/dev/null || true
+wait "$wpid" 2>/dev/null || true
 ! grep -Eq 'ydotool|uinput' "$SURFACE" || fail "span surface bypasses Cua authority"
 pass "transaction executor preserves Cua as sole actuator"
