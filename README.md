@@ -123,7 +123,9 @@ Horner can use the same WORLDLINE protocol 1 socket for its foreground and
 body receipts. A receipt is valid only in the daemon instance named by its
 `domain_id`; nested Horner DevKits use their own socket and revision domain.
 The receipt's `claim` states the proved boundary: verified foreground focus
-does not prove that a click achieved the user's application goal.
+does not prove that a click achieved the user's application goal. GWCU's
+installer and doctor both require the daemon to advertise the `receipt` op,
+so a stale WORLDLINE fails closed at install instead of mid-action.
 
 For awaited actions, the runtime seals a WORLDLINE fence after presentation and immediately before Cua mutates the target. Postconditions must then be evidenced in a newer revision: a cached fact that was already true before the action cannot complete the action.
 

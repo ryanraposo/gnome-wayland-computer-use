@@ -54,6 +54,17 @@ d=json.load(open(sys.argv[1]))
 assert d['ok'] and isinstance(d['revision'],int)
 PY
 printf 'ok - GWCU client reads standalone WORLDLINE\n'
+python3 "$ROOT/scripts/worldline.py" request --json '{"op":"features"}' >"$TMP/features.json"
+python3 "$ROOT/scripts/worldline-contract.py" "$TMP/features.json" >/dev/null
+printf 'ok - install contract accepts the receipt op the daemon advertises\n'
+python3 - "$TMP/stale.json" <<'PY'
+import json,pathlib,sys
+pathlib.Path(sys.argv[1]).write_text(json.dumps({"ok":True,"protocol":1,"ops":["hello","status","query"]}))
+PY
+if python3 "$ROOT/scripts/worldline-contract.py" "$TMP/stale.json" 2>/dev/null; then
+  printf 'install accepted a WORLDLINE without receipt\n' >&2; exit 1
+fi
+printf 'ok - install contract rejects a WORLDLINE without receipt\n'
 kill "$server" 2>/dev/null || true
 wait "$server" 2>/dev/null || true
 if python3 "$ROOT/scripts/worldline.py" self-test >"$TMP/missing.json"; then

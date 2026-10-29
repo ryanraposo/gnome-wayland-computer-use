@@ -511,7 +511,12 @@ if ! $COMPAT; then systemctl --user enable --now gnome-wayland-computer-use-obse
 "$PYTHON" "$PRIMARY/scripts/present-window.py" self-test >>"$INSTALL_LOG" || die "presentation gate self-test failed"
 if ! $COMPAT; then
   ensure_user_daemon observer "ScreenCast observer" gnome-wayland-computer-use-observer.socket gnome-wayland-computer-use-observer.service "$PYTHON" "$PRIMARY/scripts/observer.py" client status || die "ScreenCast observer is not responding"
-  "$PYTHON" "$PRIMARY/scripts/worldline.py" request --json '{"op":"hello"}' >>"$INSTALL_LOG" || die "Install and start standalone WORLDLINE first; its private socket is unavailable"
+  WORLDLINE_FEATURES="$STATE/worldline-features.json"
+  "$PYTHON" "$PRIMARY/scripts/worldline.py" request --json '{"op":"features"}' >"$WORLDLINE_FEATURES" 2>>"$INSTALL_LOG" || die "Install and start standalone WORLDLINE first; its private socket is unavailable"
+  # A stale WORLDLINE that answers discovery but lacks `receipt` would install
+  # cleanly and only fail mid-action, so refuse it here.
+  if ! "$PYTHON" "$PRIMARY/scripts/worldline-contract.py" "$WORLDLINE_FEATURES" >>"$INSTALL_LOG" 2>&1
+  then die "Standalone WORLDLINE must advertise the 'receipt' op; update WORLDLINE before installing GWCU"; fi
   if $RELOAD_REQUIRED; then warn "Exact presentation live proof is deferred until GNOME loads winrects@cua"; else "$PYTHON" "$PRIMARY/scripts/present-window.py" status >"$STATE/presentation.json" 2>>"$INSTALL_LOG" || die "Cua GNOME exact-presentation gate unavailable"; fi
 fi
 ok "WORLDLINE + observer protocols proved; presentation gate qualified"
@@ -553,10 +558,12 @@ PY
 fi
 MANAGED_VALUE=$(cat "$PREF" 2>/dev/null || printf unknown); BACKGROUND_VALUE=$(cat "$BACKGROUND_PREF" 2>/dev/null || printf unknown)
 RECEIPT="$STATE/install-receipt.json"
-"$PYTHON" - "$RECEIPT" "$VERSION" "$CUA_DRIVER_RS_VERSION" "$DIAG_CODE" "$RELOAD_REQUIRED" "$HERMES" "$HERMES_POLICY_STATUS" "$MANAGED_VALUE" "$BACKGROUND_VALUE" "$HERMES_TARGET_COUNT" "$SOURCE_KIND" "$SOURCE_COMMIT" "$SOURCE_SHA256" <<'PY'
+"$PYTHON" - "$RECEIPT" "$VERSION" "$CUA_DRIVER_RS_VERSION" "$DIAG_CODE" "$RELOAD_REQUIRED" "$HERMES" "$HERMES_POLICY_STATUS" "$MANAGED_VALUE" "$BACKGROUND_VALUE" "$HERMES_TARGET_COUNT" "$SOURCE_KIND" "$SOURCE_COMMIT" "$SOURCE_SHA256" "${WORLDLINE_FEATURES:-/dev/null}" <<'PY'
 import json,os,pathlib,sys,time
 p=pathlib.Path(sys.argv[1])
-d={"schema":"gwcu.install-receipt.v1","version":sys.argv[2],"cua_driver":sys.argv[3],"diagnosis":sys.argv[4],"reload_required":sys.argv[5]=="true","hermes_detected":sys.argv[6]=="true","hermes_policy":sys.argv[7],"managed_truths":sys.argv[8],"background_priority":sys.argv[9],"hermes_profiles":int(sys.argv[10]),"source":{"kind":sys.argv[11],"commit":sys.argv[12],"sha256":sys.argv[13] or None},"installed_at_unix":int(time.time())}
+try:wf=json.loads(pathlib.Path(sys.argv[14]).read_text())
+except Exception:wf={}
+d={"schema":"gwcu.install-receipt.v1","version":sys.argv[2],"cua_driver":sys.argv[3],"diagnosis":sys.argv[4],"reload_required":sys.argv[5]=="true","hermes_detected":sys.argv[6]=="true","hermes_policy":sys.argv[7],"managed_truths":sys.argv[8],"background_priority":sys.argv[9],"hermes_profiles":int(sys.argv[10]),"source":{"kind":sys.argv[11],"commit":sys.argv[12],"sha256":sys.argv[13] or None},"worldline":{"protocol":wf.get("protocol"),"domain_id":wf.get("domain_id"),"receipt_schema":wf.get("receipt_schema"),"requires":"receipt"},"installed_at_unix":int(time.time())}
 p.write_text(json.dumps(d,separators=(",",":"))+"\n");os.chmod(p,0o600)
 PY
 ok "Installed state proved; receipt written"

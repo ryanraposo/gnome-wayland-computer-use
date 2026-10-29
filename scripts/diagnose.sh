@@ -251,7 +251,11 @@ worldline_rc,worldline_out,worldline_err=run([sys.executable,worldline_script,"r
 try: worldline=json.loads(worldline_out) if worldline_out else None
 except Exception: worldline={"ok":False,"code":"invalid_output","detail":worldline_out[:1024]}
 worldline_socket=bool(worldline_rc==0 and isinstance(worldline,dict) and worldline.get("ok"))
-worldline_ok=worldline_socket and worldline_rc==0 and isinstance(worldline,dict) and bool(worldline.get("ok"))
+worldline_features_rc,worldline_features_out,worldline_features_err=run([sys.executable,worldline_script,"request","--json",'{"op":"features"}'],5)
+try: worldline_features=json.loads(worldline_features_out) if worldline_features_out else None
+except Exception: worldline_features={"ok":False,"code":"invalid_output","detail":worldline_features_out[:1024]}
+worldline_receipt=bool(worldline_socket and worldline_features_rc==0 and isinstance(worldline_features,dict) and worldline_features.get("ok") and "receipt" in (worldline_features.get("ops") or []))
+worldline_ok=worldline_socket and worldline_receipt
 
 winrects_dir=pathlib.Path(os.environ.get("XDG_DATA_HOME",str(pathlib.Path.home()/".local/share")))/"gnome-shell/extensions/winrects@cua"
 winrects_installed=winrects_dir.is_dir(); winrects_active=extension_active("winrects@cua")
@@ -297,12 +301,13 @@ elif not environment_ok:code="desktop_environment_unproved";nxt={"action":"sync_
 elif cua_status=="reload_required" and observation_ok and worldline_ok:code="reload_required";nxt={"action":"logout_login","reason":"activate_cua_gnome_helper"}
 elif not host_ok:code="wrong_session";nxt={"action":"start_gnome_wayland_session"}
 elif not presentation_ok and winrects_active:code="presentation_degraded";nxt={"action":"inspect_cua_gnome_helper"}
+elif worldline_socket and not worldline_receipt:code="worldline_receipt_missing";nxt={"action":"upgrade_worldline","reason":"receipt_op_required"}
 elif not worldline_ok:code="worldline_degraded";nxt={"action":"restart_worldline"}
 elif failing_observation_services:code="observation_degraded";nxt={"action":"restart_services","services":failing_observation_services}
 elif not observation_ok:code="observation_degraded";nxt={"action":"repair_observation_components","components":[k for k,v in {"screencast_portal":screen,"gstreamer_pipewire":gst_pipewire,"gstreamer_png":gst_png,"observer_socket":observer}.items() if not v]}
 else:code="cua_degraded";nxt={"action":"inspect_cua_health"}
 
-payload={"schema":"gwcu.diagnose.v4","ok":ready,"code":code,"host":{"session":session,"desktop":desktop,"ok":host_ok},"install_repair":repair,"desktop_environment":env_proof,"presentation":{"status":"ready" if presentation_ok else ("reload_required" if winrects_installed and not winrects_active else "degraded"),"exact_target_required":True,"winrects_installed":winrects_installed,"winrects_active":winrects_active,"response":presentation,"stderr":presentation_err[:1024] if presentation_err else None},"observation":{"status":"ready" if observation_ok else "degraded","pipewire":pw,"pipewire_service":pipewire_service,"pipewire_rpc":pipewire_rpc,"wireplumber":wp,"screencast_portal":screen,"screenshot_portal":screenshot,"gstreamer_pipewire":gst_pipewire,"gstreamer_png":gst_png,"observer_socket":observer,"failing_services":failing_observation_services},"worldline":{"status":"ready" if worldline_ok else "degraded","socket":worldline_socket,"response":worldline,"stderr":worldline_err[:1024] if worldline_err else None},"cua":{"status":cua_status,"binary":cua,"health":health,"doctor_exit":doctor_rc,"doctor":doctor,"winrects_installed":winrects_installed,"winrects_active":winrects_active,"identity":{"ok":identity_ok,"installed":installed_identity,"doctor_reported":doctor_identity,"gateways":gateway_identity_rows,"invariant":"installed == hermes_selected == gateway_backend == doctor_reported"}},"next":nxt}
+payload={"schema":"gwcu.diagnose.v4","ok":ready,"code":code,"host":{"session":session,"desktop":desktop,"ok":host_ok},"install_repair":repair,"desktop_environment":env_proof,"presentation":{"status":"ready" if presentation_ok else ("reload_required" if winrects_installed and not winrects_active else "degraded"),"exact_target_required":True,"winrects_installed":winrects_installed,"winrects_active":winrects_active,"response":presentation,"stderr":presentation_err[:1024] if presentation_err else None},"observation":{"status":"ready" if observation_ok else "degraded","pipewire":pw,"pipewire_service":pipewire_service,"pipewire_rpc":pipewire_rpc,"wireplumber":wp,"screencast_portal":screen,"screenshot_portal":screenshot,"gstreamer_pipewire":gst_pipewire,"gstreamer_png":gst_png,"observer_socket":observer,"failing_services":failing_observation_services},"worldline":{"status":"ready" if worldline_ok else "degraded","socket":worldline_socket,"receipt":worldline_receipt,"requires":"receipt","response":worldline,"features":worldline_features,"stderr":worldline_err[:1024] if worldline_err else None,"features_stderr":worldline_features_err[:1024] if worldline_features_err else None},"cua":{"status":cua_status,"binary":cua,"health":health,"doctor_exit":doctor_rc,"doctor":doctor,"winrects_installed":winrects_installed,"winrects_active":winrects_active,"identity":{"ok":identity_ok,"installed":installed_identity,"doctor_reported":doctor_identity,"gateways":gateway_identity_rows,"invariant":"installed == hermes_selected == gateway_backend == doctor_reported"}},"next":nxt}
 print(json.dumps(payload,separators=(",",":")))
 raise SystemExit(0 if ready else 30)
 PY
