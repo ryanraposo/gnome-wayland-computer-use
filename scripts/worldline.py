@@ -23,15 +23,37 @@ import time
 from pathlib import Path
 
 _xdg_data = os.environ.get("XDG_DATA_HOME")
-WORLDLINE_ROOT = Path(
-    os.environ.get("GWCU_WORLDLINE_ROOT")
-    or (_xdg_data or str(Path.home() / ".local/share"))
-    + "/gnome-wayland-computer-use/worldline-pkg"
-)
-SRC = WORLDLINE_ROOT / "src"
-if SRC.is_dir():
+
+# Locate the WORLDLINE package. Candidates in priority order:
+#   1. GWCU_WORLDLINE_ROOT/src          (explicit override)
+#   2. XDG_DATA_HOME/.../worldline-pkg/src  (installed by GWCU installer)
+#   3. ~/repos/WORLDLINE/src            (development fallback)
+_candidates = [
+    Path(os.environ.get("GWCU_WORLDLINE_ROOT", "")) / "src",
+    Path(
+        (_xdg_data or str(Path.home() / ".local/share"))
+        + "/gnome-wayland-computer-use/worldline-pkg/src"
+    ),
+    Path.home() / "repos" / "WORLDLINE" / "src",
+]
+SRC = None
+for candidate in _candidates:
+    if candidate.is_dir() and (candidate / "worldline").is_dir():
+        SRC = candidate
+        break
+
+if SRC is not None:
+    # Remove any duplicate entries so the WORLDLINE package takes priority
+    # over this shim's own directory (named worldline.py, which shadows the
+    # package name).
     sys.path = [p for p in sys.path if p != str(SRC)]
     sys.path.insert(0, str(SRC))
+
+if SRC is None:
+    raise SystemExit(
+        "worldline: ryanraposo/WORLDLINE package not found; "
+        "run install.sh or set GWCU_WORLDLINE_ROOT"
+    )
 
 from worldline.control import request as wl_request  # noqa: E402
 
