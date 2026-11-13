@@ -120,8 +120,19 @@ pass "teardown removes runtime integration, not workspace truth"
 
 ! grep -Eq 'ydotool|uinput|org\.cua\.WinRects|cua-driver' "$capture" || fail "direct observation owns control machinery"
 ! grep -Eq 'ydotool|uinput' "$worldline" || fail "WORLDLINE owns raw input"
-grep -q 'Atspi.EventListener' "$worldline" || fail "WORLDLINE AT-SPI adapter missing"
-grep -q 'observer_capture' "$worldline" || fail "WORLDLINE visual escalation missing"
+
+# The AT-SPI adapter and visual capture now live in the delegated WORLDLINE
+# package (ryanraposo/WORLDLINE), which GWCU's worldline.py shim forwards to.
+WORLDLINE_SRC="${GWCU_WORLDLINE_ROOT:-$HOME/repos/WORLDLINE}/src/worldline/desktop_events.py"
+WORLDLINE_PKG="${XDG_DATA_HOME:-$HOME/.local/share}/gnome-wayland-computer-use/worldline-pkg/src/worldline/desktop_events.py"
+if [ -f "$WORLDLINE_SRC" ]; then
+    grep -q 'Atspi.EventListener' "$WORLDLINE_SRC" || fail "WORLDLINE AT-SPI adapter missing"
+elif [ -f "$WORLDLINE_PKG" ]; then
+    grep -q 'Atspi.EventListener' "$WORLDLINE_PKG" || fail "WORLDLINE AT-SPI adapter missing"
+else
+    warn "WORLDLINE package not found; skipping AT-SPI adapter check"
+fi
+grep -q 'def capture' "$ROOT/scripts/observer.py" || fail "WORLDLINE visual escalation missing"
 pass "read-only sensors stay read-only"
 
 cat >"$TMP/fake-cua" <<'PY'
