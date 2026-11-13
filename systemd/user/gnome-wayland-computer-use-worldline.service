@@ -5,11 +5,10 @@ After=graphical-session.target gnome-wayland-computer-use-observer.socket
 
 [Service]
 Type=simple
-# Run the WORLDLINE package daemon on the GWCU socket path so GWCU shims
+# Run the WORLDLINE package daemon on its default socket so GWCU shims
 # and the WORLDLINE CLI share one socket.  The WORLDLINE package is made
 # importable via PYTHONPATH pointing at its src/ directory.
 Environment=PYTHONPATH=%h/.local/share/gnome-wayland-computer-use/worldline-pkg/src
-Environment=WORLDLINE_SOCKET=%t/gnome-wayland-computer-use/worldline.sock
-ExecStart=/usr/bin/python3 -m worldline.daemon --socket %t/gnome-wayland-computer-use/worldline.sock
+ExecStart=/usr/bin/python3 -m worldline.daemon
 Restart=on-failure
 RestartSec=250ms

@@ -17,8 +17,8 @@ pass "WORLDLINE reducer/wait self-test"
 mkdir -p "$TMP/runtime"
 XDG_RUNTIME_DIR="$TMP/runtime" GWCU_WORLDLINE_IDLE_SECONDS=30 python3 "$world" serve >"$TMP/server.out" 2>"$TMP/server.err" &
 pid=$!
-for _ in $(seq 1 50); do [ -S "$TMP/runtime/gnome-wayland-computer-use/worldline.sock" ] && break; sleep .02; done
-[ -S "$TMP/runtime/gnome-wayland-computer-use/worldline.sock" ] || fail "WORLDLINE private socket appeared"
+for _ in $(seq 1 50); do [ -S "$TMP/runtime/worldline/worldline.sock" ] || break; sleep .02; done
+[ -S "$TMP/runtime/worldline/worldline.sock" ] || fail "WORLDLINE private socket appeared"
 
 XDG_RUNTIME_DIR="$TMP/runtime" python3 "$world" request --json '{"op":"wait","timeout_ms":2000,"predicates":[{"id":"done","path":"task.download.done","op":"eq","value":true}]}' >"$TMP/wait.json" &
 waiter=$!

@@ -38,7 +38,7 @@ from worldline.control import request as wl_request  # noqa: E402
 
 def _default_socket() -> str:
     runtime = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
-    return str(Path(runtime) / "gnome-wayland-computer-use" / "worldline.sock")
+    return str(Path(runtime) / "worldline" / "worldline.sock")
 
 
 def _gwcu_payload_to_worldline(raw: str) -> tuple[str, dict]:

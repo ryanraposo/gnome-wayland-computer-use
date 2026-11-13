@@ -408,13 +408,75 @@ if gnome-extensions info winrects@cua >/dev/null 2>&1 && gnome-extensions info w
 info "Installing WORLDLINE package (ryanraposo/WORLDLINE)"
 WORLDLINE_CHECKOUT="${GWCU_WORLDLINE_ROOT:-$HOME/repos/WORLDLINE}"
 WORLDLINE_PKG="${XDG_DATA_HOME:-$HOME/.local/share}/gnome-wayland-computer-use/worldline-pkg"
+WORLDLINE_MIN_VERSION="0.3.0"
+WORLDLINE_SOCKET="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/worldline/worldline.sock"
+
 if [ -d "$WORLDLINE_CHECKOUT/src/worldline" ]; then
-  mkdir -p "$WORLDLINE_PKG/src"
-  rm -rf "$WORLDLINE_PKG/src/worldline"
-  cp -a "$WORLDLINE_CHECKOUT/src/worldline" "$WORLDLINE_PKG/src/worldline"
-  ok "WORLDLINE package installed to $WORLDLINE_PKG/src/worldline"
+  ok "WORLDLINE checkout found at $WORLDLINE_CHECKOUT"
+elif [ -z "${GWCU_WORLDLINE_ROOT:-}" ]; then
+  info "WORLDLINE checkout not found at $WORLDLINE_CHECKOUT; cloning from GitHub"
+  command -v git >/dev/null 2>&1 || die "git is required to clone WORLDLINE"
+  git clone --depth 1 https://github.com/ryanraposo/WORLDLINE.git "$WORLDLINE_CHECKOUT" >>"$INSTALL_LOG" 2>&1 || die "WORLDLINE clone failed"
+  ok "WORLDLINE cloned to $WORLDLINE_CHECKOUT"
 else
-  warn "WORLDLINE checkout not found at $WORLDLINE_CHECKOUT; GWCU will fall back to its embedded shim without a live daemon"
+  die "GWCU_WORLDLINE_ROOT points to $WORLDLINE_CHECKOUT but no checkout exists there"
+fi
+
+# Verify WORLDLINE version meets the minimum required by GWCU.
+WORLDLINE_VERSION=$(grep -F '__version__ = ' "$WORLDLINE_CHECKOUT/src/worldline/__init__.py" 2>/dev/null | head -1 | sed "s/.*= *['\"]\([^'\"]*\)['\"].*/\1/" || true)
+if [ -n "$WORLDLINE_VERSION" ]; then
+  WLV_MAJOR=$(printf '%s' "$WORLDLINE_VERSION" | cut -d. -f1)
+  WLV_MINOR=$(printf '%s' "$WORLDLINE_VERSION" | cut -d. -f2)
+  WLV_PATCH=$(printf '%s' "$WORLDLINE_VERSION" | cut -d. -f3)
+  MM_MAJOR=$(printf '%s' "$WORLDLINE_MIN_VERSION" | cut -d. -f1)
+  MM_MINOR=$(printf '%s' "$WORLDLINE_MIN_VERSION" | cut -d. -f2)
+  MM_PATCH=$(printf '%s' "$WORLDLINE_MIN_VERSION" | cut -d. -f3)
+  if { [ "$WLV_MAJOR" -gt "$MM_MAJOR" ] || \
+       { [ "$WLV_MAJOR" -eq "$MM_MAJOR" ] && { [ "$WLV_MINOR" -gt "$MM_MINOR" ] || \
+         { [ "$WLV_MINOR" -eq "$MM_MINOR" ] && [ "$WLV_PATCH" -ge "$MM_PATCH" ]; }; }; }; }; then
+    ok "WORLDLINE version $WORLDLINE_VERSION (>= $WORLDLINE_MIN_VERSION)"
+  else
+    die "WORLDLINE version $WORLDLINE_VERSION is below required $WORLDLINE_MIN_VERSION"
+  fi
+else
+  warn "Could not determine WORLDLINE version; proceeding anyway"
+fi
+
+# Install/update WORLDLINE: venv, pip install -e, systemd user service, start daemon.
+info "Installing WORLDLINE service via update.sh"
+if [ -x "$WORLDLINE_CHECKOUT/update.sh" ]; then
+  if $EXPLICIT_UNATTENDED; then
+    WORLDLINE_GRANT_WINDOW_FRAMES=1 bash -c "cd '$WORLDLINE_CHECKOUT' && bash ./update.sh" >>"$INSTALL_LOG" 2>&1 || die "WORLDLINE update.sh failed"
+  else
+    (cd "$WORLDLINE_CHECKOUT" && bash ./update.sh) >>"$INSTALL_LOG" 2>&1 || die "WORLDLINE update.sh failed"
+  fi
+  ok "WORLDLINE service installed and started"
+else
+  warn "WORLDLINE update.sh not found; skipping service installation"
+fi
+
+# Copy the package into GWCU's install location so the shim can import it.
+mkdir -p "$WORLDLINE_PKG/src"
+rm -rf "$WORLDLINE_PKG/src/worldline"
+cp -a "$WORLDLINE_CHECKOUT/src/worldline" "$WORLDLINE_PKG/src/worldline"
+ok "WORLDLINE package installed to $WORLDLINE_PKG/src/worldline"
+
+# Verify the daemon responds on its socket before marking install complete.
+for _ in $(seq 1 50); do
+  if [ -S "$WORLDLINE_SOCKET" ]; then
+    PYTHONPATH="$WORLDLINE_PKG/src" python3 -c "
+import sys; sys.path.insert(0, '$WORLDLINE_PKG/src')
+from worldline.control import request
+r = request('$WORLDLINE_SOCKET', 'status', {})
+assert r.get('ok'), r
+" 2>/dev/null && break
+  fi
+  sleep 0.1
+done
+if [ ! -S "$WORLDLINE_SOCKET" ]; then
+  warn "WORLDLINE daemon socket did not appear at $WORLDLINE_SOCKET; GWCU will fall back to shim without live daemon"
+else
+  ok "WORLDLINE daemon responding on $WORLDLINE_SOCKET"
 fi
 
 info "[4/8] Installing GWCU runtime, skill and WORLDLINE"
