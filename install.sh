@@ -554,6 +554,38 @@ except Exception:print("no")
 PY
 )
   if [ "$TOKEN" != yes ]; then
+    # Step 1: ensure the RemoteDesktop portal interface is on the session bus.
+    # Without it, Cua has no sanctioned input path and consent cannot be established.
+    portal_has RemoteDesktop || {
+      info "RemoteDesktop portal not yet available on the session bus."
+      info "This is usually a GNOME Sharing setting, not a problem with GWCU."
+      info "Trying to enable org.gnome.desktop.remote-desktop via GSettings..."
+      if gsettings set org.gnome.desktop.remote-desktop.rdp enable true 2>/dev/null; then
+        ok "GSettings remote-desktop enable set to true"
+      else
+        warn "Could not set GSettings remote-desktop enable; continuing anyway"
+      fi
+      info "Restarting xdg-desktop-portal-gnome to pick up the change..."
+      systemctl --user restart xdg-desktop-portal-gnome.service >>"$INSTALL_LOG" 2>&1 || true
+      sleep 2
+      if portal_has RemoteDesktop; then
+        ok "RemoteDesktop portal is now available on the session bus"
+      else
+        die "RemoteDesktop portal is still unavailable on the session bus.
+
+GWCU needs the GNOME 'Remote Desktop' portal interface to deliver local pointer
+and keyboard input through EIS/libei. To resolve:
+
+  1. Open GNOME Settings -> Sharing -> Remote Desktop (Screen Sharing).
+  2. Turn on Remote Desktop / Screen Sharing.
+  3. When GNOME asks for control permission, approve it.
+  4. Re-run this installer: ./install.sh
+
+GWCU installs no RDP/VNC server and no raw-input daemon -- Cua Driver is the only
+actuator, and it uses the compositor-approved portal path just like any other
+native desktop application."
+      fi
+    }
     info "GNOME calls this compositor-approved local input permission 'Remote Desktop'. GWCU installs no RDP/VNC server."
     info "The bootstrap sends no click or key; it performs one pointer move through Cua."
     for n in 3 2 1; do printf '\r[INFO] GNOME permission prompt may appear in %s... ' "$n"; sleep 1; done; printf '\n'
