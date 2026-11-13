@@ -21,7 +21,7 @@ pass "entrypoints parse and live acceptance fails closed"
 
 [ ! -e "$ROOT/install-core.sh" ] || fail "secondary installer exists"
 ! grep -Eq 'add_pkg ydotool|modprobe uinput|usermod .*input|CUA_DRIVER_RS_ENABLE_WAYLAND|ExecStart=.*cua-driver.*serve' "$installer" || fail "installer creates a shadow control plane"
-grep -q 'CUA_DRIVER_RS_VERSION="${GWCU_CUA_DRIVER_RS_VERSION:-0.20.0}"' "$installer" || fail "Cua pin missing"
+grep -q 'CUA_DRIVER_RS_VERSION="${GWCU_CUA_DRIVER_RS_VERSION:-0.39.0}"' "$installer" || fail "Cua pin missing"
 grep -q 'CUA_DRIVER_RS_NO_MODIFY_PATH=1' "$installer" || fail "Cua PATH ownership missing"
 grep -q 'https://cua.ai/driver/install.sh' "$installer" || fail "official Cua installer missing"
 grep -q 'Qualified Cua Driver.*already installed' "$installer" || fail "qualified Cua is not reused"

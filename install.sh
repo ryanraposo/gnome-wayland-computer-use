@@ -5,7 +5,7 @@ set -euo pipefail
 APP_ID="gnome-wayland-computer-use"
 VERSION="2.4.0"
 BASE_URL="${GWCU_BASE_URL:-https://ryanraposo.github.io/gnome-wayland-computer-use}"
-CUA_DRIVER_RS_VERSION="${GWCU_CUA_DRIVER_RS_VERSION:-0.20.0}" # deliberately pinned
+CUA_DRIVER_RS_VERSION="${GWCU_CUA_DRIVER_RS_VERSION:-0.39.0}" # deliberately pinned
 PYTHON="${GWCU_SYSTEM_PYTHON:-/usr/bin/python3}"
 SELF=""; [ -f "${BASH_SOURCE[0]:-}" ] && SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
@@ -404,6 +404,18 @@ if run_logged "Cua GNOME helper install" "$CUA_HELPER_INSTALLER"; then ok "Cua G
 gnome-extensions enable winrects@cua >>"$INSTALL_LOG" 2>&1 || true
 RELOAD_REQUIRED=false
 if gnome-extensions info winrects@cua >/dev/null 2>&1 && gnome-extensions info winrects@cua 2>/dev/null | grep -qi 'State: ACTIVE'; then ok "winrects@cua is ACTIVE"; else RELOAD_REQUIRED=true; warn "winrects@cua is installed and will become active after one GNOME sign-out/sign-in"; fi
+
+info "Installing WORLDLINE package (ryanraposo/WORLDLINE)"
+WORLDLINE_CHECKOUT="${GWCU_WORLDLINE_ROOT:-$HOME/repos/WORLDLINE}"
+WORLDLINE_PKG="${XDG_DATA_HOME:-$HOME/.local/share}/gnome-wayland-computer-use/worldline-pkg"
+if [ -d "$WORLDLINE_CHECKOUT/src/worldline" ]; then
+  mkdir -p "$WORLDLINE_PKG/src"
+  rm -rf "$WORLDLINE_PKG/src/worldline"
+  cp -a "$WORLDLINE_CHECKOUT/src/worldline" "$WORLDLINE_PKG/src/worldline"
+  ok "WORLDLINE package installed to $WORLDLINE_PKG/src/worldline"
+else
+  warn "WORLDLINE checkout not found at $WORLDLINE_CHECKOUT; GWCU will fall back to its embedded shim without a live daemon"
+fi
 
 info "[4/8] Installing GWCU runtime, skill and WORLDLINE"
 FILES=(VERSION README.md agents/openai.yaml scripts/action-span.py scripts/app-identity.sh scripts/capture.sh scripts/check-update.sh scripts/computer-use.sh scripts/cua-health.py scripts/diagnose.sh scripts/mcp_client.py scripts/migrate-main.sh scripts/observe.sh scripts/observer.py scripts/portal-control.py scripts/present-window.py scripts/profile.sh scripts/teardown.sh scripts/truths.py scripts/worldline.py scripts/worldline-capture.sh systemd/user/gnome-wayland-computer-use-observer.socket systemd/user/gnome-wayland-computer-use-observer.service systemd/user/gnome-wayland-computer-use-worldline.socket systemd/user/gnome-wayland-computer-use-worldline.service)
