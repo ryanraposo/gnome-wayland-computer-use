@@ -180,14 +180,18 @@ def _cmd_self_test() -> int:
     ingestion, predicate waits, branch selection, fresh_after semantics.
     """
     runtime = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
-    sock_path = str(Path(runtime) / "gnome-wayland-computer-use" / "worldline.sock")
+    sock_path = _default_socket()
 
     # Start a local daemon on the test socket.
+    env = dict(os.environ)
+    env["PYTHONPATH"] = os.pathsep.join(filter(None, [
+        str(SRC), env.get("PYTHONPATH", ""),
+    ]))
     proc = subprocess.Popen(
         [sys.executable, "-m", "worldline.daemon", "--socket", sock_path],
         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL, start_new_session=True,
-        env=dict(os.environ),
+        env=env,
     )
     try:
         deadline = time.monotonic() + 10
