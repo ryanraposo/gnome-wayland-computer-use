@@ -46,9 +46,42 @@ jobs:
       - name: Hermes policy integration
         run: bash ./tests/hermes.sh
 
+  worldline-visibility:
+    name: Check paired WORLDLINE availability
+    needs: static
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      contents: read
+    outputs:
+      public: ${{ steps.visibility.outputs.public }}
+    steps:
+      - name: Check repository visibility
+        id: visibility
+        shell: bash
+        run: |
+          set -euo pipefail
+          metadata="$(curl --fail --silent --show-error --retry 2 \
+            -H 'Accept: application/vnd.github+json' \
+            https://api.github.com/repos/ryanraposo/WORLDLINE)"
+          is_public="$(jq -er '
+            if .full_name == "ryanraposo/WORLDLINE" and (.private | type == "boolean")
+            then (if .private then "false" else "true" end)
+            else error("Unexpected WORLDLINE repository metadata")
+            end
+          ' <<<"$metadata")"
+          echo "public=$is_public" >> "$GITHUB_OUTPUT"
+          if [ "$is_public" = "true" ]; then
+            echo "WORLDLINE is public; paired runtime validation can run." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::notice::WORLDLINE is still private. Paired runtime validation is intentionally skipped; static GWCU validation remains authoritative for this run."
+            echo "WORLDLINE is private. Paired runtime validation was intentionally skipped, not passed. Make WORLDLINE public and rerun this workflow." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
   paired-worldline:
     name: Paired WORLDLINE runtime validation
-    needs: static
+    needs: [static, worldline-visibility]
+    if: needs.worldline-visibility.outputs.public == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -59,9 +92,13 @@ jobs:
         env:
           WORLDLINE_INTEGRATION_SHA: 4a51d417d5d30337bf5190bc9af0a88cceaff077
         run: |
-          git clone --quiet --no-checkout https://github.com/ryanraposo/WORLDLINE.git "$RUNNER_TEMP/worldline"
+          set -euo pipefail
+          git init --quiet "$RUNNER_TEMP/worldline"
+          git -C "$RUNNER_TEMP/worldline" remote add origin https://github.com/ryanraposo/WORLDLINE.git
           git -C "$RUNNER_TEMP/worldline" fetch --quiet --depth=1 origin "$WORLDLINE_INTEGRATION_SHA"
-          git -C "$RUNNER_TEMP/worldline" checkout --quiet --detach "$WORLDLINE_INTEGRATION_SHA"
+          git -C "$RUNNER_TEMP/worldline" checkout --quiet --detach FETCH_HEAD
+          actual_sha="$(git -C "$RUNNER_TEMP/worldline" rev-parse HEAD)"
+          test "$actual_sha" = "$WORLDLINE_INTEGRATION_SHA"
           echo "WORLDLINE_SOURCE=$RUNNER_TEMP/worldline" >> "$GITHUB_ENV"
       - name: One-call action spans
         run: bash ./tests/action-span.sh
