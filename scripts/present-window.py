@@ -25,7 +25,7 @@ def envelope(ok: bool, code: str, **extra: Any) -> dict[str, Any]:
     return {"schema": SCHEMA, "ok": ok, "code": code, **extra}
 
 
-def worldline_query() -> dict[str, Any]:
+def worldline_query(timeout: float = 7.0) -> dict[str, Any]:
     client = Path(__file__).resolve().with_name("worldline.py")
     payload = json.dumps({"op": "query", "paths": ["windows"], "fresh": True},
                          separators=(",", ":"))
@@ -34,7 +34,7 @@ def worldline_query() -> dict[str, Any]:
             [sys.executable, str(client), "request", "--json", payload],
             stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
             stderr=subprocess.PIPE, text=True, encoding="utf-8",
-            errors="replace", timeout=7,
+            errors="replace", timeout=max(1.0, min(float(timeout), 7.0)),
         )
     except (OSError, subprocess.SubprocessError) as exc:
         raise RuntimeError(f"WORLDLINE query failed: {exc}") from exc
@@ -100,11 +100,11 @@ def presented(window: dict[str, Any] | None) -> bool:
     )
 
 
-def inspect(pid: int, window_id: int) -> dict[str, Any]:
+def inspect(pid: int, window_id: int, timeout_ms: int = 700) -> dict[str, Any]:
     if pid <= 0 or not 0 <= window_id <= MAX_WINDOW_ID:
         return envelope(False, "invalid_target", pid=pid, window_id=window_id)
     try:
-        snapshot = worldline_query()
+        snapshot = worldline_query(max(1.0, min(timeout_ms / 1000.0 + 1.0, 7.0)))
     except Exception as exc:
         return envelope(False, "worldline_unavailable", detail=str(exc),
                         pid=pid, window_id=window_id)
@@ -241,7 +241,7 @@ def main() -> int:
     elif args.command == "self-test":
         result = self_test()
     else:
-        result = inspect(args.pid, args.window_id)
+        result = inspect(args.pid, args.window_id, args.timeout_ms)
     print(json.dumps(result, separators=(",", ":"), ensure_ascii=False))
     return 0 if result.get("ok") else 30
 
