@@ -64,9 +64,9 @@ case "$COMMAND" in
     fi
     [ -x "$TMP/source/scripts/worldline-install.sh" ] || die "The selected WORLDLINE ref does not contain its independent installer."
     if [ "${GWCU_WORLDLINE_GRANT_FRAMES:-0}" = 1 ]; then
-      WORLDLINE_INSTALL_REF="$REF" bash "$TMP/source/scripts/worldline-install.sh" install --grant-window-frames
+      WORLDLINE_INSTALL_REF="$REF" WORLDLINE_INSTALL_SOURCE="$TMP/source" bash "$TMP/source/scripts/worldline-install.sh" install --grant-window-frames
     else
-      WORLDLINE_INSTALL_REF="$REF" bash "$TMP/source/scripts/worldline-install.sh" install
+      WORLDLINE_INSTALL_REF="$REF" WORLDLINE_INSTALL_SOURCE="$TMP/source" bash "$TMP/source/scripts/worldline-install.sh" install
     fi
     wait_ready || die "WORLDLINE installation completed without a verified receipt-capable service."
     ;;
