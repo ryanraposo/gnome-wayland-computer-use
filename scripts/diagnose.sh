@@ -53,7 +53,7 @@ def active_unit(name):
 def extension_active(uuid):
     if not shutil.which("gnome-extensions"): return False
     rc,out,_=run(["gnome-extensions","info",uuid],3)
-    return rc==0 and "State:" in out and "ACTIVE" in out
+    return rc==0 and re.search(r"(?mi)^State:\s*ACTIVE\s*$",out) is not None
 
 def parsed_json(out, fallback=None):
     try:return json.loads(out) if out else fallback
