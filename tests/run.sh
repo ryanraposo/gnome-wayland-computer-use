@@ -11,7 +11,7 @@ profile="$ROOT/scripts/profile.sh"; truths="$ROOT/scripts/truths.py"; portal="$R
 worldline="$ROOT/scripts/worldline.py"; capture="$ROOT/scripts/capture.sh"; presenter="$ROOT/scripts/present-window.py"
 diagnose="$ROOT/scripts/diagnose.sh"
 
-for s in "$installer" "$uninstaller" "$teardown" "$diagnose" "$capture" "$ROOT/scripts/observe.sh" "$profile" "$ROOT/scripts/computer-use.sh" "$ROOT/scripts/worldline-capture.sh"; do bash -n "$s" || fail "shell syntax: ${s#$ROOT/}"; done
+for s in "$installer" "$uninstaller" "$teardown" "$diagnose" "$capture" "$ROOT/scripts/observe.sh" "$profile" "$ROOT/scripts/computer-use.sh" "$ROOT/scripts/worldline-capture.sh" "$ROOT/scripts/worldline-dependency.sh"; do bash -n "$s" || fail "shell syntax: ${s#$ROOT/}"; done
 python3 -m py_compile "$ROOT"/scripts/*.py "$ROOT/runtimes/hermes/__init__.py" "$ROOT/tests/calculator-cold.py" || fail "Python syntax"
 python3 "$ROOT/tests/calculator-cold.py" >/dev/null || fail "Calculator regression skip contract"
 rc=0; bash "$ROOT/tests/desktop-acceptance.sh" >"$TMP/live-acceptance-optin" 2>&1 || rc=$?
