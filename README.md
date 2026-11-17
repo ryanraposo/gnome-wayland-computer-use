@@ -91,6 +91,17 @@ GWCU replaces the targeted `computer-use` skill, **not** Hermes' built-in `compu
 
 The installer also pins the exact Cua identity used by integrated Hermes profiles, restarts affected running gateways after integration/environment repair, and proves the live gateway environment before readiness can succeed.
 
+### Hermes skill tap
+
+The agent-facing contract is published as a Hermes skill tap, so `computer-use` can be discovered and updated through the Skills Hub:
+
+```bash
+hermes skills tap add ryanraposo/gnome-wayland-computer-use
+hermes skills install ryanraposo/gnome-wayland-computer-use/computer-use
+```
+
+The tap serves `skills/computer-use/SKILL.md`, which is byte-identical to the root `SKILL.md`. It does not replace the installer: the policy plugin, pinned Cua logon daemon, exact-foreground helper, portal consent and WORLDLINE dependency still come from `install.sh`. Install on the desktop host first, then use the tap to keep the skill contract current.
+
 ## Exact foreground
 
 Foreground is the informed fresh-install default. `/computer-use background on|off|status` changes the standing preference; explicit task intent wins.
