@@ -84,7 +84,7 @@ def _exact_target(call: dict) -> tuple[int, int] | None:
         and pid > 0
         and isinstance(window_id, int)
         and not isinstance(window_id, bool)
-        and 0 <= window_id <= (1 << 32) - 1
+        and 0 <= window_id <= (1 << 64) - 1
     ):
         return pid, window_id
     return None
