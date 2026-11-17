@@ -319,6 +319,7 @@ if ready:code="ready";nxt=None
 elif not identity_ok:code="cua_identity_split_brain";nxt={"action":"repair_cua_identity","reason":"installed_hermes_gateway_doctor_must_match"}
 elif not environment_ok:code="desktop_environment_unproved";nxt={"action":"sync_desktop_environment","reason":"shell_systemd_gateway_must_match"}
 elif not host_ok:code="wrong_session";nxt={"action":"start_gnome_wayland_session"}
+elif not portal_authorization_ok:code="portal_authorization_missing";nxt={"action":"complete_remote_desktop_consent"}
 elif not presentation_ok:code="presentation_degraded";nxt={"action":"inspect_worldline_window_observation"}
 elif worldline_state=="missing":code="worldline_missing";nxt={"action":"install_worldline"}
 elif worldline_state=="stopped":code="worldline_stopped";nxt={"action":"start_worldline"}
