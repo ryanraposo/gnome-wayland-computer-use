@@ -126,7 +126,8 @@ grep -Fq 'diagnose.sh" --machine' "$installer" || fail "final installed-state di
 grep -Fq 'gwcu.install-receipt.v1' "$installer" || fail "installer produces no durable proof receipt"
 grep -Fq 'install.log' "$installer" || fail "installer has no durable private log"
 grep -Fq 'READY // PROVED' "$installer" || fail "success output does not distinguish proved state"
-grep -Fq 'INSTALL COMPLETE // ONE GNOME RELOAD REQUIRED' "$installer" || fail "GNOME reload boundary is not honest"
+grep -Fq 'STOP: SIGN OUT / SIGN IN REQUIRED' "$installer" || fail "GNOME reload boundary is not prominent"
+grep -Fq 'ACTION REQUIRED — SIGN OUT AND BACK IN ONCE' "$installer" || fail "guided sign-out/in notice missing"
 grep -Fq 'presentation_degraded' "$diagnose" || fail "diagnosis can ignore broken exact presentation"
 pass "installer ends on unified proof with honest reload boundary"
 

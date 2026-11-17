@@ -89,7 +89,7 @@ Cua Driver
 
 GWCU replaces the targeted `computer-use` skill, **not** Hermes' built-in `computer_use` tool/toolset. The plugin wraps that tool with tool-override capability; terminal access is optional.
 
-The installer also pins the exact Cua identity used by integrated Hermes profiles, restarts affected running gateways after integration/environment repair, and proves the live gateway environment before readiness can succeed.
+The installer pins Cua identity for integrated Hermes profiles, restarts affected gateways after repair, and proves the live environment before readiness.
 
 ### Hermes skill tap
 
@@ -129,7 +129,7 @@ WORLDLINE turns repeated observation loops into local predicate-driven continuat
 click Save → document.dirty == false → predicate satisfied → continue
 ```
 
-Standalone WORLDLINE owns one private socket and revision store for GWCU and other consumers. It is independently installed and managed, reads AT-SPI, direct host facts and exact Cua GNOME compositor frames with ScreenCast/PipeWire evidence when requested, and remains read-only. GWCU's observer is a separate visual sensor.
+Standalone WORLDLINE owns one private socket and revision store. It is independently installed, reads AT-SPI, host facts and ScreenCast/PipeWire frames when requested, and stays read-only. GWCU's observer is a separate visual sensor.
 
 Horner can share the WORLDLINE socket; receipts are valid only in the named `domain_id`. GWCU's installer and doctor require the `receipt` op, so a stale WORLDLINE fails closed at install.
 
@@ -147,7 +147,9 @@ Scope order: `GWCU_SCOPE_ROOT` → Git worktree root → nearest ancestor alread
 curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh | bash
 ```
 
-Run in a new, visible terminal on the desktop. Install and start [standalone WORLDLINE](https://github.com/ryanraposo/WORLDLINE) first. The installer verifies one commit-addressed SHA-256 release archive, qualifies Ubuntu 26.04 GNOME Wayland, installs/reuses pinned Cua plus its helper, enables the Cua logon daemon, establishes portal consent, installs the skill/runtime and Hermes policy, resolves WORLDLINE independently, and live-proves readiness. If the RemoteDesktop portal is missing, it opens GNOME Settings -> Sharing -> Remote Desktop (Screen Sharing) and waits for you to enable it; you still approve GNOME's prompt.
+Run in a new, visible terminal on the desktop. Install and start [standalone WORLDLINE](https://github.com/ryanraposo/WORLDLINE) first. The installer verifies one SHA-256 release archive, qualifies Ubuntu 26.04 GNOME Wayland, installs/reuses pinned Cua, enables its logon daemon, establishes portal consent, installs the skill/runtime and Hermes policy, and live-proves readiness. If the RemoteDesktop portal is missing, it opens GNOME Settings -> Sharing -> Remote Desktop (Screen Sharing) and waits for you; you still approve GNOME's prompt.
+
+If the installer prints `STOP: SIGN OUT / SIGN IN REQUIRED`, follow its steps: save work, sign out of GNOME, sign back in as the same user, rerun the install command. Only `READY // PROVED` means ready.
 
 ## Update
 
@@ -159,13 +161,11 @@ Other runtimes can call `scripts/gwcu-exec` with a JSON action span on stdin. Th
 
 For an existing checkout, `bash install.sh` repairs the observer socket and imports the live desktop environment into systemd and affected Hermes gateways. Check with `bash scripts/computer-use.sh doctor`; `desktop_environment_unproved` and `observation_degraded` name the respective gaps. The live Calculator test proves exact presentation, an observed result and removal of the agent cursor session.
 
-If the GNOME helper needs a session reload, the installer asks for one sign-out/sign-in and does not claim fully proved readiness until rerun.
-
 ## Release
 
 Ship from `dev` via a `release/<version>-main` PR into `main` with all version strings aligned. After main CI is green, push annotated tag `v<version>` at the main commit: `.github/workflows/release.yml` builds from that commit, uploads the archive and checksum manifest to the GitHub Release, and verifies the published URL. Fast-forward `dev` afterwards.
 
-Pages serves bootstrap scripts and `VERSION`; artifacts use the versioned Release URL (`GWCU_RELEASE_URL` overrides it).
+Pages serves bootstrap scripts and `VERSION`; artifacts use the versioned Release URL (`GWCU_RELEASE_URL` overrides it). A push to `main` deploys those bytes and `tests/pages-freshness.sh` verifies them; stale Pages is a release blocker.
 
 ## Uninstall
 

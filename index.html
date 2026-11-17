@@ -35,6 +35,7 @@ h2{font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-se
 .command{border:1px solid var(--line);border-radius:10px;background:var(--panel2);padding:17px 18px;display:flex;align-items:center;gap:14px;margin-top:18px}.command code{flex:1;overflow:auto;white-space:nowrap;scrollbar-width:none;font-size:13px}.command code::-webkit-scrollbar{display:none}
 .copy{flex:0 0 auto;width:34px;height:32px;display:grid;place-items:center;border:1px solid #4a5260;border-radius:6px;background:#20252d;color:#d8dce2;cursor:pointer}.copy:hover{border-color:#6c7686;color:#fff}
 .note{border-left:3px solid #59616f;padding:7px 0 7px 15px;margin-top:22px;color:var(--muted);font-size:14px}
+.guided{border:1px solid #8a6d2b;background:#2a2418;border-radius:10px;padding:16px 18px;margin-top:18px;color:#f0e6cf}.guided b{display:block;color:#ffd98a;font-size:15px;margin-bottom:8px}.guided ol{margin:0;padding-left:20px;font-size:14px;line-height:1.7}.guided code{color:#fff}.guided .end{margin-top:10px;font-size:14px;color:#d9cfa9}
 footer{padding:42px 0 0;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:flex-end;gap:24px;color:var(--faint);font-size:12px}.footer-links{display:flex;gap:15px;flex-wrap:wrap}.footer-links a{color:#aeb5c0}.tiny-guy{white-space:pre;line-height:1.05;color:#777f8b;font-size:10px;text-align:right}
 @media(max-width:680px){.wrap{width:min(100% - 28px,var(--max));padding-top:10px}.mascot-card{min-height:240px;margin-bottom:48px}.little-guy{font-size:17px}h1{margin-bottom:28px}.hero-rule{margin-bottom:30px}.jump{margin-bottom:48px}.major-rule{margin-bottom:46px}.description{margin-bottom:50px}.grid,.flow,.slash{grid-template-columns:1fr}footer{align-items:flex-start}.tiny-guy{display:none}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.little-guy{transition:none}.little-guy:hover{transform:none}}
@@ -57,6 +58,7 @@ footer{padding:42px 0 0;border-top:1px solid var(--line);display:flex;justify-co
 
   <nav class="jump" aria-label="Page sections">
     <a href="#install">Install</a><span class="dot">·</span>
+    <a href="#sign-in">Sign out/in</a><span class="dot">·</span>
     <a href="#capabilities">Capabilities</a><span class="dot">·</span>
     <a href="#performance">Performance</a><span class="dot">·</span>
     <a href="#how-it-works">How it works</a><span class="dot">·</span>
@@ -125,6 +127,16 @@ and move it to Downloads</pre>
     <button class="copy" id="copy" type="button" aria-label="Copy install command" title="Copy install command" onclick="copyInstall()">
       <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="10" height="12" rx="1"/><path d="M5 1h6a1 1 0 0 1 1 1v2"/></svg>
     </button>
+  </div>
+  <div class="guided" id="sign-in">
+    <b>ONE SIGN-OUT / SIGN-IN MAY BE REQUIRED</b>
+    <ol>
+      <li>Watch for <code>STOP: SIGN OUT / SIGN IN REQUIRED</code> and save your work.</li>
+      <li>Sign out of GNOME: system menu → Power → Log Out.</li>
+      <li>Sign back in as the same user on the same desktop.</li>
+      <li>Open a new, visible terminal there and rerun the same install command.</li>
+    </ol>
+    <div class="end">Until you do this and rerun, computer use is <strong>NOT READY</strong>. The installer ends with <code>READY // PROVED</code> when it is.</div>
   </div>
   <div class="note">Run in a new, visible terminal as the logged-in desktop user. If the Remote Desktop portal is missing, the installer opens GNOME Settings → Sharing → Remote Desktop (Screen Sharing) and waits for you to enable it. You still approve GNOME's “Remote Desktop” prompt for local EIS/libei control; GWCU never clicks or types. Whole-screen observation has its own ScreenCast consent boundary.</div>
   <div class="note">With Hermes, GWCU owns the <code>computer-use</code> skill and its policy plugin wraps Hermes' existing <code>computer_use</code> tool — it does not replace that tool. The default Hermes home is integrated automatically; additional existing profiles are explicit installer choices. Existing skills are archived before replacement and teardown restores them when possible.</div>

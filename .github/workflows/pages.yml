@@ -1,0 +1,46 @@
+name: Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Publish and verify the curl-pipe bootstrap
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Verify the bootstrap before publishing it
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n install.sh uninstall.sh scripts/*.sh tests/*.sh
+          python3 -m py_compile scripts/*.py runtimes/hermes/__init__.py
+          bash ./tests/release-contract.sh
+          bash ./tests/hermes.sh
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: .
+      - id: deployment
+        uses: actions/deploy-pages@v5
+      - name: Verify published bytes are the exact deployed commit
+        env:
+          GWCU_PAGES_EXPECT_COMMIT: ${{ github.sha }}
+        run: bash ./tests/pages-freshness.sh

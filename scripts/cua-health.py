@@ -69,7 +69,7 @@ def run(driver: str, timeout: float) -> tuple[dict, int]:
             "params": {
                 "protocolVersion": PROTOCOL,
                 "capabilities": {},
-                "clientInfo": {"name": "gnome-wayland-computer-use", "version": "2.7.2"},
+                "clientInfo": {"name": "gnome-wayland-computer-use", "version": "2.7.3"},
             },
         })
         init = recv_for(proc, 1, timeout)
