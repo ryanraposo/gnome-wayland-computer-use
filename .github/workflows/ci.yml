@@ -109,9 +109,9 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v6
-      - name: Fetch paired WORLDLINE PR head
+      - name: Fetch paired WORLDLINE published v0.3.0
         env:
-          WORLDLINE_INTEGRATION_SHA: 185566075b786bd21d2e6d6e8e0ddbb1e02e4812
+          WORLDLINE_INTEGRATION_SHA: fa22719879d0ed87aec43b69ee3c726408933f8b
         run: |
           set -euo pipefail
           git init --quiet "$RUNNER_TEMP/worldline"
