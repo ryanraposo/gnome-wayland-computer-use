@@ -50,17 +50,17 @@ for pkg in pipewire pipewire-bin wireplumber xdg-desktop-portal xdg-desktop-port
 for iface in RemoteDesktop ScreenCast Screenshot; do grep -q "portal_has $iface" "$installer" || fail "$iface portal check missing"; done
 pass "Ubuntu portal/accessibility foundation is explicit"
 
-for shipped in scripts/action-span.py scripts/worldline.py scripts/worldline-capture.sh scripts/present-window.py README.md; do grep -q "$shipped" "$installer" || fail "installer omits $shipped"; done
+for shipped in scripts/action-span.py scripts/worldline.py scripts/worldline-contract.py scripts/worldline-dependency.sh scripts/worldline-capture.sh scripts/present-window.py README.md; do grep -q "$shipped" "$installer" || fail "installer omits $shipped"; done
 grep -q 'present-window.py" self-test' "$installer" || fail "presentation self-test missing"
 grep -q 'present-window.py" status' "$installer" || fail "live presentation qualification missing"
-grep -q 'enable --now gnome-wayland-computer-use-worldline.socket' "$installer" || fail "WORLDLINE socket not enabled"
+! grep -q 'enable --now gnome-wayland-computer-use-worldline.socket' "$installer" || fail "GWCU still owns a WORLDLINE socket unit"
 grep -q 'enable --now gnome-wayland-computer-use-observer.socket' "$installer" || fail "observer socket not enabled"
-grep -Fq 'ensure_user_daemon worldline "WORLDLINE"' "$installer" || fail "WORLDLINE automatic repair missing"
+grep -Fq 'worldline-dependency.sh" ensure' "$installer" || fail "WORLDLINE dependency is not resolved before readiness"\n! grep -Fq 'worldline-pkg' "$installer" || fail "GWCU still vendors WORLDLINE source"\n! grep -Fq 'gnome-wayland-computer-use-worldline.service' "$installer" || fail "GWCU still installs a WORLDLINE service"
 grep -Fq 'journalctl --user -u "$service_unit"' "$installer" || fail "daemon failure capsule lacks journal evidence"
 python3 "$presenter" self-test >/dev/null || fail "presentation primitive self-test"
 grep -Fq 'focused' "$presenter" && grep -Fq 'visible' "$presenter" && grep -Fq 'minimized' "$presenter" || fail "presenter does not prove visible focus"
 grep -Fq 'pid' "$presenter" && grep -Fq 'window_id' "$presenter" || fail "presenter lacks exact identity"
-pass "WORLDLINE, observer and exact presentation are shipped and provable"
+pass "standalone WORLDLINE dependency, observer and exact presentation are verified"
 
 # Install-context diagnosis is the repair boundary: validate/import the *live*
 # Wayland environment, pin Hermes to one Cua identity, restart affected running
@@ -124,7 +124,7 @@ pass "teardown removes runtime integration, not workspace truth"
 # The AT-SPI adapter and visual capture now live in the delegated WORLDLINE
 # package (ryanraposo/WORLDLINE), which GWCU's worldline.py shim forwards to.
 WORLDLINE_SRC="${GWCU_WORLDLINE_ROOT:-$HOME/repos/WORLDLINE}/src/worldline/desktop_events.py"
-WORLDLINE_PKG="${XDG_DATA_HOME:-$HOME/.local/share}/gnome-wayland-computer-use/worldline-pkg/src/worldline/desktop_events.py"
+WORLDLINE_PKG="${XDG_DATA_HOME:-$HOME/.local/share}/worldline/source/src/worldline/desktop_events.py"
 if [ -f "$WORLDLINE_SRC" ]; then
     grep -q 'Atspi.EventListener' "$WORLDLINE_SRC" || fail "WORLDLINE AT-SPI adapter missing"
 elif [ -f "$WORLDLINE_PKG" ]; then
@@ -190,7 +190,7 @@ assert repair['attempted'] is True and repair['ok'] is False
 assert 'XDG_SESSION_TYPE is not wayland' in repair['failures']
 PY
 XDG_RUNTIME_DIR="$TMP/runtime" python3 "$ROOT/scripts/observer.py" self-test >/dev/null || fail "observer self-test"
-XDG_RUNTIME_DIR="$TMP/world" python3 "$worldline" self-test >/dev/null || fail "WORLDLINE self-test"
+if XDG_RUNTIME_DIR="$TMP/world" python3 "$worldline" self-test >/dev/null; then fail "missing standalone WORLDLINE service passed readiness"; fi
 pass "diagnostics and read-only runtimes self-test"
 
 for f in SKILL.md runtimes/openai/SKILL.md README.md; do grep -qi 'Cua' "$ROOT/$f" || fail "$f lost Cua"; grep -qi 'WORLDLINE' "$ROOT/$f" || fail "$f lost WORLDLINE"; grep -qi 'No X11' "$ROOT/$f" || fail "$f lost GNOME Wayland qualification"; grep -qi 'Remote Desktop' "$ROOT/$f" || fail "$f lost consent model"; done
