@@ -1,0 +1,15 @@
+# gnome-wayland-computer-use managed unit
+[Unit]
+Description=GWCU-managed Cua Driver logon daemon
+Documentation=https://github.com/ryanraposo/gnome-wayland-computer-use
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart="%CUA_DRIVER_BIN%" serve
+Restart=on-failure
+RestartSec=2
+TimeoutStopSec=5s
+
+[Install]
+WantedBy=graphical-session.target

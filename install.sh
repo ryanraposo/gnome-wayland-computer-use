@@ -310,6 +310,54 @@ ensure_user_daemon(){
   daemon_failure_capsule "$key" "$label" "$socket_unit" "$service_unit"; return 1
 }
 
+CUA_AUTOSTART_UNIT="gnome-wayland-computer-use-cua-driver.service"
+CUA_AUTOSTART_STATE="absent"
+CUA_AUTOSTART_RUNNING=false
+ensure_cua_autostart(){
+  local unit_dir=$1 template=$2 helper=$3 external enabled state
+  # An upstream/user autostart unit already makes the daemon a logon service.
+  # Never create a second daemon or disable the user's own choice.
+  for external in cua-driver.service cua-driver-local.service; do
+    enabled=$(systemctl --user is-enabled "$external" 2>/dev/null || true)
+    case "$enabled" in
+      enabled|enabled-runtime)
+        CUA_AUTOSTART_STATE="external:$external"
+        info "Reusing enabled Cua autostart unit $external; GWCU did not add a second daemon"
+        if "$CUA" status >"$STATE/cua-autostart-status.txt" 2>>"$INSTALL_LOG"; then CUA_AUTOSTART_RUNNING=true
+        else warn "The external Cua daemon is not running in this session"; fi
+        return 0 ;;
+    esac
+  done
+  state=$("$helper" install "$template" "$unit_dir" "$CUA") || die "Could not render the Cua logon daemon unit"
+  CUA_AUTOSTART_STATE="$state"
+  if [ "$state" = external ]; then
+    info "Preserved an unmanaged unit at $unit_dir/$CUA_AUTOSTART_UNIT; Cua autostart stays user-owned"
+    return 0
+  fi
+  systemctl --user daemon-reload >>"$INSTALL_LOG" 2>&1 || die "user systemd reload failed"
+  systemctl --user enable --now "$CUA_AUTOSTART_UNIT" >>"$INSTALL_LOG" 2>&1 || die "Could not enable the Cua logon daemon"
+  local delay active
+  for delay in 0 .2 .4 .8 1.2 2; do
+    [ "$delay" = 0 ] || sleep "$delay"
+    active=$(systemctl --user is-active "$CUA_AUTOSTART_UNIT" 2>/dev/null || true)
+    if [ "$active" = active ] && "$CUA" status >"$STATE/cua-autostart-status.txt" 2>>"$INSTALL_LOG"; then
+      CUA_AUTOSTART_RUNNING=true
+      ok "Cua logon daemon is running ($CUA_AUTOSTART_UNIT)"
+      return 0
+    fi
+  done
+  {
+    printf '\n=== CUA LOGON DAEMON LIVE PROOF FAILURE ===\n'
+    systemctl --user show "$CUA_AUTOSTART_UNIT" --no-pager -p Id -p LoadState -p ActiveState -p SubState -p Result -p ExecMainCode -p ExecMainStatus -p FragmentPath 2>&1 || true
+    printf '%s\n' '--- service journal ---'
+    journalctl --user -u "$CUA_AUTOSTART_UNIT" -n 40 --no-pager 2>&1 || true
+    printf '%s\n' '--- status output ---'; cat "$STATE/cua-autostart-status.txt" 2>/dev/null || true
+  } >>"$INSTALL_LOG"
+  error "Cua logon daemon did not become healthy"
+  printf '        unit: %s\n        log:  %s\n' "$CUA_AUTOSTART_UNIT" "$INSTALL_LOG" >&2
+  die "Cua logon daemon failed its live proof"
+}
+
 hermes_exec(){ ( cd "$HOME" && HERMES_HOME="$HERMES_ACTIVE_HOME" NO_COLOR=1 "$HERMES_BIN" "$@" ); }
 hermes_json_list(){
   local key=$1 out
@@ -434,7 +482,7 @@ RELOAD_REQUIRED=false
 if gnome-extensions info winrects@cua >/dev/null 2>&1 && gnome-extensions info winrects@cua 2>/dev/null | grep -qi 'State: ACTIVE'; then ok "winrects@cua is ACTIVE"; else RELOAD_REQUIRED=true; warn "winrects@cua is installed and will become active after one GNOME sign-out/sign-in"; fi
 
 info "[4/8] Installing GWCU runtime, skill and WORLDLINE"
-FILES=(VERSION README.md agents/openai.yaml scripts/action-span.py scripts/gwcu-exec scripts/app-identity.sh scripts/capture.sh scripts/check-update.sh scripts/computer-use.sh scripts/cua-health.py scripts/diagnose.sh scripts/mcp_client.py scripts/migrate-main.sh scripts/observe.sh scripts/observer.py scripts/portal-control.py scripts/present-window.py scripts/profile.sh scripts/teardown.sh scripts/truths.py scripts/worldline.py scripts/worldline-contract.py scripts/worldline-dependency.sh scripts/worldline-capture.sh systemd/user/gnome-wayland-computer-use-observer.socket systemd/user/gnome-wayland-computer-use-observer.service)
+FILES=(VERSION README.md agents/openai.yaml scripts/action-span.py scripts/cua-autostart.sh scripts/gwcu-exec scripts/app-identity.sh scripts/capture.sh scripts/check-update.sh scripts/computer-use.sh scripts/cua-health.py scripts/diagnose.sh scripts/mcp_client.py scripts/migrate-main.sh scripts/observe.sh scripts/observer.py scripts/portal-control.py scripts/present-window.py scripts/profile.sh scripts/teardown.sh scripts/truths.py scripts/worldline.py scripts/worldline-contract.py scripts/worldline-dependency.sh scripts/worldline-capture.sh systemd/user/gnome-wayland-computer-use-observer.socket systemd/user/gnome-wayland-computer-use-observer.service systemd/user/gnome-wayland-computer-use-cua-driver.service)
 rm -rf "$TMP/bundle"; mkdir -p "$TMP/bundle"
 for f in "${FILES[@]}"; do get_file "$f" "$TMP/bundle/$f"; done
 get_file SKILL.md "$TMP/bundle/SKILL.md"
@@ -566,6 +614,14 @@ systemctl --user daemon-reload
 systemctl --user daemon-reload || $COMPAT || die "user systemd reload failed"
 for u in gnome-wayland-computer-use-observer.socket gnome-wayland-computer-use-observer.service; do systemctl --user reset-failed "$u" 2>/dev/null || true; done
 if ! $COMPAT; then systemctl --user enable --now gnome-wayland-computer-use-observer.socket >>"$INSTALL_LOG" 2>&1 || die "observer socket failed to enable"; fi
+if ! $COMPAT; then
+  ensure_cua_autostart "$UNIT_DIR" "$PRIMARY/systemd/user/$CUA_AUTOSTART_UNIT" "$PRIMARY/scripts/cua-autostart.sh"
+  case "$CUA_AUTOSTART_STATE" in
+    managed) CUA_AUTOSTART_LABEL="enabled at logon";;
+    external:*) CUA_AUTOSTART_LABEL="existing ${CUA_AUTOSTART_STATE#external:} preserved";;
+    *) CUA_AUTOSTART_LABEL="user-owned unit preserved";;
+  esac
+else CUA_AUTOSTART_LABEL="installed for next session"; fi
 "$PYTHON" "$PRIMARY/scripts/observer.py" self-test >>"$INSTALL_LOG" || die "observer.py self-test failed"
 if ! $COMPAT; then bash "$PRIMARY/scripts/worldline-dependency.sh" ensure >>"$INSTALL_LOG" 2>&1 || die "Standalone WORLDLINE dependency could not be resolved and verified"; fi
 "$PYTHON" "$PRIMARY/scripts/worldline.py" self-test >>"$INSTALL_LOG" || die "worldline.py self-test failed"
@@ -585,13 +641,14 @@ ok "WORLDLINE + observer protocols proved; presentation gate qualified"
 info "[8/8] Proving the complete installed state"
 PREV_ACCESS=$(gsettings get org.gnome.desktop.interface toolkit-accessibility 2>/dev/null || printf unknown); ACCESS_CHANGED=false
 if [ "$PREV_ACCESS" = false ]; then gsettings set org.gnome.desktop.interface toolkit-accessibility true 2>/dev/null && ACCESS_CHANGED=true || true; fi
-"$PYTHON" - "$STATE/ownership.json" "$PREV_ACCESS" "$ACCESS_CHANGED" "$CUA_DRIVER_RS_VERSION" "$HERMES" "$COMPAT" "$HERMES_TARGET_COUNT" <<'PY'
+"$PYTHON" - "$STATE/ownership.json" "$PREV_ACCESS" "$ACCESS_CHANGED" "$CUA_DRIVER_RS_VERSION" "$HERMES" "$COMPAT" "$HERMES_TARGET_COUNT" "$CUA_AUTOSTART_UNIT" "$CUA_AUTOSTART_STATE" "$CUA_AUTOSTART_RUNNING" <<'PY'
 import json,os,pathlib,sys
 p=pathlib.Path(sys.argv[1])
 try:d=json.loads(p.read_text())
 except Exception:d={}
 d["schema"]="gwcu.ownership.v3";d["toolkit_accessibility"]={"previous":sys.argv[2],"changed":sys.argv[3]=="true"}
 u=d.setdefault("upstream",{});c=u.setdefault("cua_driver",{});c["version"]=sys.argv[4];c["owned"]=bool(c.get("provisioned") or c.get("owned"));u.setdefault("winrects",{"owned":False})
+c["autostart"]={"unit":sys.argv[8],"state":sys.argv[9],"running":sys.argv[10]=="true"}
 enabled=sys.argv[6]!="true";d["user_units"]={"observer_socket":enabled,"observer_service":enabled};d["hermes_plugin"]={"managed":sys.argv[5]=="true","name":"gnome-wayland-computer-use","profiles":int(sys.argv[7])};d["distro_foundation_owned"]=False
 p.write_text(json.dumps(d,separators=(",",":"))+"\n");os.chmod(p,0o600)
 PY
@@ -619,12 +676,12 @@ PY
 fi
 MANAGED_VALUE=$(cat "$PREF" 2>/dev/null || printf unknown); BACKGROUND_VALUE=$(cat "$BACKGROUND_PREF" 2>/dev/null || printf unknown)
 RECEIPT="$STATE/install-receipt.json"
-"$PYTHON" - "$RECEIPT" "$VERSION" "$CUA_DRIVER_RS_VERSION" "$DIAG_CODE" "$RELOAD_REQUIRED" "$HERMES" "$HERMES_POLICY_STATUS" "$MANAGED_VALUE" "$BACKGROUND_VALUE" "$HERMES_TARGET_COUNT" "$SOURCE_KIND" "$SOURCE_COMMIT" "$SOURCE_SHA256" "${WORLDLINE_FEATURES:-/dev/null}" <<'PY'
+"$PYTHON" - "$RECEIPT" "$VERSION" "$CUA_DRIVER_RS_VERSION" "$DIAG_CODE" "$RELOAD_REQUIRED" "$HERMES" "$HERMES_POLICY_STATUS" "$MANAGED_VALUE" "$BACKGROUND_VALUE" "$HERMES_TARGET_COUNT" "$SOURCE_KIND" "$SOURCE_COMMIT" "$SOURCE_SHA256" "${WORLDLINE_FEATURES:-/dev/null}" "$CUA_AUTOSTART_STATE" "$CUA_AUTOSTART_RUNNING" <<'PY'
 import json,os,pathlib,sys,time
 p=pathlib.Path(sys.argv[1])
 try:wf=json.loads(pathlib.Path(sys.argv[14]).read_text())
 except Exception:wf={}
-d={"schema":"gwcu.install-receipt.v1","version":sys.argv[2],"cua_driver":sys.argv[3],"diagnosis":sys.argv[4],"reload_required":sys.argv[5]=="true","hermes_detected":sys.argv[6]=="true","hermes_policy":sys.argv[7],"managed_truths":sys.argv[8],"background_priority":sys.argv[9],"hermes_profiles":int(sys.argv[10]),"source":{"kind":sys.argv[11],"commit":sys.argv[12],"sha256":sys.argv[13] or None},"worldline":{"protocol":wf.get("protocol"),"domain_id":wf.get("domain_id"),"receipt_schema":wf.get("receipt_schema"),"requires":"receipt"},"installed_at_unix":int(time.time())}
+d={"schema":"gwcu.install-receipt.v1","version":sys.argv[2],"cua_driver":sys.argv[3],"diagnosis":sys.argv[4],"reload_required":sys.argv[5]=="true","hermes_detected":sys.argv[6]=="true","hermes_policy":sys.argv[7],"managed_truths":sys.argv[8],"background_priority":sys.argv[9],"hermes_profiles":int(sys.argv[10]),"source":{"kind":sys.argv[11],"commit":sys.argv[12],"sha256":sys.argv[13] or None},"worldline":{"protocol":wf.get("protocol"),"domain_id":wf.get("domain_id"),"receipt_schema":wf.get("receipt_schema"),"requires":"receipt"},"cua_autostart":{"state":sys.argv[15],"running":sys.argv[16]=="true"},"installed_at_unix":int(time.time())}
 p.write_text(json.dumps(d,separators=(",",":"))+"\n");os.chmod(p,0o600)
 PY
 ok "Installed state proved; receipt written"
@@ -642,6 +699,7 @@ printf '\n%s━━━━━━━━━━━━━━━━━━━━━━�
 if $RELOAD_REQUIRED; then printf '%sINSTALL COMPLETE // ONE GNOME RELOAD REQUIRED%s\n' "$BOLD" "$RESET"; printf 'Sign out/in once, rerun ./install.sh, and it will prove exact presentation.\n'; elif $COMPAT; then printf '%sINSTALLED FOR NEXT UBUNTU GNOME SESSION%s\n' "$BOLD" "$RESET"; else printf '%sREADY // PROVED%s\n' "$BOLD" "$RESET"; fi
 printf '  Source:          %s @ %s\n' "$SOURCE_KIND" "${SOURCE_COMMIT:0:12}"
 printf '  Cua Driver:      %s\n' "$CUA_DRIVER_RS_VERSION"
+printf '  Cua logon:       %s\n' "$CUA_AUTOSTART_LABEL"
 printf '  Visible takeover:%s\n' "$([ "$RELOAD_REQUIRED" = true ] && printf ' pending GNOME reload' || { [ "$COMPAT" = true ] && printf ' installed' || printf ' proved'; })"
 printf '  WORLDLINE:       %s\n' "$([ "$COMPAT" = true ] && printf installed || printf ready)"
 printf '  Observation:     %s\n' "$([ "$COMPAT" = true ] && printf installed || printf ready)"
