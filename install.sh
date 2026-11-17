@@ -480,7 +480,7 @@ else
 fi
 
 info "[4/8] Installing GWCU runtime, skill and WORLDLINE"
-FILES=(VERSION README.md agents/openai.yaml scripts/action-span.py scripts/app-identity.sh scripts/capture.sh scripts/check-update.sh scripts/computer-use.sh scripts/cua-health.py scripts/diagnose.sh scripts/mcp_client.py scripts/migrate-main.sh scripts/observe.sh scripts/observer.py scripts/portal-control.py scripts/present-window.py scripts/profile.sh scripts/teardown.sh scripts/truths.py scripts/worldline.py scripts/worldline-capture.sh systemd/user/gnome-wayland-computer-use-observer.socket systemd/user/gnome-wayland-computer-use-observer.service systemd/user/gnome-wayland-computer-use-worldline.socket systemd/user/gnome-wayland-computer-use-worldline.service)
+FILES=(VERSION README.md agents/openai.yaml scripts/action-span.py scripts/app-identity.sh scripts/capture.sh scripts/check-update.sh scripts/computer-use.sh scripts/cua-health.py scripts/diagnose.sh scripts/mcp_client.py scripts/migrate-main.sh scripts/observe.sh scripts/observer.py scripts/portal-control.py scripts/present-window.py scripts/profile.sh scripts/teardown.sh scripts/truths.py scripts/worldline.py scripts/worldline-dependency.sh scripts/worldline-capture.sh systemd/user/gnome-wayland-computer-use-observer.socket systemd/user/gnome-wayland-computer-use-observer.service systemd/user/gnome-wayland-computer-use-worldline.socket systemd/user/gnome-wayland-computer-use-worldline.service)
 rm -rf "$TMP/bundle"; mkdir -p "$TMP/bundle"
 for f in "${FILES[@]}"; do get_file "$f" "$TMP/bundle/$f"; done
 get_file SKILL.md "$TMP/bundle/SKILL.md"
@@ -608,6 +608,7 @@ for u in gnome-wayland-computer-use-observer.socket gnome-wayland-computer-use-o
 if ! $COMPAT; then systemctl --user enable --now gnome-wayland-computer-use-observer.socket >>"$INSTALL_LOG" 2>&1 || die "observer socket failed to enable"; systemctl --user enable --now gnome-wayland-computer-use-worldline.socket >>"$INSTALL_LOG" 2>&1 || die "WORLDLINE socket failed to enable"; fi
 "$PYTHON" "$PRIMARY/scripts/observer.py" self-test >>"$INSTALL_LOG" || die "observer.py self-test failed"
 "$PYTHON" "$PRIMARY/scripts/worldline.py" self-test >>"$INSTALL_LOG" || die "worldline.py self-test failed"
+if ! $COMPAT; then bash "$PRIMARY/scripts/worldline-dependency.sh" ensure >>"$INSTALL_LOG" 2>&1 || die "Standalone WORLDLINE dependency could not be resolved and verified"; fi
 "$PYTHON" "$PRIMARY/scripts/present-window.py" self-test >>"$INSTALL_LOG" || die "presentation gate self-test failed"
 if ! $COMPAT; then
   ensure_user_daemon observer "ScreenCast observer" gnome-wayland-computer-use-observer.socket gnome-wayland-computer-use-observer.service "$PYTHON" "$PRIMARY/scripts/observer.py" client status || die "ScreenCast observer is not responding"
