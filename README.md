@@ -38,7 +38,7 @@ GWCU uses **Cua Driver's MCP/tool surface** for computer use; GWCU itself is not
 
 GNOME Wayland uses the `Remote Desktop` portal → EIS/libei for compositor-approved local input. GWCU installs no RDP/VNC server or raw-input daemon. **No X11 or XWayland session is required.**
 
-The Cua daemon is standard: a GWCU-owned `gnome-wayland-computer-use-cua-driver.service` user unit starts the pinned `cua-driver serve` at `graphical-session.target`, live-proved with `cua-driver status`. Enabled upstream/user Cua autostart is preserved, not displaced by a second daemon.
+The Cua logon daemon is a GWCU user unit starting pinned `cua-driver serve` at `graphical-session.target`, live-proved with `cua-driver status`. User-owned Cua autostart is preserved, not displaced.
 
 ## Use it
 
@@ -57,7 +57,7 @@ The Cua daemon is standard: a GWCU-owned `gnome-wayland-computer-use-cua-driver.
 /computer-use help
 ```
 
-Examples: `/computer-use open YouTube and play something`, `/computer-use send the message I drafted`.
+Examples: `/computer-use open YouTube and play something`.
 
 `/computer-use trace` shows the last redacted physical span plus the canonical path (`computer-use.sh span` stays internal-only). Detailed agent behavior belongs in `SKILL.md`.
 
@@ -90,6 +90,15 @@ Cua Driver
 GWCU replaces the targeted `computer-use` skill, **not** Hermes' built-in `computer_use` tool/toolset. The plugin receives the tool-override capability and wraps that existing tool. Terminal access is optional helper machinery; ordinary desktop control requires only `computer_use`.
 
 The installer also pins the exact Cua identity used by integrated Hermes profiles, restarts affected running gateways after integration/environment repair, and proves the live gateway environment before readiness can succeed.
+
+### Hermes skill tap
+
+```bash
+hermes skills tap add ryanraposo/gnome-wayland-computer-use
+hermes skills install ryanraposo/gnome-wayland-computer-use/computer-use
+```
+
+The tap serves `skills/computer-use/SKILL.md` (byte-identical to root `SKILL.md`); it does not replace the installer, which still supplies the plugin, Cua logon daemon, helper, consent and WORLDLINE.
 
 ## Exact foreground
 
@@ -148,16 +157,7 @@ Other runtimes can call `scripts/gwcu-exec` with a JSON action span on stdin. Th
 
 `READY // PROVED` requires the installed Cua identity, Hermes-selected identity, running gateway backend identity and doctor-reported identity to agree. A split-brain version/path state fails readiness.
 
-For an existing local checkout, `bash install.sh` repairs its installed
-observer socket and imports the live desktop environment into systemd and
-affected Hermes gateways. Check the result with
-`bash scripts/computer-use.sh doctor`; `desktop_environment_unproved` means
-the gateway still lacks the GNOME session environment, and
-`observation_degraded` identifies unavailable observer components. The live
-Calculator acceptance test additionally proves exact window presentation,
-an observed application result, and removal of its named agent cursor session.
-Its cursor visibility field may remain unverified even when the input result
-is verified.
+For an existing checkout, `bash install.sh` repairs the observer socket and imports the live desktop environment into systemd and affected Hermes gateways. Check with `bash scripts/computer-use.sh doctor`; `desktop_environment_unproved` and `observation_degraded` name the respective gaps. The live Calculator test proves exact presentation, an observed result and removal of the agent cursor session.
 
 If the GNOME helper needs a session reload, the installer asks for one sign-out/sign-in and does not claim fully proved readiness until rerun.
 

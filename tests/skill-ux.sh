@@ -13,11 +13,29 @@ b=$(skill_description "$ROOT/runtimes/openai/SKILL.md")
 [ -n "$a" ] && [ "${#a}" -lt 60 ] || fail "Hermes description is compact"
 [ "$a" = "$b" ] || fail "runtime descriptions differ"
 cmp -s "$ROOT/SKILL.md" "$ROOT/runtimes/openai/SKILL.md" || fail "runtime skill payloads drifted"
+cmp -s "$ROOT/SKILL.md" "$ROOT/skills/computer-use/SKILL.md" || fail "Hermes tap skill payload drifted"
 grep -Fq 'requires_toolsets: [computer_use]' "$ROOT/SKILL.md" || fail "computer-use is not the sole required toolset"
 grep -Fq "host runtime's actual computer-use tool schema" "$ROOT/agents/openai.yaml" || fail "OpenAI implicit prompt does not defer to the real host tool schema"
 grep -Fq 'never guess a second API/control plane after a method mismatch' "$ROOT/agents/openai.yaml" || fail "OpenAI implicit prompt can still escape GWCU after method mismatch"
 ! grep -Fq 'requires_toolsets: [computer_use, terminal]' "$ROOT/SKILL.md" || fail "terminal still gates skill discovery"
 pass "runtime skills are identical, compact and computer-use scoped"
+
+# Hermes skill tap: the default skills/ path publishes the canonical contract.
+python3 - "$ROOT" <<'PY' || fail "skills.sh grouping drift"
+import json
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+data = json.loads((root / "skills.sh.json").read_text())
+assert data.get("$schema") == "https://skills.sh/schemas/skills.sh.schema.json"
+grouped = [g for g in data.get("groupings", []) if "computer-use" in g.get("skills", [])]
+assert grouped and all(g.get("title") for g in grouped), "computer-use has no titled grouping"
+PY
+grep -Fq 'hermes skills tap add ryanraposo/gnome-wayland-computer-use' "$ROOT/README.md" || fail "README lacks Hermes tap subscribe command"
+grep -Fq 'hermes skills install ryanraposo/gnome-wayland-computer-use/computer-use' "$ROOT/README.md" || fail "README lacks Hermes tap install command"
+grep -Fq 'does not replace the installer' "$ROOT/README.md" || fail "tap/installer boundary undocumented"
+pass "Hermes tap publishes the canonical skill with an installer boundary"
 
 for heading in \
     'Invocation contract' 'Choosing the path' 'Browser computer use' 'Core rule' 'Control priority' 'Visible-result contract' \
@@ -191,5 +209,5 @@ grep -Fq "\"version\": \"${version}\"" "$ROOT/scripts/cua-health.py" || fail "Cu
 grep -Fq "\"version\": \"${version}\"" "$ROOT/scripts/portal-control.py" || fail "portal client version mismatch"
 grep -Fq "\"version\":\"${version}\"" "$ROOT/scripts/computer-use.sh" || fail "window-list client version mismatch"
 grep -Fq "\"version\": \"${version}\"" "$ROOT/scripts/action-span.py" || fail "action-span client version mismatch"
-[ "$version" = 2.7.0 ] || fail "release version is 2.7.0"
+[ "$version" = 2.7.1 ] || fail "release version is 2.7.1"
 pass "release identity is consistent across installer, runtimes and clients"

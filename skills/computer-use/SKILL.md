@@ -1,0 +1,414 @@
+---
+name: computer-use
+description: Use for reliable Ubuntu GNOME desktop control with Cua.
+version: 2.7.1
+author: Ryan Raposo
+license: MIT
+platforms: [linux]
+metadata:
+  hermes:
+    tags: [computer-use, cua, desktop, automation, gui, gnome, wayland, accessibility]
+    category: desktop
+    related_skills: [gnome-wayland-reload]
+    requires_toolsets: [computer_use]
+---
+
+# Computer Use on Ubuntu GNOME
+
+Use **Cua Driver for desktop actuation**. WORLDLINE tracks transient revisioned truth and postconditions. `.gwcu` stores durable local facts.
+
+> **Resolve exactly. Present exactly. Cua acts. WORLDLINE knows. `.gwcu` remembers.**
+
+## Invocation contract
+
+`/computer-use <task>` is the primary user-facing entry point. Everything after `/computer-use` is normal task text unless the first token is one of these reserved operator subcommands:
+
+`status`, `trace`, `present`, `list-windows`, `cursor-color`, `background`, `managed`, `truths`, `consent`, `doctor`, and `help`.
+
+For a reserved form, your first tool call MUST execute the installed operator surface once; return its result without reinterpretation. These operator/helper surfaces use the terminal tool when it is available; ordinary desktop control does not require terminal access.
+
+```text
+/computer-use status
+/computer-use trace
+/computer-use present --pid PID --window-id ID
+/computer-use list-windows [--on-screen-only] [--pid PID]
+/computer-use cursor-color [#RRGGBB]
+/computer-use background [on|off|status]
+/computer-use managed [on|off|status]
+/computer-use truths
+/computer-use consent
+/computer-use doctor
+/computer-use help
+```
+
+Everything else is a task. `/computer-use open YouTube and play something` means do the task; `open` is not a subcommand.
+
+
+### Runtime ingress invariant
+
+GWCU owns the **desktop policy and operating contract**; the host runtime owns the exact syntax of its provided `computer_use` tool. Use the runtime's real exposed schema and map this contract onto it.
+
+A tool-method mismatch is **not** permission to discover a second control plane. Do not guess API members, probe generic computer-use examples, or abandon the runtime-provided computer-use surface for raw Cua/internal helpers merely because one assumed method is unavailable.
+
+- Ordinary desktop work stays on the runtime-provided `computer_use` / Cua path.
+- Reserved `/computer-use ...` operators use the installed operator surface exactly once.
+- `computer-use.sh span` is a local composition primitive only after actions and exact targets are already determined.
+- `cua-driver` is actuator plumbing, not an agent discovery surface.
+- When the host computer-use surface is genuinely incompatible with this contract, stop before actuation and report `runtime_contract_mismatch`; use `/computer-use doctor` when the local helper surface is available. Do not probe alternate actuators.
+
+**The skill owns semantics; the runtime owns call shape. Preserve one Cua control plane.**
+
+## Choosing the path
+
+Route by the state the task depends on. Use the most direct capable surface, and switch surfaces when the target changes.
+
+- Desktop/native-app state or a result the user must actually see → Cua.
+- The user's browser session, login, tabs, browser chrome, placement, or visible page state → Cua browser/native routes.
+- Research, reading, retrieval, search, or web navigation independent of the user's browser session → browser/web tooling.
+- Shell or CLI state → terminal tool.
+- A terminal window that must itself be operated as visible desktop UI → Cua.
+
+A mixed task may research through web tooling, use terminal for CLI work, then use Cua when it reaches the desktop.
+
+## Browser computer use
+
+When a task targets a specific browser window or session, keep that session's UI mutations on Cua so native window identity, tab/page state, visibility, and completion evidence stay coherent. Do not split the same browser session across Cua and a separate browser-automation actuator mid-task.
+
+```text
+Chromium/Electron exact route available
+→ computer_use cua_browser_state / cua_browser_* actions
+
+Firefox, browser chrome, unsupported typed route
+→ Cua native window AX/PX route
+```
+
+The typed route is admitted by proof:
+
+1. Discover the exact native browser `(pid, window_id)` with Cua `list_windows`.
+2. Run the foreground presentation gate when foreground/visible control applies.
+3. Bind `cua_browser_state` using both values.
+4. Mutate only when the bind says `status:"ok"`, `binding_quality:"exact"`, and `mutation_allowed:true`.
+5. Choose the returned opaque `tab_id`; request a fresh `semantic_v2` snapshot.
+6. Every mutation invalidates refs. Snapshot again before the next ref-based action and at completion.
+
+Never actuate from a title-only match. Firefox has no typed page-mutation route. An unselected tab may still be fully addressable. Typed page success does not prove the browser window or tab is visibly presented. A hidden/headless/managed browser success is a failure when the requested result is meant to be visible.
+
+For web work that does not depend on the user's browser session, use the available browser/web tooling directly.
+
+## GNOME portal contract
+
+GNOME Wayland is the supported session. **No X11 or XWayland session is required.** Cua uses GNOME `RemoteDesktop` → EIS/libei for input; GNOME may label this permission **Remote Desktop**. GWCU installs no RDP/VNC server or raw-input daemon. ScreenCast/PipeWire is the separate observation path.
+
+Cua's installed `winrects@cua` GNOME Shell helper is part of the supported control plane. Its stable window id is the `window_id` used for exact presentation.
+
+## Core rule
+
+**Observation is an interrupt, not a ritual RPC.**
+
+```text
+model decides
+→ exact target is established
+→ local transaction runs
+→ Cua acts
+→ WORLDLINE watches postconditions
+→ model returns only at a real decision boundary
+```
+
+## Control priority
+
+`/computer-use background` controls the **standing delivery preference**. The installer explains this choice and asks once on a fresh install; exact visible takeover remains the default.
+
+- OFF is the default: **exact visible takeover**. GWCU may bring the exact target to the front while acting.
+- ON explicitly prefers background delivery where Cua supports it, helping the user keep working in the current foreground window.
+- `/computer-use background on` prefers background work.
+- `/computer-use background off` restores exact visible takeover.
+- `/computer-use background status` reports the current preference; bare `/computer-use background` toggles it.
+- Explicit user foreground/background wording wins over the standing preference.
+- A requested visible result always finishes with exact visible presentation, even when intermediate work is background.
+- Cua runtime truth remains authoritative.
+
+The standing preference applies to otherwise-unspecified Cua native input and GWCU action spans. It is a default, not a task classifier.
+
+There is deliberately **no floating confidence threshold**. Missing foreground words do not imply background intent. Legacy `foreground_confidence` remains parse-compatible and non-authoritative.
+
+The default foreground path is not “send `delivery_mode:foreground` and hope.” Cua documents foreground delivery as action-scoped activation which may restore the prior frontmost window. GWCU therefore makes persistent presentation a separate admission gate.
+
+### Exact default trace
+
+When background priority is OFF, pre-trace this path before the first mutation:
+
+```text
+1 ACQUIRE — only when the intended local app is closed
+  resolve the installed local application deterministically
+  → computer_use action="launch_app" app="<name>"
+  → Cua launch_app performs the launch
+  → compare pre/post Cua window sets
+  → bind exactly one NEW (pid, window_id)
+  → ambiguity or no new exact target = STOP
+  → never substitute terminal launch, desktop search, or another actuator
+
+2 DISCOVER
+  for an already-running target, Cua list_windows
+  → exact intended (pid, window_id)
+  → no title-only actuation
+  after ACQUIRE, use discovery only to revalidate the bound identity
+
+3 PRESENT
+  Cua GNOME presentation gate
+  → attested org.cua.WinRects owner
+  → exact stable-sequence id + pid exists exactly once
+  → Activate(window_id)
+  → GNOME reports that exact window focused=true, visible=true, minimized=false
+  → otherwise STOP before input
+
+4 ACT
+  computer_use mutation against the same pid + window_id
+  → delivery_mode="foreground"
+  → because the exact target was already frontmost, action-scoped restore returns to it
+
+5 REVALIDATE
+  if an action creates/closes/replaces the native target
+  → list_windows again before the next focus-bound mutation
+  → never carry stale identity forward
+
+6 COMPLETE VISIBLY
+  if visible_required
+  → present the final exact target again
+  → verify focused+visible
+  → verify requested app/page state
+  → leave it on screen
+```
+
+This trace is the default contract, not advice. The Hermes `computer_use` policy shim exposes ACQUIRE as `launch_app` and fails closed unless Cua produces one exact new `(pid, window_id)`. The policy shim and `action-span.py` both fail closed before foreground native input when exact presentation cannot be proved.
+
+For direct Hermes `computer_use` native input, use `action:"launch_app", app:"<local app>"` before discovery when the app is closed. Always provide exact integer `pid` and `window_id` for subsequent native input. Reads may remain target-free when their schema permits it.
+
+If background was selected and Cua explicitly returns `background_unavailable` / `foreground_required`, the action-span runner may fall forward once. It must pass the same exact presentation gate **before** retrying foreground.
+
+**Control-priority arbitration adds zero model calls.**
+
+### Foreground action coverage
+
+Treat foreground as a delivery/presentation contract. Cover each surface according to how it actually acts:
+
+| Kind | Actions / surface | Required foreground behavior |
+|---|---|---|
+| Pointer input | `click`, `double_click`, `right_click`, `middle_click`, `drag`, `scroll` | Exact `(pid, window_id)` → PRESENT → `delivery_mode="foreground"` → act on that same target. |
+| Text / keyboard input | `type`, `key` | Same exact-target PRESENT gate before foreground delivery. Lower-level Cua span tools may expose the equivalent operations as `type_text`, `press_key`, or `hotkey`. |
+| Closed local app | `launch_app` | ACQUIRE through Cua, bind exactly one new `(pid, window_id)`, then PRESENT before later foreground input. Launch itself is acquisition, not `delivery_mode` input. |
+| Persistent presentation | `/computer-use present` / `present-window.py` | Persistently focus + raise one exact native target and prove `focused=true`, `visible=true`, `minimized=false`. A raw `focus_app`/raise request is not a substitute for this proof when persistent foreground is required. |
+| Exact-bound browser mutation | `cua_browser_state` + `cua_browser_*` | Bind exact native `(pid, window_id)` first. PRESENT that native target for foreground/visible work. Typed page success alone never proves visibility. |
+| Direct AX value mutation | `set_value` | Semantic mutation without foreground delivery semantics. It does not substitute for PRESENT when the result must be visible. |
+| Observation / waits | `capture`, `wait`, `list_apps`, `list_windows` | Read/discovery only. No foreground delivery, and no persistent-presentation proof by themselves. |
+
+For the direct Hermes surface, the mechanically gated native foreground set is exactly the plugin's `_INPUT_ACTIONS`: `click`, `double_click`, `right_click`, `middle_click`, `drag`, `scroll`, `type`, and `key`. If one of those is sent with foreground delivery, missing exact identity or failed PRESENT stops the action before Cua input.
+
+For local action spans, do not freeze foreground coverage to that list. `action-span.py` reads Cua's MCP `tools/list` schema and treats **every tool exposing `delivery_mode`** as foreground-capable. It injects the chosen mode, requires exact `(pid, window_id)` for foreground, runs PRESENT, and only then sends the tool call. New Cua foreground-capable tools therefore inherit the gate without waiting for a GWCU list update.
+
+## Visible-result contract
+
+Foreground input and persistent presentation are different properties. `delivery_mode:"foreground"` alone does not satisfy “show me”, “watch this”, “take over”, “put this on my screen”, or “leave it open”.
+
+For `visible_required` work:
+
+1. ACQUIRE a closed local app through Cua, or resolve an already-running exact native target;
+2. present it through `present-window.py` / the policy shim;
+3. perform Cua work;
+4. re-resolve if native identity changes;
+5. present the final exact target again;
+6. verify requested state; leave it visible.
+
+Do not use generic compositor guessing or title-only focus as a substitute.
+
+## Call budget
+
+| Situation | setup calls before useful work |
+|---|---:|
+| known app/window | **0** model calls once exact `(pid, window_id)` is already known; presentation is local |
+| closed installed app | **1 local computer_use call** — ACQUIRE resolves + Cua launches + exact new identity is bound |
+| uncertain installed/PWA identity | **1** — `profile.sh route` |
+| host/runtime contradiction | **1** — `profile.sh recover` |
+| local postcondition/revision | **1** — `worldline-capture.sh` |
+| explicit whole-screen observation | **1** — `observe.sh` |
+
+## Execution ladder
+
+```text
+durable known fact             → .gwcu / current context
+current transient fact         → WORLDLINE
+closed local application       → Cua ACQUIRE (launch_app)
+web content/research           → browser/web tooling
+shell/CLI state                → terminal tool
+stable recurring mechanics     → repository script (when terminal is available)
+one-off mechanical fan-out     → execute_code
+predetermined GUI sequence     → one Cua action span
+user browser session/page      → exact-bound Cua browser route
+user browser native fallback   → Cua native AX/PX route
+explicit visual uncertainty    → WORLDLINE visual / observe.sh
+independent reasoning          → delegate_task
+real user choice               → clarify
+unresolved desktop conflict    → parent Cua/model loop
+```
+
+## Known target
+
+Two or more fully determined actions on the same current evidence **MUST cross the model/tool boundary exactly once**.
+
+When the terminal tool is available, the installed span runner is the preferred local composition surface:
+
+```bash
+ROOT="$HOME/.agents/skills/gnome-wayland-computer-use"
+"$ROOT/scripts/computer-use.sh" span --actions-json '{
+  "schema":"gwcu.action-span.request.v1",
+  "control":{"visible_required":true},
+  "actions":[
+    {"name":"click","arguments":{"pid":1234,"window_id":88,"x":640,"y":420}},
+    {"name":"type_text","arguments":{"pid":1234,"window_id":88,"text":"hello"}},
+    {"name":"key_press","arguments":{"pid":1234,"window_id":88,"key":"ENTER"}}
+  ]
+}'
+```
+
+The runner keeps one Cua MCP session open. For every foreground-capable mutation it locally proves exact presentation before sending `tools/call`. Split only when fresh state changes the decision, target identity changes, a branch is undeclared, Cua refuses/fails, or a real user choice appears. Without terminal access, keep using the built-in `computer_use` tool directly and preserve the same decision boundaries.
+
+
+### Physical trace
+
+Every action span returns a `trace` object with schema `gwcu.trace.v1`. This is the compact forensic record for what GWCU physically attempted: action names, delivery mode, exact targets, presentation proofs, WORLDLINE fence/action/postcondition revisions, runtime foreground fallbacks, and the terminal failure boundary when one occurs.
+
+The trace deliberately omits action arguments and result payloads. Typed text, clipboard content, document data, and other task payloads do not belong in the physical trace. The full span result remains available to the immediate caller; the trace is the safe at-a-glance artifact for tests, debugging, and PR evidence.
+
+`/computer-use trace` shows the most recent redacted `gwcu.trace.v1` physical span from ephemeral per-login runtime state, then the canonical control path. WORLDLINE remains the truth model; the trace is a forensic receipt, not another state store.
+
+## WORLDLINE postconditions
+
+Use WORLDLINE when the executor can state what must become true and its local helper surface is available. Awaited action spans seal a WORLDLINE fence **after PRESENT and immediately before Cua mutation**. Ordinary completion predicates are automatically required to have evidence newer than that fence revision, so a cached pre-action truth cannot satisfy a new action.
+
+```bash
+"$ROOT/scripts/worldline-capture.sh" --trigger action:save --expect-json '[{"path":"task.document.saved","op":"eq","value":true}]'
+```
+
+Prefer direct truth: AT-SPI, filesystem, process, D-Bus, settings, network and task watchers before pixels. WORLDLINE never injects input. If the local helper cannot be invoked, verify through available `computer_use` evidence instead of treating terminal access as a requirement for desktop control.
+
+## Unknown or browser-backed target
+
+For an installed app, PWA, or user browser session, use the local route helper when available:
+
+```bash
+"$ROOT/scripts/profile.sh" route --machine "<target name>"
+```
+
+That route performs the repo/workspace .gwcu lookup before deterministic identity discovery. `.gwcu` accelerates stable identity; live Cua/WORLDLINE truth wins on contradiction. When the resolved target is a closed local application, ACQUIRE it through `computer_use launch_app`; the route helper is not permission to launch through a terminal or desktop search.
+
+## Host contradiction
+
+When the local helper surface is available:
+
+```bash
+"$ROOT/scripts/profile.sh" recover --machine
+```
+
+Do not make the model perform `read → refresh → diagnose` as separate turns when deterministic recovery is available.
+
+## Whole screen
+
+When the local helper surface is available:
+
+```bash
+"$ROOT/scripts/observe.sh" --machine --screen /tmp/screen.png
+"$ROOT/scripts/observe.sh" --media --screen
+```
+
+Use visual escalation only when direct evidence is insufficient. Without the helper surface, use the built-in `computer_use` observation path.
+
+## `.gwcu`: durable truth, not runtime state
+
+Persistent machine/workspace truth belongs in one `.gwcu`, **never in `AGENTS.md`**. Never persist screenshots, documents, user text, credentials, transient focus/geometry, or WORLDLINE revisions.
+
+## Failure and refusal policy
+
+**Never answer a Cua refusal with raw pointer/keyboard injection. Never guess focus.**
+
+A failed ACQUIRE is an actuation boundary. Do not launch the app with terminal commands, GNOME search, keyboard shortcuts, or another actuator. Resolve ambiguity or report the deterministic acquisition failure.
+
+When operating a specific user browser session, keep its mutations on Cua; switching actuator planes invalidates the target and evidence assumptions already established for that session.
+
+A foreground presentation failure is an actuation boundary: do not send the input. Re-resolve exact identity or report the failure. A background→foreground retry is legal only after Cua explicitly says background delivery is unavailable and the exact presentation gate succeeds.
+
+## Completion proof
+
+```text
+direct oracle / WORLDLINE predicate
+→ exact Cua target truth
+→ focused+visible presentation proof when foreground/visible
+→ semantic/page verification
+→ pixels only when direct proof is insufficient
+```
+
+A task is incomplete when the requested visible result is not actually on the user's desktop.
+
+## Operator surfaces
+
+```bash
+/computer-use <task>
+/computer-use status
+/computer-use trace
+/computer-use present --pid PID --window-id ID
+/computer-use list-windows [--on-screen-only] [--pid PID]
+/computer-use cursor-color [#RRGGBB]
+/computer-use background [on|off|status]
+/computer-use managed [on|off|status]
+/computer-use truths
+/computer-use consent
+/computer-use doctor
+/computer-use help
+```
+
+`trace` prints the exact default control path. `present` is the deterministic exact-window presentation primitive. `list-windows` is read-only discovery (no presentation gate, works in both background modes). `cursor-color` sets the agent cursor fill color via Cua WinRects helper (default green, visual aid only). Operator forms require the local helper/terminal surface; their absence does not remove ordinary `computer_use` capability.
+
+## WORLDLINE installation and lifecycle
+
+WORLDLINE is an independent product and prerequisite for verified GWCU execution.
+It owns its installation, daemon, service, socket, upgrades and repair. GWCU
+does not bundle WORLDLINE source, install a duplicate daemon, or own its service
+units.
+
+The canonical socket is:
+
+```text
+$XDG_RUNTIME_DIR/worldline/worldline.sock
+```
+
+The user service is `worldline.service`. Check real readiness through the
+protocol, not by checking a socket file or systemd state alone:
+
+```bash
+python3 "$ROOT/scripts/worldline.py" request --json '{"op":"features"}'
+python3 "$ROOT/scripts/worldline-contract.py" "$FEATURES_JSON"
+```
+
+GWCU's installer first reuses a healthy WORLDLINE instance. If the service is
+installed but stopped, it asks WORLDLINE's service manager to start it. If
+WORLDLINE is missing, the installer asks before acquiring it and delegates to
+WORLDLINE's own lifecycle manager. The WORLDLINE repository must be public before the public GWCU acquisition path is released.
+
+For unattended acquisition, set `GWCU_WORLDLINE_INSTALL=1` explicitly. The
+read-only GNOME Shell frame extension has a separate consent boundary; use
+`GWCU_WORLDLINE_GRANT_FRAMES=1` only after the user has approved it. Interactive
+installs present WORLDLINE's own permission prompt.
+
+Use WORLDLINE's lifecycle manager for repair, upgrade and uninstall:
+
+```bash
+WORLDLINE_INSTALLER="${XDG_DATA_HOME:-$HOME/.local/share}/worldline/source/scripts/worldline-install.sh"
+"$WORLDLINE_INSTALLER" status --json
+"$WORLDLINE_INSTALLER" start
+"$WORLDLINE_INSTALLER" repair
+"$WORLDLINE_INSTALLER" upgrade
+"$WORLDLINE_INSTALLER" uninstall
+```
+
+GWCU upgrade and uninstall preserve WORLDLINE. A protocol mismatch or missing
+`receipt` operation fails readiness; GWCU never silently replaces an existing
+WORLDLINE installation.
+Project rationale and installation documentation lives in `README.md`.
