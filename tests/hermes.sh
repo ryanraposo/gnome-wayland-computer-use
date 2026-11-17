@@ -21,8 +21,10 @@ make_home() {
     cp "$ROOT/runtimes/hermes/plugin.yaml" "$plugin_dir/plugin.yaml"
     cp "$ROOT/runtimes/hermes/__init__.py" "$plugin_dir/__init__.py"
     : >"$plugin_dir/.gnome-wayland-computer-use-managed"
-    build_bundle "$home/skills/computer-use"
-    : >"$home/skills/computer-use/.gnome-wayland-computer-use-managed"
+    # Hermes' builtin computer-use skill lives here. GWCU must replace it in
+    # place; a root-level duplicate loses the name collision and never loads.
+    build_bundle "$home/skills/autonomous-ai-agents/computer-use"
+    : >"$home/skills/autonomous-ai-agents/computer-use/.gnome-wayland-computer-use-managed"
     cat >"$home/config.yaml" <<'YAML'
 plugins:
   enabled:
@@ -42,6 +44,21 @@ grep -Fq 'tools.override' "$ROOT/runtimes/hermes/plugin.yaml" || fail "Hermes to
 grep -Fq '"launch_app"' "$ROOT/runtimes/hermes/__init__.py" || fail "Hermes computer_use does not expose ACQUIRE"
 grep -Fq 'new_window_ambiguous' "$ROOT/runtimes/hermes/__init__.py" || fail "ACQUIRE does not fail closed on ambiguity"
 pass "skill owns task dispatch while plugin declares one policy capability"
+
+# /computer-use must be owned at Hermes' canonical builtin skill path. A second
+# root-level `computer-use` skill loses the name collision, so the installer
+# must retire it and install the canonical one in place.
+grep -Fq 'HERMES_SKILL_REL="autonomous-ai-agents/computer-use"' "$ROOT/install.sh" || fail "installer does not own the canonical builtin computer-use skill path"
+grep -Fq 'legacy-computer-use-' "$ROOT/install.sh" || fail "installer does not retire the stale root-level computer-use skill"
+grep -Fq 'HSKILL="$HERMES_ACTIVE_HOME/skills/$HERMES_SKILL_REL"' "$ROOT/install.sh" || fail "installer writes the skill somewhere other than the canonical path"
+
+# A required GNOME sign-out/in must be impossible to miss and must be actionable.
+grep -Fq 'reload_notice()' "$ROOT/install.sh" || fail "installer has no guided reload notice"
+grep -Fq 'ACTION REQUIRED — SIGN OUT AND BACK IN ONCE' "$ROOT/install.sh" || fail "reload notice is not prominent"
+grep -Fq 'NOT READY' "$ROOT/install.sh" || fail "reload notice does not state that computer use is not ready"
+grep -Fq 'reload_notice "GNOME must load winrects@cua' "$ROOT/install.sh" || fail "winrects reload is not guided"
+grep -Fq 'reload_notice "GNOME must reload your session' "$ROOT/install.sh" || fail "DRM repair reload is not guided"
+pass "canonical skill path and prominent sign-out/in guidance are locked"
 
 cat >"$TMP/presenter.py" <<'PY'
 #!/usr/bin/env python3
@@ -164,9 +181,9 @@ PY
 pass "Hermes ACQUIRE launches through Cua, binds exact new window, and foreground input stays exact/presented"
 
 HOME_A="$TMP/hermes-a";make_home "$HOME_A"
-[ -f "$HOME_A/skills/computer-use/SKILL.md" ] || fail "Hermes skill bundle missing"
-[ -f "$HOME_A/skills/computer-use/scripts/present-window.py" ] || fail "presentation gate missing from Hermes skill bundle"
-for retired in WORLDLINE.md GWCU.md DETERMINISM.md CAPABILITIES.md PERF_NOTES.md references; do [ ! -e "$HOME_A/skills/computer-use/$retired" ] || fail "retired docs leaked into bundle: $retired"; done
+[ -f "$HOME_A/skills/autonomous-ai-agents/computer-use/SKILL.md" ] || fail "Hermes skill bundle missing at canonical path"
+[ -f "$HOME_A/skills/autonomous-ai-agents/computer-use/scripts/present-window.py" ] || fail "presentation gate missing from Hermes skill bundle"
+for retired in WORLDLINE.md GWCU.md DETERMINISM.md CAPABILITIES.md PERF_NOTES.md references; do [ ! -e "$HOME_A/skills/autonomous-ai-agents/computer-use/$retired" ] || fail "retired docs leaked into bundle: $retired"; done
 pass "Hermes bundle carries skill, presenter and one README"
 
 # Installer owns exact automatic plugin enablement, not a post-install chore.

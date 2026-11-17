@@ -3,7 +3,13 @@
 set -euo pipefail
 
 APP_ID="gnome-wayland-computer-use"
-VERSION="2.7.2"
+VERSION="2.7.3"
+# Hermes' builtin computer-use skill lives at this canonical path. A second
+# skill with the same frontmatter name at the root loses the collision, so
+# /computer-use never becomes GWCU's contract. GWCU replaces the builtin in
+# place and retires its own stale root-level copy.
+HERMES_SKILL_REL="autonomous-ai-agents/computer-use"
+HERMES_LEGACY_SKILL_REL="computer-use"
 BASE_URL="${GWCU_BASE_URL:-https://ryanraposo.github.io/gnome-wayland-computer-use}"
 RELEASE_BASE_URL="${GWCU_RELEASE_URL:-https://github.com/ryanraposo/gnome-wayland-computer-use/releases/download/v$VERSION}"
 CUA_DRIVER_RS_VERSION="${GWCU_CUA_DRIVER_RS_VERSION:-0.39.0}" # deliberately pinned
@@ -21,8 +27,30 @@ ok(){ printf '%s[OK]%s %s\n' "$GREEN" "$RESET" "$*"; }
 warn(){ printf '%s[WARN]%s %s\n' "$YELLOW" "$RESET" "$*"; }
 error(){ printf '%s[ERROR]%s %s\n' "$RED" "$RESET" "$*" >&2; }
 action(){ printf '%s[ACTION]%s %s\n' "$YELLOW" "$RESET" "$*"; }
+reload_notice(){
+  local reason=$1 rerun
+  if [ -n "$SELF" ] && [ -f "$SELF/install.sh" ]; then
+    rerun="cd '$SELF' && ./install.sh"
+  else
+    rerun="rerun the same install command you used"
+  fi
+  printf '\n'
+  printf '┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓\n'
+  printf '┃  ACTION REQUIRED — SIGN OUT AND BACK IN ONCE             ┃\n'
+  printf '┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛\n'
+  printf '  Why:  %s\n' "$reason"
+  printf '  Until you do this and rerun the installer, computer use\n'
+  printf '  is NOT READY — /computer-use cannot prove an exact target.\n\n'
+  printf '  1. Save your work and close your applications.\n'
+  printf '  2. Log out: GNOME system menu -> Power -> Log Out\n'
+  printf '     (or: loginctl terminate-session "$XDG_SESSION_ID")\n'
+  printf '  3. Log back in as the SAME user on the SAME desktop.\n'
+  printf '  4. In a new terminal on that desktop, run:\n'
+  printf '       %s\n' "$rerun"
+  printf '     Expected final line: READY // PROVED\n\n'
+}
 die(){ error "$*"; [ -n "${INSTALL_LOG:-}" ] && printf '        details: %s\n' "$INSTALL_LOG" >&2; exit 1; }
-needs_session(){ action "$*"; [ -n "${INSTALL_LOG:-}" ] && printf '         details: %s\n' "$INSTALL_LOG"; exit 20; }
+needs_session(){ action "$*"; reload_notice "GNOME must reload your session for the change this install just made."; [ -n "${INSTALL_LOG:-}" ] && printf '        details: %s\n' "$INSTALL_LOG" >&2; exit 20; }
 as_root(){ if command -v pkexec >/dev/null; then pkexec "$@"; elif command -v sudo >/dev/null; then sudo "$@"; else die "pkexec or sudo is required"; fi; }
 get_file(){ local r=$1 d=$2; mkdir -p "$(dirname "$d")"; [ -n "$SELF" ] && [ -f "$SELF/$r" ] || die "verified source missing: $r"; cp "$SELF/$r" "$d"; }
 
@@ -501,17 +529,34 @@ retire_duplicate_plugins(){
   done
 }
 install_hermes_target(){
-  local target=$1 HSKILL PLUGIN
+  local target=$1 HSKILL LEGACY PLUGIN retired
   local HERMES_HOME="$target"
   HERMES_ACTIVE_HOME="$HERMES_HOME"
   BACKUPS="$HERMES_ACTIVE_HOME/backups/$APP_ID"
   MANIFEST="$BACKUPS/manifest.tsv"
   mkdir -p "$HERMES_ACTIVE_HOME/skills" "$HERMES_ACTIVE_HOME/plugins"
-  HSKILL="$HERMES_ACTIVE_HOME/skills/computer-use"
+  HSKILL="$HERMES_ACTIVE_HOME/skills/$HERMES_SKILL_REL"
+  LEGACY="$HERMES_ACTIVE_HOME/skills/$HERMES_LEGACY_SKILL_REL"
+  # A GWCU-written root-level `computer-use` skill collides by name with
+  # Hermes' builtin and never becomes /computer-use. Retire it so the
+  # canonical path is the single owner of the skill name.
+  if [ -d "$LEGACY" ]; then
+    if [ -f "$LEGACY/.gnome-wayland-computer-use-managed" ]; then
+      rm -rf "$LEGACY"
+      info "Removed GWCU's stale root-level computer-use skill copy"
+    else
+      retired="$BACKUPS/legacy-computer-use-$(date +%s%N)-$$"
+      mkdir -p "$BACKUPS"
+      mv "$LEGACY" "$retired"
+      printf '%s\t%s\n' "$LEGACY" "$retired" >>"$MANIFEST"
+      info "Archived pre-existing root-level computer-use skill; canonical path now owns /computer-use"
+    fi
+  fi
   if [ -e "$HSKILL" ] && [ ! -f "$HSKILL/.gnome-wayland-computer-use-managed" ]; then
     warn "Replacing existing computer-use skill at ${HSKILL/$HOME/\~}; archived for teardown"
   fi
   install_dir "$TMP/bundle" "$HSKILL"
+  grep -q '^name: computer-use$' "$HSKILL/SKILL.md" || die "canonical skill identity failed in $HSKILL"
   PLUGIN="$HERMES_HOME/plugins/$APP_ID"
   install_dir "$TMP/plugin" "$PLUGIN"
   retire_duplicate_plugins "$PLUGIN"
@@ -694,11 +739,11 @@ except Exception: print("no")
 PY
 )
 if [ "$PENDING_RESTART" = yes ]; then
-  info "Next: Hermes daemon sync was deferred while live sessions were active; rerun ./install.sh when they finish."
+  info "Hermes gateway restart is pending while live sessions were active."
 fi
 
 printf '\n%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n' "$DIM" "$RESET"
-if $RELOAD_REQUIRED; then printf '%sINSTALL COMPLETE // ONE GNOME RELOAD REQUIRED%s\n' "$BOLD" "$RESET"; printf 'Sign out/in once, rerun ./install.sh, and it will prove exact presentation.\n'; elif $COMPAT; then printf '%sINSTALLED FOR NEXT UBUNTU GNOME SESSION%s\n' "$BOLD" "$RESET"; else printf '%sREADY // PROVED%s\n' "$BOLD" "$RESET"; fi
+if $RELOAD_REQUIRED; then printf '%sSTOP: SIGN OUT / SIGN IN REQUIRED%s\n' "$BOLD" "$RESET"; elif $COMPAT; then printf '%sINSTALLED FOR NEXT UBUNTU GNOME SESSION%s\n' "$BOLD" "$RESET"; else printf '%sREADY // PROVED%s\n' "$BOLD" "$RESET"; fi
 printf '  Source:          %s @ %s\n' "$SOURCE_KIND" "${SOURCE_COMMIT:0:12}"
 printf '  Cua Driver:      %s\n' "$CUA_DRIVER_RS_VERSION"
 printf '  Cua logon:       %s\n' "$CUA_AUTOSTART_LABEL"
@@ -706,7 +751,25 @@ printf '  Visible takeover:%s\n' "$([ "$RELOAD_REQUIRED" = true ] && printf ' pe
 printf '  WORLDLINE:       %s\n' "$([ "$COMPAT" = true ] && printf installed || printf ready)"
 printf '  Observation:     %s\n' "$([ "$COMPAT" = true ] && printf installed || printf ready)"
 printf '  .gwcu truths:    %s\n' "$MANAGED_VALUE"; printf '  Background pref: %s\n' "$BACKGROUND_VALUE"
-if $HERMES; then printf '  Hermes policy:   enabled in %s profile(s)\n' "$HERMES_TARGET_COUNT"; else printf '  Hermes:          not detected (agent skill still installed)\n'; fi
+if $HERMES; then
+  printf '  Hermes policy:   enabled in %s profile(s)\n' "$HERMES_TARGET_COUNT"
+  printf '  /computer-use:   %s\n' "$HERMES_DEFAULT_HOME/skills/$HERMES_SKILL_REL"
+else printf '  Hermes:          not detected (agent skill still installed)\n'; fi
 printf '%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n' "$DIM" "$RESET"
 printf '\n/computer-use trace              exact foreground path\n/computer-use background status  current foreground/background preference\n/computer-use doctor             full machine proof\n'
 printf '\nUninstall: curl -fsSL %s/uninstall.sh | bash\n' "$BASE_URL"; printf 'Teardown:  %s/scripts/teardown.sh --help\n' "$PRIMARY"; printf 'Receipt:   %s\nLog:       %s\n' "$RECEIPT" "$INSTALL_LOG"
+if $HERMES; then
+  printf '\n/computer-use loads in a NEW Hermes session. Restart the gateway if this\n'
+  printf 'install changed a running one, then open a fresh session.\n'
+  printf 'Check: hermes gateway status\n'
+fi
+if $RELOAD_REQUIRED; then
+  reload_notice "GNOME must load winrects@cua before exact window presentation can be proved."
+fi
+if [ "$PENDING_RESTART" = yes ]; then
+  printf '\n%sHERMES RESTART REQUIRED%s\n' "$BOLD" "$RESET"
+  printf '  Gateway identity sync was deferred while live sessions were active.\n'
+  printf '  1. Finish and close active Hermes sessions.\n'
+  printf '  2. Run: hermes gateway restart\n'
+  printf '  3. Open a fresh Hermes session and run /computer-use doctor.\n'
+fi

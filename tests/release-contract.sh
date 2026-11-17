@@ -34,7 +34,7 @@ import re
 import sys
 
 root = pathlib.Path(sys.argv[1])
-for name in (".github/workflows/ci.yml", ".github/workflows/release.yml"):
+for name in (".github/workflows/ci.yml", ".github/workflows/release.yml", ".github/workflows/pages.yml"):
     text = (root / name).read_text()
     for rel in set(re.findall(r"(?:bash\s+)?\./(tests/[A-Za-z0-9_.-]+\.(?:sh|py))", text)):
         target = root / rel

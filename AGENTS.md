@@ -56,6 +56,7 @@ A change is complete only when those boundaries still agree in code, runtime ins
 11. **Persistent machine/user truth never belongs in AGENTS.md.**
 12. **Live Cua/WORLDLINE evidence beats cached truth on contradiction.**
 13. **Physical traces are ephemeral receipts, not truth.** `gwcu.trace.v1` may live only in private per-login runtime state; it never enters `.gwcu` or replaces WORLDLINE.
+14. **Pages bootstrap is a release artifact.** The `curl … | bash` commands in `index.html` must always serve the current `main` bootstrap. The Pages deploy workflow and its post-deploy byte-for-byte check are mandatory; a stale bootstrap is a release blocker.
 
 ## Change routing
 
@@ -103,7 +104,9 @@ Lifecycle changes also inspect:
 install.sh
 uninstall.sh
 scripts/teardown.sh
+.github/workflows/pages.yml
 tests/
+tests/pages-freshness.sh
 README.md
 index.html
 ```
@@ -134,7 +137,7 @@ The installer must remain:
 - concurrent installs are locked so two installers cannot mutate the same GWCU state at once;
 - explicit about PipeWire/portal/AT-SPI dependencies;
 - idempotent;
-- compatible with curl-pipe terminal prompting;
+- compatible with curl-pipe terminal prompting, and published from the exact `main` commit with a post-deploy freshness check;
 - ownership-aware and reversible;
 - exact about the `computer-use` skill versus built-in `computer_use` tool boundary;
 - profile-aware without silently opting unrelated profiles into GWCU;
@@ -161,7 +164,10 @@ bash tests/determinism.sh
 bash tests/hermes.sh
 bash tests/lifecycle-safety.sh
 bash tests/run.sh
+GWCU_PAGES_EXPECT_COMMIT=main bash tests/pages-freshness.sh
 ```
+
+`tests/pages-freshness.sh` compares every published bootstrap file byte-for-byte with the exact `main` commit and syntax-checks the served installers. A stale Pages artifact is a release blocker; never delete or disable `.github/workflows/pages.yml`.
 
 For changes that affect live GNOME consent/control, also run:
 
