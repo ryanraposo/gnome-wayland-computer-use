@@ -16,7 +16,7 @@ class WorldlineAdmissionTests(unittest.TestCase):
     def test_exact_compositor_identity_and_verified_foreground(self):
         result = presentation.self_test()
         self.assertTrue(result["ok"], result)
-        self.assertIn("worldline_exact_pid_compositor_id_binding", result["checks"])
+        self.assertIn("worldline_exact_pid_cua_window_id_binding", result["checks"])
 
     def test_no_shell_activation_surface(self):
         source = (Path(__file__).resolve().parents[1] / "scripts/present-window.py").read_text()
