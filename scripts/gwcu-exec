@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Stable executable contract for non-skill consumers (including Horner).
+# stdin carries a gwcu.action-span.request.v1 or gwcu.transaction.v1 object.
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+PYTHON="${GWCU_SYSTEM_PYTHON:-/usr/bin/python3}"
+[ -x "$PYTHON" ] || PYTHON="$(command -v python3)"
+exec "$PYTHON" "$ROOT/action-span.py" --stdin "$@"

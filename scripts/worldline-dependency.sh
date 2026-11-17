@@ -58,9 +58,9 @@ case "$COMMAND" in
     command -v git >/dev/null 2>&1 || die "git is required to acquire WORLDLINE."
     TMP="$(mktemp -d "${TMPDIR:-/tmp}/gwcu-worldline.XXXXXX")"
     if command -v gh >/dev/null 2>&1; then
-      gh repo clone "$REPO" "$TMP/source" -- --depth 1 --branch "$REF" || die "Could not acquire WORLDLINE. Confirm GitHub access to the private repository $REPO."
+      gh repo clone "$REPO" "$TMP/source" -- --depth 1 --branch "$REF" || die "Could not acquire WORLDLINE from $REPO. Check network access or install WORLDLINE separately."
     else
-      git clone --depth 1 --branch "$REF" "https://github.com/$REPO.git" "$TMP/source" || die "Could not acquire WORLDLINE. The repository is private; authenticate GitHub access or install WORLDLINE separately."
+      git clone --depth 1 --branch "$REF" "https://github.com/$REPO.git" "$TMP/source" || die "Could not acquire WORLDLINE from $REPO. Check network access or install WORLDLINE separately."
     fi
     [ -x "$TMP/source/scripts/worldline-install.sh" ] || die "The selected WORLDLINE ref does not contain its independent installer."
     if [ "${GWCU_WORLDLINE_GRANT_FRAMES:-0}" = 1 ]; then

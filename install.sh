@@ -434,11 +434,12 @@ RELOAD_REQUIRED=false
 if gnome-extensions info winrects@cua >/dev/null 2>&1 && gnome-extensions info winrects@cua 2>/dev/null | grep -qi 'State: ACTIVE'; then ok "winrects@cua is ACTIVE"; else RELOAD_REQUIRED=true; warn "winrects@cua is installed and will become active after one GNOME sign-out/sign-in"; fi
 
 info "[4/8] Installing GWCU runtime, skill and WORLDLINE"
-FILES=(VERSION README.md agents/openai.yaml scripts/action-span.py scripts/app-identity.sh scripts/capture.sh scripts/check-update.sh scripts/computer-use.sh scripts/cua-health.py scripts/diagnose.sh scripts/mcp_client.py scripts/migrate-main.sh scripts/observe.sh scripts/observer.py scripts/portal-control.py scripts/present-window.py scripts/profile.sh scripts/teardown.sh scripts/truths.py scripts/worldline.py scripts/worldline-contract.py scripts/worldline-dependency.sh scripts/worldline-capture.sh systemd/user/gnome-wayland-computer-use-observer.socket systemd/user/gnome-wayland-computer-use-observer.service)
+FILES=(VERSION README.md agents/openai.yaml scripts/action-span.py scripts/gwcu-exec scripts/app-identity.sh scripts/capture.sh scripts/check-update.sh scripts/computer-use.sh scripts/cua-health.py scripts/diagnose.sh scripts/mcp_client.py scripts/migrate-main.sh scripts/observe.sh scripts/observer.py scripts/portal-control.py scripts/present-window.py scripts/profile.sh scripts/teardown.sh scripts/truths.py scripts/worldline.py scripts/worldline-contract.py scripts/worldline-dependency.sh scripts/worldline-capture.sh systemd/user/gnome-wayland-computer-use-observer.socket systemd/user/gnome-wayland-computer-use-observer.service)
 rm -rf "$TMP/bundle"; mkdir -p "$TMP/bundle"
 for f in "${FILES[@]}"; do get_file "$f" "$TMP/bundle/$f"; done
 get_file SKILL.md "$TMP/bundle/SKILL.md"
 for f in "$TMP/bundle/scripts"/*.sh "$TMP/bundle/scripts"/*.py; do chmod +x "$f"; done
+chmod +x "$TMP/bundle/scripts/gwcu-exec"
 plugin_name_of(){ awk -F': *' '/^name:[[:space:]]*/{gsub(/^[[:space:]]+|[[:space:]]+$|["'\'']/,"",$2); print $2; exit}' "$1"; }
 manifest_backup(){ local dst=$1 backup; mkdir -p "$BACKUPS"; backup="$BACKUPS/$(date +%s%N)-$(basename "$dst")"; mv "$dst" "$backup"; printf '%s\t%s\n' "$dst" "$backup" >>"$MANIFEST"; }
 install_dir(){ local src=$1 dst=$2; if [ -e "$dst" ] && [ ! -f "$dst/.gnome-wayland-computer-use-managed" ]; then manifest_backup "$dst"; fi; rm -rf "$dst"; mkdir -p "$(dirname "$dst")"; cp -a "$src" "$dst"; : >"$dst/.gnome-wayland-computer-use-managed"; }
@@ -556,17 +557,27 @@ ok "Legacy published-main control plane retired; Cua is the only actuator"
 
 info "[7/8] Enabling and live-proving WORLDLINE + observer + exact presentation"
 UNIT_DIR="$HOME/.config/systemd/user"; mkdir -p "$UNIT_DIR"
-for u in gnome-wayland-computer-use-observer.socket gnome-wayland-computer-use-observer.service gnome-wayland-computer-use-worldline.socket gnome-wayland-computer-use-worldline.service; do cp "$PRIMARY/systemd/user/$u" "$UNIT_DIR/$u"; done
+for u in gnome-wayland-computer-use-observer.socket gnome-wayland-computer-use-observer.service; do cp "$PRIMARY/systemd/user/$u" "$UNIT_DIR/$u"; done
+for u in gnome-wayland-computer-use-worldline.socket gnome-wayland-computer-use-worldline.service; do
+  systemctl --user disable --now "$u" >/dev/null 2>&1 || true
+  if [ -f "$UNIT_DIR/$u" ] && grep -Fq 'gnome-wayland-computer-use/scripts/worldline.py' "$UNIT_DIR/$u"; then rm -f "$UNIT_DIR/$u"; fi
+done
+systemctl --user daemon-reload
 systemctl --user daemon-reload || $COMPAT || die "user systemd reload failed"
-for u in gnome-wayland-computer-use-observer.socket gnome-wayland-computer-use-observer.service gnome-wayland-computer-use-worldline.socket gnome-wayland-computer-use-worldline.service; do systemctl --user reset-failed "$u" 2>/dev/null || true; done
-if ! $COMPAT; then systemctl --user enable --now gnome-wayland-computer-use-observer.socket >>"$INSTALL_LOG" 2>&1 || die "observer socket failed to enable"; systemctl --user enable --now gnome-wayland-computer-use-worldline.socket >>"$INSTALL_LOG" 2>&1 || die "WORLDLINE socket failed to enable"; fi
+for u in gnome-wayland-computer-use-observer.socket gnome-wayland-computer-use-observer.service; do systemctl --user reset-failed "$u" 2>/dev/null || true; done
+if ! $COMPAT; then systemctl --user enable --now gnome-wayland-computer-use-observer.socket >>"$INSTALL_LOG" 2>&1 || die "observer socket failed to enable"; fi
 "$PYTHON" "$PRIMARY/scripts/observer.py" self-test >>"$INSTALL_LOG" || die "observer.py self-test failed"
 if ! $COMPAT; then bash "$PRIMARY/scripts/worldline-dependency.sh" ensure >>"$INSTALL_LOG" 2>&1 || die "Standalone WORLDLINE dependency could not be resolved and verified"; fi
 "$PYTHON" "$PRIMARY/scripts/worldline.py" self-test >>"$INSTALL_LOG" || die "worldline.py self-test failed"
 "$PYTHON" "$PRIMARY/scripts/present-window.py" self-test >>"$INSTALL_LOG" || die "presentation gate self-test failed"
 if ! $COMPAT; then
   ensure_user_daemon observer "ScreenCast observer" gnome-wayland-computer-use-observer.socket gnome-wayland-computer-use-observer.service "$PYTHON" "$PRIMARY/scripts/observer.py" client status || die "ScreenCast observer is not responding"
-  ensure_user_daemon worldline "WORLDLINE" gnome-wayland-computer-use-worldline.socket gnome-wayland-computer-use-worldline.service "$PYTHON" "$PRIMARY/scripts/worldline.py" request --json '{"op":"status"}' || die "WORLDLINE is not responding"
+  WORLDLINE_FEATURES="$STATE/worldline-features.json"
+  "$PYTHON" "$PRIMARY/scripts/worldline.py" request --json '{"op":"features"}' >"$WORLDLINE_FEATURES" 2>>"$INSTALL_LOG" || die "Install and start standalone WORLDLINE first; its private socket is unavailable"
+  # A stale WORLDLINE that answers discovery but lacks `receipt` would install
+  # cleanly and only fail mid-action, so refuse it here.
+  if ! "$PYTHON" "$PRIMARY/scripts/worldline-contract.py" "$WORLDLINE_FEATURES" >>"$INSTALL_LOG" 2>&1
+  then die "Standalone WORLDLINE must advertise the 'receipt' op; update WORLDLINE before installing GWCU"; fi
   if $RELOAD_REQUIRED; then warn "Exact presentation live proof is deferred until GNOME loads winrects@cua"; else "$PYTHON" "$PRIMARY/scripts/present-window.py" status >"$STATE/presentation.json" 2>>"$INSTALL_LOG" || die "Cua GNOME exact-presentation gate unavailable"; fi
 fi
 ok "WORLDLINE + observer protocols proved; presentation gate qualified"
@@ -581,7 +592,7 @@ try:d=json.loads(p.read_text())
 except Exception:d={}
 d["schema"]="gwcu.ownership.v3";d["toolkit_accessibility"]={"previous":sys.argv[2],"changed":sys.argv[3]=="true"}
 u=d.setdefault("upstream",{});c=u.setdefault("cua_driver",{});c["version"]=sys.argv[4];c["owned"]=bool(c.get("provisioned") or c.get("owned"));u.setdefault("winrects",{"owned":False})
-enabled=sys.argv[6]!="true";d["user_units"]={"observer_socket":enabled,"observer_service":enabled,"worldline_socket":enabled,"worldline_service":enabled};d["hermes_plugin"]={"managed":sys.argv[5]=="true","name":"gnome-wayland-computer-use","profiles":int(sys.argv[7])};d["distro_foundation_owned"]=False
+enabled=sys.argv[6]!="true";d["user_units"]={"observer_socket":enabled,"observer_service":enabled};d["hermes_plugin"]={"managed":sys.argv[5]=="true","name":"gnome-wayland-computer-use","profiles":int(sys.argv[7])};d["distro_foundation_owned"]=False
 p.write_text(json.dumps(d,separators=(",",":"))+"\n");os.chmod(p,0o600)
 PY
 DIAG_CODE="compat"
@@ -608,10 +619,12 @@ PY
 fi
 MANAGED_VALUE=$(cat "$PREF" 2>/dev/null || printf unknown); BACKGROUND_VALUE=$(cat "$BACKGROUND_PREF" 2>/dev/null || printf unknown)
 RECEIPT="$STATE/install-receipt.json"
-"$PYTHON" - "$RECEIPT" "$VERSION" "$CUA_DRIVER_RS_VERSION" "$DIAG_CODE" "$RELOAD_REQUIRED" "$HERMES" "$HERMES_POLICY_STATUS" "$MANAGED_VALUE" "$BACKGROUND_VALUE" "$HERMES_TARGET_COUNT" "$SOURCE_KIND" "$SOURCE_COMMIT" "$SOURCE_SHA256" <<'PY'
+"$PYTHON" - "$RECEIPT" "$VERSION" "$CUA_DRIVER_RS_VERSION" "$DIAG_CODE" "$RELOAD_REQUIRED" "$HERMES" "$HERMES_POLICY_STATUS" "$MANAGED_VALUE" "$BACKGROUND_VALUE" "$HERMES_TARGET_COUNT" "$SOURCE_KIND" "$SOURCE_COMMIT" "$SOURCE_SHA256" "${WORLDLINE_FEATURES:-/dev/null}" <<'PY'
 import json,os,pathlib,sys,time
 p=pathlib.Path(sys.argv[1])
-d={"schema":"gwcu.install-receipt.v1","version":sys.argv[2],"cua_driver":sys.argv[3],"diagnosis":sys.argv[4],"reload_required":sys.argv[5]=="true","hermes_detected":sys.argv[6]=="true","hermes_policy":sys.argv[7],"managed_truths":sys.argv[8],"background_priority":sys.argv[9],"hermes_profiles":int(sys.argv[10]),"source":{"kind":sys.argv[11],"commit":sys.argv[12],"sha256":sys.argv[13] or None},"installed_at_unix":int(time.time())}
+try:wf=json.loads(pathlib.Path(sys.argv[14]).read_text())
+except Exception:wf={}
+d={"schema":"gwcu.install-receipt.v1","version":sys.argv[2],"cua_driver":sys.argv[3],"diagnosis":sys.argv[4],"reload_required":sys.argv[5]=="true","hermes_detected":sys.argv[6]=="true","hermes_policy":sys.argv[7],"managed_truths":sys.argv[8],"background_priority":sys.argv[9],"hermes_profiles":int(sys.argv[10]),"source":{"kind":sys.argv[11],"commit":sys.argv[12],"sha256":sys.argv[13] or None},"worldline":{"protocol":wf.get("protocol"),"domain_id":wf.get("domain_id"),"receipt_schema":wf.get("receipt_schema"),"requires":"receipt"},"installed_at_unix":int(time.time())}
 p.write_text(json.dumps(d,separators=(",",":"))+"\n");os.chmod(p,0o600)
 PY
 ok "Installed state proved; receipt written"

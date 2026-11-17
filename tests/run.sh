@@ -132,19 +132,18 @@ pass "teardown removes runtime integration, not workspace truth"
 
 ! grep -Eq 'ydotool|uinput|org\.cua\.WinRects|cua-driver' "$capture" || fail "direct observation owns control machinery"
 ! grep -Eq 'ydotool|uinput' "$worldline" || fail "WORLDLINE owns raw input"
-
-# The AT-SPI adapter and visual capture now live in the delegated WORLDLINE
-# package (ryanraposo/WORLDLINE), which GWCU's worldline.py shim forwards to.
+# The AT-SPI adapter and visual capture live in the standalone WORLDLINE
+# package; GWCU's worldline.py is only its socket client.
 WORLDLINE_SRC="${GWCU_WORLDLINE_ROOT:-$HOME/repos/WORLDLINE}/src/worldline/desktop_events.py"
 WORLDLINE_PKG="${XDG_DATA_HOME:-$HOME/.local/share}/worldline/source/src/worldline/desktop_events.py"
 if [ -f "$WORLDLINE_SRC" ]; then
     grep -q 'Atspi.EventListener' "$WORLDLINE_SRC" || fail "WORLDLINE AT-SPI adapter missing"
 elif [ -f "$WORLDLINE_PKG" ]; then
     grep -q 'Atspi.EventListener' "$WORLDLINE_PKG" || fail "WORLDLINE AT-SPI adapter missing"
-else
-    warn "WORLDLINE package not found; skipping AT-SPI adapter check"
 fi
 grep -q 'def capture' "$ROOT/scripts/observer.py" || fail "WORLDLINE visual escalation missing"
+grep -q 'standalone WORLDLINE' "$worldline" || fail "WORLDLINE standalone client missing"
+! grep -q 'def serve' "$worldline" || fail "embedded WORLDLINE daemon remains"
 pass "read-only sensors stay read-only"
 
 cat >"$TMP/fake-cua" <<'PY'
@@ -202,8 +201,10 @@ assert repair['attempted'] is True and repair['ok'] is False
 assert 'XDG_SESSION_TYPE is not wayland' in repair['failures']
 PY
 XDG_RUNTIME_DIR="$TMP/runtime" python3 "$ROOT/scripts/observer.py" self-test >/dev/null || fail "observer self-test"
-if XDG_RUNTIME_DIR="$TMP/world" python3 "$worldline" self-test >/dev/null; then fail "missing standalone WORLDLINE service passed readiness"; fi
-pass "diagnostics and read-only runtimes self-test"
+if XDG_RUNTIME_DIR="$TMP/world" python3 "$worldline" self-test >/dev/null; then
+  fail "missing standalone WORLDLINE service passed readiness"
+fi
+pass "diagnostics and observer self-test; missing WORLDLINE fails closed"
 
 for f in SKILL.md runtimes/openai/SKILL.md README.md; do grep -qi 'Cua' "$ROOT/$f" || fail "$f lost Cua"; grep -qi 'WORLDLINE' "$ROOT/$f" || fail "$f lost WORLDLINE"; grep -qi 'No X11' "$ROOT/$f" || fail "$f lost GNOME Wayland qualification"; grep -qi 'Remote Desktop' "$ROOT/$f" || fail "$f lost consent model"; done
 grep -qi 'Observation is an interrupt' "$ROOT/README.md" || fail "README lost core inversion"

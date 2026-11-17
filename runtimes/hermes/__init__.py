@@ -26,6 +26,14 @@ _INPUT_ACTIONS = frozenset({
     "click", "double_click", "right_click", "middle_click",
     "drag", "scroll", "type", "key",
 })
+# Every Cua/Hermes computer_use action that may carry delivery_mode.
+# Kept in sync with Cua's tools/list schema: any tool exposing delivery_mode
+# is foreground-capable and must pass the PRESENT gate before actuation.
+# Source of truth for membership: research/hermes-override-cua-wayland.md.
+_FOREGROUND_ACTIONS = frozenset({
+    "click", "double_click", "right_click", "middle_click",
+    "drag", "scroll", "type", "key", "set_value",
+})
 _TRUE = frozenset({"on", "yes", "true", "1", "background"})
 _SUBCOMMANDS = (
     "status",
@@ -288,7 +296,7 @@ def _wrap_builtin(handler):
         action = call.get("action")
         if action == "launch_app":
             return _acquire_app(call, kwargs)
-        if action in _INPUT_ACTIONS:
+        if action in _FOREGROUND_ACTIONS:
             if "delivery_mode" not in call:
                 call["delivery_mode"] = _standing_delivery_mode()
             if call.get("delivery_mode") == "foreground":
@@ -360,13 +368,23 @@ def _extend_schema(schema: dict) -> None:
     props = params.setdefault("properties", {})
     action = props.setdefault("action", {})
     enum = action.setdefault("enum", [])
-    if "launch_app" not in enum:
-        enum.append("launch_app")
+    for name in ("launch_app", "set_value"):
+        if name not in enum:
+            enum.append(name)
     props.setdefault("app", {"type": "string"})
+    props.setdefault(
+        "delivery_mode",
+        {
+            "type": "string",
+            "enum": ["foreground", "background"],
+            "description": "Delivery mode; omitted inherits the standing GWCU preference.",
+        },
+    )
     action["description"] = (
         str(action.get("description", ""))
         + " `launch_app` is GWCU ACQUIRE: resolve a local .desktop app, invoke Cua launch_app, "
-          "and return only after one exact new (pid, window_id) is bound."
+          "and return only after one exact new (pid, window_id) is bound. `set_value` is a semantic "
+          "AX mutation; it does not substitute for the PRESENT gate when the result must be visible."
     )
 
 
@@ -374,6 +392,14 @@ def register(ctx):
     """Enforce control policy and install /computer-use completion metadata."""
     _install_completion_contract(ctx)
     _write_gateway_identity()
+
+    wayland = os.getenv("XDG_SESSION_TYPE") == "wayland" or bool(os.getenv("WAYLAND_DISPLAY"))
+    if not wayland:
+        return {
+            "ok": False,
+            "code": "gwcu_not_wayland",
+            "detail": "GWCU requires Ubuntu GNOME Wayland (XDG_SESSION_TYPE=wayland / WAYLAND_DISPLAY set)",
+        }
 
     if not _override_allowed(ctx):
         return None

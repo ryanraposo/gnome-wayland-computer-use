@@ -14,6 +14,8 @@ For an approved installation:
 
 1. Confirm the target is the local desktop the user intends to equip. GWCU's qualified target is Ubuntu 26.04 GNOME Wayland.
 2. Read `README.md`, then use the repository's `install.sh`. Do not invent a parallel setup path.
+   For an existing checkout update, use `./update.sh` after standalone
+   WORLDLINE is updated; it fetches the current branch and reruns `install.sh`.
 3. Open a new, visible terminal window on the logged-in desktop (for example GNOME Terminal) and run the installer there as the logged-in desktop user. Do not run it from a hidden or headless agent terminal pane, and do not wrap the whole installer in `sudo`: its Sharing/consent flow and GNOME's prompts must be visible to the user.
 4. Preserve unrelated agent/runtime configuration. Let the installer select the supported integration it actually finds.
 5. Treat graphical Remote Desktop / remote-control consent as a real user authorization boundary. When the RemoteDesktop portal is missing, the installer opens GNOME Settings -> Sharing -> Remote Desktop (Screen Sharing), asks the user to turn on Remote Desktop / Screen Sharing, and waits for the portal before continuing. Explain that step and let the user approve GNOME's control prompt; never pre-answer or automate consent.
@@ -72,9 +74,9 @@ Current-state knowledge / control loop:
 
 ```text
 README.md
-scripts/worldline.py
+scripts/worldline.py (standalone socket client; no embedded daemon)
 scripts/worldline-capture.sh
-systemd/user/gnome-wayland-computer-use-worldline.*
+WORLDLINE repository: worldline.service and its one revision store
 ```
 
 Visual observation:
