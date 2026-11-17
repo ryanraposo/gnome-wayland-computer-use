@@ -115,7 +115,7 @@ A visible-result request is incomplete unless WORLDLINE verifies the exact targe
 
 GNOME 50+ modes: **full foreground** unsupported pending a qualified Cua activation adapter; **verified foreground** requires exact identity + compositor geometry + RemoteDesktop input; **semantic interaction** uses AT-SPI; **desktop visual** is optional ScreenCast/PipeWire + RemoteDesktop; **observe-only** is the safe fallback. Available, unavailable, denied and stale states are explicit. Desktop capture does not gate semantic operation.
 
-The full action matrix and policy rules live in `SKILL.md`. The Hermes plugin gates foreground actions; local action spans revalidate WORLDLINE before dispatch and preserve the newer-revision postcondition fence.
+The exhaustive foreground action matrix belongs in `SKILL.md`. The policy plugin gates Hermes actions; local spans cover every Cua tool exposing `delivery_mode`. They revalidate WORLDLINE before dispatch and preserve the newer-revision postcondition fence.
 ## WORLDLINE
 
 WORLDLINE turns repeated observation loops into local predicate-driven continuation:
