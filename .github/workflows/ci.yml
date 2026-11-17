@@ -55,12 +55,15 @@ jobs:
       - name: Check repository visibility
         id: visibility
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           metadata_file="$RUNNER_TEMP/worldline-repository.json"
           http_status="$(curl --silent --show-error --retry 2 \
             --output "$metadata_file" --write-out '%{http_code}' \
             -H 'Accept: application/vnd.github+json' \
+            -H "Authorization: Bearer $GH_TOKEN" \
             https://api.github.com/repos/ryanraposo/WORLDLINE)"
           case "$http_status" in
             200)
