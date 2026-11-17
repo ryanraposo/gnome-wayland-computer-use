@@ -392,17 +392,21 @@ PY
         "$PYTHON" - "$managed" "$portal" "$health" "$worldline" "$presentation" "$background" <<'PY'
 import json,sys
 m=json.loads(sys.argv[1]); p=json.loads(sys.argv[2]); h=json.loads(sys.argv[3]); w=json.loads(sys.argv[4]); pr=json.loads(sys.argv[5]); background=sys.argv[6]=='on'
-portal=p.get('portal',{}); token=portal.get('restore_token',{}); report=h.get('report') or {}; scope=m.get('scope') or {}
+portal=p.get('portal',{}); token=portal.get('restore_token',{}); session=p.get('session',{}); report=h.get('report') or {}; scope=m.get('scope') or {}; modes=pr.get('execution_modes') or {}
 state=w.get('state') if isinstance(w.get('state'),dict) else w
 print("Computer use")
 print(f"  Cua health: {report.get('overall') or h.get('code','unknown')}")
 print(f"  Cua identity: {'proved' if h.get('identity_ok') else 'unproved'} ({h.get('binary') or '-'})")
 print(f"  exact presentation: {pr.get('code','unavailable')} (WORLDLINE revision {pr.get('revision','?')})")
+for name in ("full_foreground","verified_foreground","semantic_interaction","desktop_visual_interaction","observe_only"):
+    if name in modes: print(f"  mode {name}: {modes[name]}")
 print(f"  WORLDLINE: {w.get('code','ready') if w.get('ok') else w.get('code','unavailable')}")
 if isinstance(state,dict) and state.get('revision') is not None: print(f"  WORLDLINE revision: {state.get('revision')}")
 print(f"  control priority: {'background' if background else 'verified foreground'}")
 print(f"  RemoteDesktop portal: {'available' if portal.get('available') else 'unavailable'}")
 print(f"  RemoteDesktop restore token: {'present' if token.get('present') else 'not established'}")
+print(f"  RemoteDesktop live session: {session.get('active','unknown')}")
+print(f"  RemoteDesktop stream ID: {session.get('stream_id','unknown')}")
 print(f"  managed .gwcu: {'on' if m.get('managed_truths') else 'off'}")
 if scope.get('path'): print(f"  truth file: {scope['path']}")
 print("  default foreground: ACQUIRE if closed -> exact target -> WORLDLINE exact-target admission -> Cua input -> visible proof")
