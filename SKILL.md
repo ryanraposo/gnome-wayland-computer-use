@@ -401,11 +401,12 @@ installs present WORLDLINE's own permission prompt.
 Use WORLDLINE's lifecycle manager for repair, upgrade and uninstall:
 
 ```bash
-worldline-install.sh status --json
-worldline-install.sh start
-worldline-install.sh repair
-worldline-install.sh upgrade
-worldline-install.sh uninstall
+WORLDLINE_INSTALLER="${XDG_DATA_HOME:-$HOME/.local/share}/worldline/source/scripts/worldline-install.sh"
+"$WORLDLINE_INSTALLER" status --json
+"$WORLDLINE_INSTALLER" start
+"$WORLDLINE_INSTALLER" repair
+"$WORLDLINE_INSTALLER" upgrade
+"$WORLDLINE_INSTALLER" uninstall
 ```
 
 GWCU upgrade and uninstall preserve WORLDLINE. A protocol mismatch or missing
