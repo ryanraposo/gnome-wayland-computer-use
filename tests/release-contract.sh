@@ -28,6 +28,27 @@ assert "releases/download" in text, "workflow does not verify the published URL"
 PY
 pass "tag push publishes checksummed release assets"
 
+python3 - "$ROOT" <<'PY' || fail "workflow references drift"
+import pathlib
+import re
+import sys
+
+root = pathlib.Path(sys.argv[1])
+for name in (".github/workflows/ci.yml", ".github/workflows/release.yml"):
+    text = (root / name).read_text()
+    for rel in set(re.findall(r"(?:bash\s+)?\./(tests/[A-Za-z0-9_.-]+\.(?:sh|py))", text)):
+        target = root / rel
+        assert target.is_file(), f"{name}: missing {rel}"
+    jobs = set(re.findall(r"^  ([a-z0-9-]+):\s*$", text, re.M))
+    needs = set(re.findall(r"^\s+needs:\s*([a-z0-9-]+)\s*$", text, re.M))
+    for group in re.findall(r"^\s+needs:\s*\[([^\]]+)\]", text, re.M):
+        needs.update(n.strip() for n in group.split(",") if n.strip())
+    assert needs <= jobs, f"{name}: unknown jobs {needs - jobs}"
+    if "needs.worldline-visibility.outputs.public" in text:
+        assert re.search(r"^\s+public:\s*\$\{\{", text, re.M), f"{name}: undeclared public output"
+PY
+pass "workflows reference existing tests and declared jobs"
+
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 bash "$ROOT/scripts/build-release.sh" "$TMP" >/dev/null || fail "release build"
 python3 - "$TMP" "$ROOT" <<'PY' || fail "release manifest identity drift"
