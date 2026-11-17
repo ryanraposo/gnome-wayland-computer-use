@@ -129,7 +129,7 @@ grep -Fq 'Firefox has no typed page-mutation route' "$ROOT/SKILL.md" || fail "Fi
 grep -Fq 'A hidden/headless/managed browser success is a failure' "$ROOT/SKILL.md" || fail "visible-result failure is not explicit"
 grep -Fqi 'There is deliberately **no floating confidence threshold**' "$ROOT/SKILL.md" || fail "confidence arbiter regression guard missing"
 ! grep -Eq 'F <|F >|0\.40|0\.60|\.40–\.60' "$ROOT/SKILL.md" || fail "obsolete confidence threshold still documented"
-grep -Fq 'exact_pid_window -> cua_gnome_present -> focused_visible_proof -> cua_input' "$ROOT/scripts/action-span.py" || fail "action-span lost exact foreground invariant"
+grep -Fq 'exact_pid_window -> WORLDLINE_focus_proof -> Cua_input' "$ROOT/scripts/action-span.py" || fail "action-span lost exact foreground invariant"
 grep -Fq 'exact_target_required_for_foreground' "$ROOT/scripts/action-span.py" || fail "targetless foreground can recur"
 grep -Fq 'presentation_not_proved' "$ROOT/scripts/action-span.py" || fail "presentation failure can leak into input"
 grep -Fq 'tools.override' "$ROOT/runtimes/hermes/plugin.yaml" || fail "Hermes policy override is not declared"
