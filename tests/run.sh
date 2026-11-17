@@ -72,6 +72,8 @@ grep -Fq '"dbus-update-activation-environment","--systemd",*ENV_KEYS' "$diagnose
 ! grep -Eq 'WAYLAND_DISPLAY[=:]["'"'"']?:0|WAYLAND_DISPLAY=:0' "$diagnose" || fail "diagnosis fabricates a Wayland display"
 grep -Fq 'HERMES_CUA_DRIVER_CMD' "$diagnose" || fail "Hermes Cua identity pin missing"
 grep -Fq '[hermes,"gateway","restart","--force"]' "$diagnose" || fail "affected Hermes gateway restart missing"
+grep -Fq 'restart_deferred' "$diagnose" || fail "live-session gateway refusal is not visible as deferred"
+grep -Fq 'pending_hermes_restart' "$installer" || fail "installer does not surface the deferred gateway restart"
 grep -Fq '/proc/{pid}/environ' "$diagnose" || fail "running gateway environment is not proved"
 grep -Fq 'installed == hermes_selected == gateway_backend == doctor_reported' "$diagnose" || fail "Cua identity invariant missing"
 grep -Fq 'cua_identity_split_brain' "$diagnose" || fail "split-brain readiness failure missing"

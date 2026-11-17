@@ -175,7 +175,7 @@ def persist_cua_override(home,binary):
 def install_repair(binary):
     """Only install.sh reaches this mutation path; operator doctor remains read-only."""
     shell=subset(os.environ);valid,failures,socket_path=validate_live_wayland(shell)
-    report={"attempted":True,"ok":False,"wayland_socket":socket_path,"failures":failures,"gateways":[]}
+    report={"attempted":True,"ok":False,"wayland_socket":socket_path,"failures":failures,"gateways":[],"pending_hermes_restart":False}
     if not valid:return report
     rc1,o1,e1=run(["systemctl","--user","import-environment",*ENV_KEYS],8,os.environ.copy())
     rc2,o2,e2=run(["dbus-update-activation-environment","--systemd",*ENV_KEYS],8,os.environ.copy())
@@ -191,8 +191,10 @@ def install_repair(binary):
             item={"hermes_home":str(home),"was_running":running,"status_exit":src}
             if running:
                 rrc,rout,rerr=run([hermes,"gateway","restart","--force"],120,env)
-                item.update({"restart_exit":rrc,"restart_stdout":rout[-2048:],"restart_stderr":rerr[-2048:]})
-                if rrc:return {**report,"gateways":[*report["gateways"],item],"failure":"gateway_restart_failed"}
+                deferred=bool(rrc and "live session" in (rout+rerr).casefold())
+                item.update({"restart_exit":rrc,"restart_stdout":rout[-2048:],"restart_stderr":rerr[-2048:],"restart_deferred":deferred})
+                if deferred:report["pending_hermes_restart"]=True
+                elif rrc:return {**report,"gateways":[*report["gateways"],item],"failure":"gateway_restart_failed"}
             report["gateways"].append(item)
     # Give replacement gateways a short bounded window to execute plugin registration/attestation.
     deadline=time.monotonic()+5.0
@@ -313,7 +315,7 @@ elif failing_observation_services:code="observation_degraded";nxt={"action":"res
 elif not observation_ok:code="observation_degraded";nxt={"action":"repair_observation_components","components":[k for k,v in {"screencast_portal":screen,"gstreamer_pipewire":gst_pipewire,"gstreamer_png":gst_png,"observer_socket":observer}.items() if not v]}
 else:code="cua_degraded";nxt={"action":"inspect_cua_health"}
 
-payload={"schema":"gwcu.diagnose.v4","ok":ready,"code":code,"host":{"session":session,"desktop":desktop,"ok":host_ok},"install_repair":repair,"desktop_environment":env_proof,"presentation":{"status":"ready" if presentation_ok else ("reload_required" if winrects_installed and not winrects_active else "degraded"),"exact_target_required":True,"winrects_installed":winrects_installed,"winrects_active":winrects_active,"response":presentation,"stderr":presentation_err[:1024] if presentation_err else None},"observation":{"status":"ready" if observation_ok else "degraded","pipewire":pw,"pipewire_service":pipewire_service,"pipewire_rpc":pipewire_rpc,"wireplumber":wp,"screencast_portal":screen,"screenshot_portal":screenshot,"gstreamer_pipewire":gst_pipewire,"gstreamer_png":gst_png,"observer_socket":observer,"failing_services":failing_observation_services},"worldline":{"status":worldline_state,"socket":worldline_socket,"receipt":worldline_receipt,"service_active":worldline_service,"service_installed":worldline_unit.exists(),"features":worldline_features,"response":worldline,"stderr":worldline_err[:1024] if worldline_err else None},"cua":{"status":cua_status,"binary":cua,"health":health,"doctor_exit":doctor_rc,"doctor":doctor,"winrects_installed":winrects_installed,"winrects_active":winrects_active,"identity":{"ok":identity_ok,"installed":installed_identity,"doctor_reported":doctor_identity,"gateways":gateway_identity_rows,"invariant":"installed == hermes_selected == gateway_backend == doctor_reported"}},"next":nxt}
+payload={"schema":"gwcu.diagnose.v4","ok":ready,"code":code,"pending_hermes_restart":bool(report.get("pending_hermes_restart")),"host":{"session":session,"desktop":desktop,"ok":host_ok},"install_repair":repair,"desktop_environment":env_proof,"presentation":{"status":"ready" if presentation_ok else ("reload_required" if winrects_installed and not winrects_active else "degraded"),"exact_target_required":True,"winrects_installed":winrects_installed,"winrects_active":winrects_active,"response":presentation,"stderr":presentation_err[:1024] if presentation_err else None},"observation":{"status":"ready" if observation_ok else "degraded","pipewire":pw,"pipewire_service":pipewire_service,"pipewire_rpc":pipewire_rpc,"wireplumber":wp,"screencast_portal":screen,"screenshot_portal":screenshot,"gstreamer_pipewire":gst_pipewire,"gstreamer_png":gst_png,"observer_socket":observer,"failing_services":failing_observation_services},"worldline":{"status":worldline_state,"socket":worldline_socket,"receipt":worldline_receipt,"service_active":worldline_service,"service_installed":worldline_unit.exists(),"features":worldline_features,"response":worldline,"stderr":worldline_err[:1024] if worldline_err else None},"cua":{"status":cua_status,"binary":cua,"health":health,"doctor_exit":doctor_rc,"doctor":doctor,"winrects_installed":winrects_installed,"winrects_active":winrects_active,"identity":{"ok":identity_ok,"installed":installed_identity,"doctor_reported":doctor_identity,"gateways":gateway_identity_rows,"invariant":"installed == hermes_selected == gateway_backend == doctor_reported"}},"next":nxt}
 print(json.dumps(payload,separators=(",",":")))
 raise SystemExit(0 if ready else 30)
 PY

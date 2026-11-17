@@ -628,6 +628,15 @@ d={"schema":"gwcu.install-receipt.v1","version":sys.argv[2],"cua_driver":sys.arg
 p.write_text(json.dumps(d,separators=(",",":"))+"\n");os.chmod(p,0o600)
 PY
 ok "Installed state proved; receipt written"
+PENDING_RESTART=$("$PYTHON" - "$DIAG_OUT" <<'PY'
+import json,sys
+try: print("yes" if json.load(open(sys.argv[1])).get("pending_hermes_restart") else "no")
+except Exception: print("no")
+PY
+)
+if [ "$PENDING_RESTART" = yes ]; then
+  info "Next: Hermes daemon sync was deferred while live sessions were active; rerun ./install.sh when they finish."
+fi
 
 printf '\n%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n' "$DIM" "$RESET"
 if $RELOAD_REQUIRED; then printf '%sINSTALL COMPLETE // ONE GNOME RELOAD REQUIRED%s\n' "$BOLD" "$RESET"; printf 'Sign out/in once, rerun ./install.sh, and it will prove exact presentation.\n'; elif $COMPAT; then printf '%sINSTALLED FOR NEXT UBUNTU GNOME SESSION%s\n' "$BOLD" "$RESET"; else printf '%sREADY // PROVED%s\n' "$BOLD" "$RESET"; fi
