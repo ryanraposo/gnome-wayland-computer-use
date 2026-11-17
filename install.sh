@@ -5,6 +5,7 @@ set -euo pipefail
 APP_ID="gnome-wayland-computer-use"
 VERSION="2.7.1"
 BASE_URL="${GWCU_BASE_URL:-https://ryanraposo.github.io/gnome-wayland-computer-use}"
+RELEASE_BASE_URL="${GWCU_RELEASE_URL:-https://github.com/ryanraposo/gnome-wayland-computer-use/releases/download/v$VERSION}"
 CUA_DRIVER_RS_VERSION="${GWCU_CUA_DRIVER_RS_VERSION:-0.39.0}" # deliberately pinned
 PYTHON="${GWCU_SYSTEM_PYTHON:-/usr/bin/python3}"
 SELF=""; [ -f "${BASH_SOURCE[0]:-}" ] && SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -48,11 +49,12 @@ prepare_source(){
 
   SELF=""
   case "$BASE_URL" in https://*) ;; *) die "Remote GWCU source must use HTTPS: $BASE_URL" ;; esac
+  case "$RELEASE_BASE_URL" in https://*) ;; *) die "Remote GWCU release source must use HTTPS: $RELEASE_BASE_URL" ;; esac
   command -v curl >/dev/null 2>&1 || die "curl is required to fetch the GWCU release"
   command -v sha256sum >/dev/null 2>&1 || die "sha256sum is required to verify the GWCU release"
   metadata="$TMP/gwcu-release.json"
   archive="$TMP/gwcu-release.tar.gz"
-  curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL --retry 3 --retry-all-errors --connect-timeout 10 --max-time 120 -o "$metadata" "$BASE_URL/dist/gwcu-$VERSION.json" || die "release metadata download failed"
+  curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL --retry 3 --retry-all-errors --connect-timeout 10 --max-time 120 -o "$metadata" "$RELEASE_BASE_URL/gwcu-$VERSION.json" || die "release metadata download failed"
 
   mapfile -t release_info < <("$PYTHON" - "$metadata" "$VERSION" <<'PY'
 import json,re,sys
@@ -80,7 +82,7 @@ PY
   SOURCE_COMMIT="${release_info[2]}"
   expected_size="${release_info[3]}"
 
-  curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL --retry 3 --retry-all-errors --connect-timeout 10 --max-time 180 -o "$archive" "$BASE_URL/dist/$release_name" || die "release archive download failed"
+  curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL --retry 3 --retry-all-errors --connect-timeout 10 --max-time 180 -o "$archive" "$RELEASE_BASE_URL/$release_name" || die "release archive download failed"
   actual_size=$(wc -c <"$archive" | tr -d '[:space:]')
   [ "$actual_size" = "$expected_size" ] || die "release archive size mismatch"
   actual=$(sha256sum "$archive" | awk '{print $1}')

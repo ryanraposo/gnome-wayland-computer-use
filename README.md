@@ -21,9 +21,9 @@ Observation is an interrupt, not a ritual RPC. Facts are valid until invalidated
 
 ## What GWCU is
 
-GWCU is best understood as an **agent skill with a small enforcement/runtime system around it**. `SKILL.md` is the canonical agent contract: routing, foreground behavior, acquisition, verification, browser continuity, failure boundaries, and the exact action semantics live there.
+`SKILL.md` is the canonical agent contract: routing, foreground, acquisition, verification, browser continuity and failure boundaries.
 
-GWCU uses **Cua Driver's MCP/tool surface** for computer use; GWCU itself is not another MCP server. The runtime exists to make the skill's contract mechanical instead of advisory.
+GWCU uses **Cua Driver's MCP/tool surface**; GWCU itself is not another MCP server. The runtime makes the contract mechanical, not advisory.
 
 | Component | Role |
 |---|---|
@@ -73,7 +73,7 @@ shell or CLI state                         → terminal tool
 terminal window as visible desktop UI      → Cua
 ```
 
-A task can move between these naturally. Once work targets a specific browser window/session, its UI mutations remain on Cua so native window identity, tab/page state, visibility and completion evidence stay coherent.
+Routes can switch mid-task, but a targeted browser session keeps its UI mutations on Cua so identity, tab state and completion evidence stay coherent.
 
 ## Hermes integration
 
@@ -87,7 +87,7 @@ Hermes built-in computer_use
 Cua Driver
 ```
 
-GWCU replaces the targeted `computer-use` skill, **not** Hermes' built-in `computer_use` tool/toolset. The plugin receives the tool-override capability and wraps that existing tool. Terminal access is optional helper machinery; ordinary desktop control requires only `computer_use`.
+GWCU replaces the targeted `computer-use` skill, **not** Hermes' built-in `computer_use` tool/toolset. The plugin wraps that tool with tool-override capability; terminal access is optional.
 
 The installer also pins the exact Cua identity used by integrated Hermes profiles, restarts affected running gateways after integration/environment repair, and proves the live gateway environment before readiness can succeed.
 
@@ -119,7 +119,7 @@ COMPLETE   present + verify the final visible result when required
 
 **No exact `(pid, window_id)` proof, no focus-bound input.** Visible-result requests end visibly. A background-unavailable fallback may escalate through the same PRESENT gate once.
 
-The exhaustive foreground action matrix belongs in `SKILL.md`. Hermes native actions are gated by the policy plugin; local spans cover every Cua tool exposing `delivery_mode`, so new tools inherit the gate.
+The exhaustive foreground action matrix belongs in `SKILL.md`. The policy plugin gates Hermes actions; local spans cover every Cua tool exposing `delivery_mode`.
 
 ## WORLDLINE
 
@@ -131,7 +131,7 @@ click Save → document.dirty == false → predicate satisfied → continue
 
 Standalone WORLDLINE owns one private socket and revision store for GWCU and other consumers. It is independently installed and managed, reads AT-SPI, direct host facts and exact Cua GNOME compositor frames with ScreenCast/PipeWire evidence when requested, and remains read-only. GWCU's observer is a separate visual sensor.
 
-Horner can use the same WORLDLINE protocol 1 socket for foreground and body receipts. A receipt is valid only in the daemon instance named by its `domain_id`; nested Horner DevKits use their own socket and revision domain. GWCU's installer and doctor require the `receipt` op, so a stale WORLDLINE fails closed at install instead of mid-action.
+Horner can share the WORLDLINE socket; receipts are valid only in the named `domain_id`. GWCU's installer and doctor require the `receipt` op, so a stale WORLDLINE fails closed at install.
 
 For awaited actions, the runtime seals a WORLDLINE fence after presentation and immediately before Cua mutates the target. Postconditions must then be evidenced in a newer revision: a cached fact that was already true before the action cannot complete the action.
 
@@ -160,6 +160,12 @@ Other runtimes can call `scripts/gwcu-exec` with a JSON action span on stdin. Th
 For an existing checkout, `bash install.sh` repairs the observer socket and imports the live desktop environment into systemd and affected Hermes gateways. Check with `bash scripts/computer-use.sh doctor`; `desktop_environment_unproved` and `observation_degraded` name the respective gaps. The live Calculator test proves exact presentation, an observed result and removal of the agent cursor session.
 
 If the GNOME helper needs a session reload, the installer asks for one sign-out/sign-in and does not claim fully proved readiness until rerun.
+
+## Release
+
+Ship from `dev` via a `release/<version>-main` PR into `main` with all version strings aligned. After main CI is green, push annotated tag `v<version>` at the main commit: `.github/workflows/release.yml` builds from that commit, uploads the archive and checksum manifest to the GitHub Release, and verifies the published URL. Fast-forward `dev` afterwards.
+
+Pages serves bootstrap scripts and `VERSION`; artifacts use the versioned Release URL (`GWCU_RELEASE_URL` overrides it).
 
 ## Uninstall
 

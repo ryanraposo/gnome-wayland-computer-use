@@ -4,6 +4,7 @@ set -euo pipefail
 NAME="gnome-wayland-computer-use"
 VERSION="2.7.1"
 BASE_URL="${GWCU_BASE_URL:-https://ryanraposo.github.io/gnome-wayland-computer-use}"
+RELEASE_BASE_URL="${GWCU_RELEASE_URL:-https://github.com/ryanraposo/gnome-wayland-computer-use/releases/download/v$VERSION}"
 PYTHON="${GWCU_SYSTEM_PYTHON:-/usr/bin/python3}"
 [ -x "$PYTHON" ] || PYTHON="$(command -v python3 2>/dev/null || true)"
 REMOVE_CUA=false; PURGE_CUA=false
@@ -38,11 +39,12 @@ fetch_verified_release(){
   command -v curl >/dev/null 2>&1 || return 10
   command -v sha256sum >/dev/null 2>&1 || { printf 'error: sha256sum is required to verify the GWCU release\n' >&2; return 20; }
   case "$BASE_URL" in https://*) ;; *) printf 'error: remote GWCU source must use HTTPS: %s\n' "$BASE_URL" >&2; return 20;; esac
+  case "$RELEASE_BASE_URL" in https://*) ;; *) printf 'error: remote GWCU release source must use HTTPS: %s\n' "$RELEASE_BASE_URL" >&2; return 20;; esac
 
   TMPDIR=$(mktemp -d)
   metadata="$TMPDIR/release.json"
   archive="$TMPDIR/release.tar.gz"
-  if ! curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL --retry 3 --retry-all-errors --connect-timeout 10 --max-time 120 -o "$metadata" "$BASE_URL/dist/gwcu-$VERSION.json"; then
+  if ! curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL --retry 3 --retry-all-errors --connect-timeout 10 --max-time 120 -o "$metadata" "$RELEASE_BASE_URL/gwcu-$VERSION.json"; then
     return 10
   fi
   mapfile -t release_info < <("$PYTHON" - "$metadata" "$VERSION" <<'PY'
@@ -64,7 +66,7 @@ PY
   [ "${#release_info[@]}" -eq 4 ] || { printf 'error: incomplete GWCU release identity\n' >&2; return 20; }
   release_name="${release_info[0]}"; expected_sha="${release_info[1]}"; expected_commit="${release_info[2]}"; expected_size="${release_info[3]}"
 
-  if ! curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL --retry 3 --retry-all-errors --connect-timeout 10 --max-time 180 -o "$archive" "$BASE_URL/dist/$release_name"; then
+  if ! curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL --retry 3 --retry-all-errors --connect-timeout 10 --max-time 180 -o "$archive" "$RELEASE_BASE_URL/$release_name"; then
     return 10
   fi
   actual_size=$(wc -c <"$archive" | tr -d '[:space:]')
