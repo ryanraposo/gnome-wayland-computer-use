@@ -11,7 +11,7 @@ profile="$ROOT/scripts/profile.sh"; truths="$ROOT/scripts/truths.py"; portal="$R
 worldline="$ROOT/scripts/worldline.py"; capture="$ROOT/scripts/capture.sh"; presenter="$ROOT/scripts/present-window.py"
 diagnose="$ROOT/scripts/diagnose.sh"
 
-for s in "$installer" "$uninstaller" "$teardown" "$diagnose" "$capture" "$ROOT/scripts/observe.sh" "$profile" "$ROOT/scripts/computer-use.sh" "$ROOT/scripts/worldline-capture.sh"; do bash -n "$s" || fail "shell syntax: ${s#$ROOT/}"; done
+for s in "$installer" "$uninstaller" "$teardown" "$diagnose" "$capture" "$ROOT/scripts/observe.sh" "$profile" "$ROOT/scripts/computer-use.sh" "$ROOT/scripts/worldline-capture.sh" "$ROOT/scripts/worldline-dependency.sh"; do bash -n "$s" || fail "shell syntax: ${s#$ROOT/}"; done
 python3 -m py_compile "$ROOT"/scripts/*.py "$ROOT/runtimes/hermes/__init__.py" "$ROOT/tests/calculator-cold.py" || fail "Python syntax"
 python3 "$ROOT/tests/calculator-cold.py" >/dev/null || fail "Calculator regression skip contract"
 rc=0; bash "$ROOT/tests/desktop-acceptance.sh" >"$TMP/live-acceptance-optin" 2>&1 || rc=$?
@@ -21,7 +21,7 @@ pass "entrypoints parse and live acceptance fails closed"
 
 [ ! -e "$ROOT/install-core.sh" ] || fail "secondary installer exists"
 ! grep -Eq 'add_pkg ydotool|modprobe uinput|usermod .*input|CUA_DRIVER_RS_ENABLE_WAYLAND|ExecStart=.*cua-driver.*serve' "$installer" || fail "installer creates a shadow control plane"
-grep -q 'CUA_DRIVER_RS_VERSION="${GWCU_CUA_DRIVER_RS_VERSION:-0.20.0}"' "$installer" || fail "Cua pin missing"
+grep -q 'CUA_DRIVER_RS_VERSION="${GWCU_CUA_DRIVER_RS_VERSION:-0.39.0}"' "$installer" || fail "Cua pin missing"
 grep -q 'CUA_DRIVER_RS_NO_MODIFY_PATH=1' "$installer" || fail "Cua PATH ownership missing"
 grep -q 'https://cua.ai/driver/install.sh' "$installer" || fail "official Cua installer missing"
 grep -q 'Qualified Cua Driver.*already installed' "$installer" || fail "qualified Cua is not reused"
@@ -50,17 +50,19 @@ for pkg in pipewire pipewire-bin wireplumber xdg-desktop-portal xdg-desktop-port
 for iface in RemoteDesktop ScreenCast Screenshot; do grep -q "portal_has $iface" "$installer" || fail "$iface portal check missing"; done
 pass "Ubuntu portal/accessibility foundation is explicit"
 
-for shipped in scripts/action-span.py scripts/worldline.py scripts/worldline-capture.sh scripts/present-window.py README.md; do grep -q "$shipped" "$installer" || fail "installer omits $shipped"; done
+for shipped in scripts/action-span.py scripts/worldline.py scripts/worldline-contract.py scripts/worldline-dependency.sh scripts/worldline-capture.sh scripts/present-window.py README.md; do grep -q "$shipped" "$installer" || fail "installer omits $shipped"; done
 grep -q 'present-window.py" self-test' "$installer" || fail "presentation self-test missing"
 grep -q 'present-window.py" status' "$installer" || fail "live presentation qualification missing"
-grep -q 'Install and start standalone WORLDLINE first' "$installer" || fail "standalone WORLDLINE dependency missing"
+! grep -q 'enable --now gnome-wayland-computer-use-worldline.socket' "$installer" || fail "GWCU still owns a WORLDLINE socket unit"
 grep -q 'enable --now gnome-wayland-computer-use-observer.socket' "$installer" || fail "observer socket not enabled"
-! grep -Fq 'enable --now gnome-wayland-computer-use-worldline.socket' "$installer" || fail "embedded WORLDLINE socket still enabled"
+grep -Fq 'worldline-dependency.sh" ensure' "$installer" || fail "WORLDLINE dependency is not resolved before readiness"
+! grep -Fq 'worldline-pkg' "$installer" || fail "GWCU still vendors WORLDLINE source"
+! grep -Fq 'cp "$PRIMARY/systemd/user/gnome-wayland-computer-use-worldline' "$installer" || fail "GWCU still installs a WORLDLINE service"
 grep -Fq 'journalctl --user -u "$service_unit"' "$installer" || fail "daemon failure capsule lacks journal evidence"
 python3 "$presenter" self-test >/dev/null || fail "presentation primitive self-test"
 grep -Fq 'focused' "$presenter" && grep -Fq 'visible' "$presenter" && grep -Fq 'minimized' "$presenter" || fail "presenter does not prove visible focus"
 grep -Fq 'pid' "$presenter" && grep -Fq 'window_id' "$presenter" || fail "presenter lacks exact identity"
-pass "WORLDLINE, observer and exact presentation are shipped and provable"
+pass "standalone WORLDLINE dependency, observer and exact presentation are verified"
 
 # Install-context diagnosis is the repair boundary: validate/import the *live*
 # Wayland environment, pin Hermes to one Cua identity, restart affected running
@@ -70,6 +72,10 @@ grep -Fq '"dbus-update-activation-environment","--systemd",*ENV_KEYS' "$diagnose
 ! grep -Eq 'WAYLAND_DISPLAY[=:]["'"'"']?:0|WAYLAND_DISPLAY=:0' "$diagnose" || fail "diagnosis fabricates a Wayland display"
 grep -Fq 'HERMES_CUA_DRIVER_CMD' "$diagnose" || fail "Hermes Cua identity pin missing"
 grep -Fq '[hermes,"gateway","restart","--force"]' "$diagnose" || fail "affected Hermes gateway restart missing"
+grep -Fq 'restart_deferred' "$diagnose" || fail "live-session gateway refusal is not visible as deferred"
+grep -Fq 'pending_hermes_restart' "$installer" || fail "installer does not surface the deferred gateway restart"
+grep -Fq '^State:\s*ACTIVE' "$diagnose" || fail "extension state check is not exact"
+! grep -Fq '"ACTIVE" in out' "$diagnose" || fail "INACTIVE can be mistaken for ACTIVE"
 grep -Fq '/proc/{pid}/environ' "$diagnose" || fail "running gateway environment is not proved"
 grep -Fq 'installed == hermes_selected == gateway_backend == doctor_reported' "$diagnose" || fail "Cua identity invariant missing"
 grep -Fq 'cua_identity_split_brain' "$diagnose" || fail "split-brain readiness failure missing"
@@ -103,6 +109,16 @@ grep -q '"move_cursor"' "$portal" || fail "pointer-only Cua handshake missing"
 ! grep -Eq '"name"[[:space:]]*:[[:space:]]*"(click|type_text|key_press)"' "$portal" || fail "portal helper contains invasive actions"
 pass "RemoteDesktop consent is explicit and minimally invasive"
 
+grep -Fq 'guide_remote_desktop_sharing()' "$installer" || fail "GNOME Sharing step is not part of the installer flow"
+grep -Fq 'gnome-control-center sharing' "$installer" || fail "installer does not open the GNOME Sharing panel"
+grep -Fq 'Sharing flow 1/3: Open GNOME Settings -> Sharing -> Remote Desktop (Screen Sharing).' "$installer" || fail "Sharing flow lost its Settings step"
+! grep -Fq 'die "RemoteDesktop portal unavailable"' "$installer" || fail "early portal failure bypasses the Sharing flow"
+grep -Fq 'new, visible terminal' "$ROOT/AGENTS.md" || fail "agents are not told to use a visible terminal"
+grep -Fq 'Sharing -> Remote Desktop (Screen Sharing)' "$ROOT/AGENTS.md" || fail "agent guidance lost the Sharing step"
+grep -Fq 'new, visible terminal' "$ROOT/README.md" || fail "install docs lost the visible-terminal instruction"
+grep -Fq 'Sharing -> Remote Desktop (Screen Sharing)' "$ROOT/README.md" || fail "install docs lost the Sharing step"
+pass "GNOME Sharing step and visible terminal are part of the install flow"
+
 grep -Fq 'diagnose.sh" --machine' "$installer" || fail "final installed-state diagnosis missing"
 grep -Fq 'gwcu.install-receipt.v1' "$installer" || fail "installer produces no durable proof receipt"
 grep -Fq 'install.log' "$installer" || fail "installer has no durable private log"
@@ -120,6 +136,16 @@ pass "teardown removes runtime integration, not workspace truth"
 
 ! grep -Eq 'ydotool|uinput|org\.cua\.WinRects|cua-driver' "$capture" || fail "direct observation owns control machinery"
 ! grep -Eq 'ydotool|uinput' "$worldline" || fail "WORLDLINE owns raw input"
+# The AT-SPI adapter and visual capture live in the standalone WORLDLINE
+# package; GWCU's worldline.py is only its socket client.
+WORLDLINE_SRC="${GWCU_WORLDLINE_ROOT:-$HOME/repos/WORLDLINE}/src/worldline/desktop_events.py"
+WORLDLINE_PKG="${XDG_DATA_HOME:-$HOME/.local/share}/worldline/source/src/worldline/desktop_events.py"
+if [ -f "$WORLDLINE_SRC" ]; then
+    grep -q 'Atspi.EventListener' "$WORLDLINE_SRC" || fail "WORLDLINE AT-SPI adapter missing"
+elif [ -f "$WORLDLINE_PKG" ]; then
+    grep -q 'Atspi.EventListener' "$WORLDLINE_PKG" || fail "WORLDLINE AT-SPI adapter missing"
+fi
+grep -q 'def capture' "$ROOT/scripts/observer.py" || fail "WORLDLINE visual escalation missing"
 grep -q 'standalone WORLDLINE' "$worldline" || fail "WORLDLINE standalone client missing"
 ! grep -q 'def serve' "$worldline" || fail "embedded WORLDLINE daemon remains"
 pass "read-only sensors stay read-only"

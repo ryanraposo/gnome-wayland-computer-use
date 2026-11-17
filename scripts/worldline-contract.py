@@ -1,17 +1,12 @@
 #!/usr/bin/env python3
-"""Refuse a WORLDLINE that cannot serve the op GWCU acts on.
-
-Reads the JSON printed by `worldline.py request --json '{"op":"features"}'`.
-A daemon that answers discovery but has no `receipt` op would let install
-succeed and fail only mid-action, so both install and doctor fail closed here.
-"""
-
+"""Fail closed unless WORLDLINE exposes the protocol GWCU relies on."""
 from __future__ import annotations
 
 import json
 import sys
 from pathlib import Path
 
+PROTOCOL = 1
 REQUIRED = "receipt"
 
 
@@ -25,15 +20,18 @@ def main() -> int:
     if (
         not isinstance(features, dict)
         or not features.get("ok")
+        or features.get("protocol") != PROTOCOL
         or REQUIRED not in (ops or [])
     ):
         print(
-            f"WORLDLINE does not advertise {REQUIRED}: {json.dumps(features)[:512]}",
+            f"WORLDLINE does not satisfy protocol {PROTOCOL} + {REQUIRED}: "
+            f"{json.dumps(features)[:512]}",
             file=sys.stderr,
         )
         return 1
     print(
         "WORLDLINE",
+        features.get("version", "unknown"),
         features.get("protocol"),
         features.get("domain_id"),
         features.get("receipt_schema"),

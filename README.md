@@ -117,15 +117,9 @@ WORLDLINE turns repeated observation loops into local predicate-driven continuat
 click Save → document.dirty == false → predicate satisfied → continue
 ```
 
-Standalone WORLDLINE owns one private socket and revision store for GWCU and other consumers. It reads AT-SPI, direct host facts and exact Cua GNOME compositor frames, with ScreenCast/PipeWire evidence when requested. GWCU's observer remains a separate visual sensor.
+Standalone WORLDLINE owns one private socket and revision store for GWCU and other consumers. It is independently installed and managed, reads AT-SPI, direct host facts and exact Cua GNOME compositor frames with ScreenCast/PipeWire evidence when requested, and remains read-only. GWCU's observer is a separate visual sensor.
 
-Horner can use the same WORLDLINE protocol 1 socket for its foreground and
-body receipts. A receipt is valid only in the daemon instance named by its
-`domain_id`; nested Horner DevKits use their own socket and revision domain.
-The receipt's `claim` states the proved boundary: verified foreground focus
-does not prove that a click achieved the user's application goal. GWCU's
-installer and doctor both require the daemon to advertise the `receipt` op,
-so a stale WORLDLINE fails closed at install instead of mid-action.
+Horner can use the same WORLDLINE protocol 1 socket for foreground and body receipts. A receipt is valid only in the daemon instance named by its `domain_id`; nested Horner DevKits use their own socket and revision domain. GWCU's installer and doctor require the `receipt` op, so a stale WORLDLINE fails closed at install instead of mid-action.
 
 For awaited actions, the runtime seals a WORLDLINE fence after presentation and immediately before Cua mutates the target. Postconditions must then be evidenced in a newer revision: a cached fact that was already true before the action cannot complete the action.
 
@@ -141,20 +135,11 @@ Scope order: `GWCU_SCOPE_ROOT` → Git worktree root → nearest ancestor alread
 curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh | bash
 ```
 
+Run in a new, visible terminal on the desktop. Install and start [standalone WORLDLINE](https://github.com/ryanraposo/WORLDLINE) first. The installer verifies one commit-addressed SHA-256 release archive, qualifies Ubuntu 26.04 GNOME Wayland, installs/reuses pinned Cua plus its helper, establishes portal consent, installs the skill/runtime and Hermes policy, resolves WORLDLINE independently, and live-proves readiness. If the RemoteDesktop portal is missing, it opens GNOME Settings -> Sharing -> Remote Desktop (Screen Sharing) and waits for you to enable it; you still approve GNOME's prompt.
+
 ## Update
 
-From the existing checkout, after updating standalone WORLDLINE, run:
-
-```bash
-./update.sh
-```
-
-This fast forwards the current branch and reruns the local installer to update
-the installed skill, policy and runtime. It stops if the checkout has local
-changes. The installer may request desktop consent or a GNOME sign-out/sign-in;
-follow its `Next:` guidance and rerun `./update.sh` after signing back in.
-
-Install and start [standalone WORLDLINE](https://github.com/ryanraposo/WORLDLINE) first. The installer verifies its versioned socket, then qualifies Ubuntu 26.04 GNOME Wayland, installs/reuses pinned Cua and its helper, establishes portal consent, installs the skill/runtime and Hermes policy, enables the visual observer, retires the embedded GWCU WORLDLINE units, and live-proves readiness.
+From an existing checkout after updating WORLDLINE, run `./update.sh`. It fast forwards the branch and reruns the local installer; follow its `Next:` guidance through consent or a GNOME sign-out/sign-in.
 
 Other runtimes can call `scripts/gwcu-exec` with a JSON action span on stdin. The executable owns exact foreground admission and Cua action delivery; its redacted trace and WORLDLINE causal receipts describe the outcome without requiring the text of this skill.
 

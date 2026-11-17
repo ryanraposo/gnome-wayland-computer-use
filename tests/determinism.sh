@@ -54,7 +54,9 @@ grep -q 'gnome-wayland-computer-use-worldline.socket' "$ROOT/scripts/teardown.sh
 grep -q 'Repo/workspace .gwcu files' "$ROOT/scripts/teardown.sh" || fail "teardown no longer preserves workspace truth"
 pass "WORLDLINE and exact-presentation lifecycle are installed and reversible"
 
-README_BUDGET_BYTES=8500
+# The canonical docs now cover independent WORLDLINE acquisition, update.sh,
+# gwcu-exec, exact foreground and the guided GNOME Sharing flow.
+README_BUDGET_BYTES=10000
 size=$(wc -c <"$ROOT/README.md")
 [ "$size" -le "$README_BUDGET_BYTES" ] || fail "README exceeds ${README_BUDGET_BYTES}-byte budget (size=$size)"
 pass "README stays within ${README_BUDGET_BYTES}-byte budget"

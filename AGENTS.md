@@ -16,9 +16,9 @@ For an approved installation:
 2. Read `README.md`, then use the repository's `install.sh`. Do not invent a parallel setup path.
    For an existing checkout update, use `./update.sh` after standalone
    WORLDLINE is updated; it fetches the current branch and reruns `install.sh`.
-3. Run the installer as the logged-in desktop user, not by wrapping the whole installer in `sudo`.
+3. Open a new, visible terminal window on the logged-in desktop (for example GNOME Terminal) and run the installer there as the logged-in desktop user. Do not run it from a hidden or headless agent terminal pane, and do not wrap the whole installer in `sudo`: its Sharing/consent flow and GNOME's prompts must be visible to the user.
 4. Preserve unrelated agent/runtime configuration. Let the installer select the supported integration it actually finds.
-5. Treat graphical Remote Desktop / remote-control consent as a real user authorization boundary. Explain the prompt and let the user approve it.
+5. Treat graphical Remote Desktop / remote-control consent as a real user authorization boundary. When the RemoteDesktop portal is missing, the installer opens GNOME Settings -> Sharing -> Remote Desktop (Screen Sharing), asks the user to turn on Remote Desktop / Screen Sharing, and waits for the portal before continuing. Explain that step and let the user approve GNOME's control prompt; never pre-answer or automate consent.
 6. In Hermes, keep the ownership boundary exact: GWCU replaces the targeted profile's `computer-use` skill and its policy plugin wraps Hermes' built-in `computer_use` tool. The installer must never present these as two independent computer-use skills or replace/remove the built-in tool.
 7. If Hermes asks for `tools.override`, explain that GWCU uses it only to make foreground/background delivery and exact presentation policy mechanical on the built-in `computer_use` tool; do not hide or pre-answer that host-owned consent.
 8. The default Hermes home is integrated automatically. Integrate additional existing profiles only when the user selected them, using `--hermes-profile NAME` or `--hermes-all-profiles`; do not seed unrelated bundled skills into a profile.

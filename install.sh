@@ -3,9 +3,9 @@
 set -euo pipefail
 
 APP_ID="gnome-wayland-computer-use"
-VERSION="2.4.0"
+VERSION="2.7.0"
 BASE_URL="${GWCU_BASE_URL:-https://ryanraposo.github.io/gnome-wayland-computer-use}"
-CUA_DRIVER_RS_VERSION="${GWCU_CUA_DRIVER_RS_VERSION:-0.20.0}" # deliberately pinned
+CUA_DRIVER_RS_VERSION="${GWCU_CUA_DRIVER_RS_VERSION:-0.39.0}" # deliberately pinned
 PYTHON="${GWCU_SYSTEM_PYTHON:-/usr/bin/python3}"
 SELF=""; [ -f "${BASH_SOURCE[0]:-}" ] && SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
@@ -117,6 +117,33 @@ PY
   ok "Verified GWCU release $VERSION @ ${SOURCE_COMMIT:0:12} (SHA-256 ${SOURCE_SHA256:0:12}…)"
 }
 portal_has(){ gdbus introspect --session --dest org.freedesktop.portal.Desktop --object-path /org/freedesktop/portal/desktop 2>/dev/null | grep -q "interface org.freedesktop.portal.$1"; }
+# Bring GNOME's Remote Desktop (Screen Sharing) toggle into the install flow.
+# The installer opens the Settings panel and waits for the portal; it never
+# clicks or types. The user keeps the consent decision at the desktop.
+guide_remote_desktop_sharing(){
+  if $EXPLICIT_UNATTENDED || [ ! -r /dev/tty ]; then
+    info "Open GNOME Settings -> Sharing -> Remote Desktop (Screen Sharing), turn it on, then rerun ./install.sh."
+    return 1
+  fi
+  info "Sharing flow 1/3: Open GNOME Settings -> Sharing -> Remote Desktop (Screen Sharing)."
+  info "Sharing flow 2/3: Turn on Remote Desktop / Screen Sharing."
+  info "Sharing flow 3/3: Approve GNOME's control prompt when it appears."
+  if command -v gnome-control-center >/dev/null 2>&1; then
+    gnome-control-center sharing >/dev/null 2>&1 </dev/null &
+  else
+    warn "gnome-control-center is unavailable; open the Sharing panel from the desktop."
+  fi
+  local deadline=$(( $(date +%s) + 180 )) reply=""
+  while ! portal_has RemoteDesktop; do
+    [ "$(date +%s)" -lt "$deadline" ] || return 1
+    printf '\r[INFO] Waiting for Remote Desktop (Screen Sharing); Enter when enabled, s to skip: ' >/dev/tty
+    reply=""
+    read -r -t 10 reply </dev/tty || reply=""
+    printf '\n' >/dev/tty
+    case "$reply" in s|S|q|Q) return 1;; esac
+  done
+  return 0
+}
 resolve_cua(){ command -v cua-driver 2>/dev/null || { [ -x "$HOME/.local/bin/cua-driver" ] && printf '%s\n' "$HOME/.local/bin/cua-driver"; }; }
 
 COMPAT=false
@@ -373,7 +400,8 @@ if [ ${#missing[@]} -gt 0 ]; then if $COMPAT; then warn "compat mode: packages m
 if ! $COMPAT; then
   PW=$(pipewire --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1); [ -n "$PW" ] || die "PipeWire unavailable"
   dpkg --compare-versions "$PW" ge 0.3.40 || die "PipeWire 0.3.40+ required"
-  portal_has RemoteDesktop || die "RemoteDesktop portal unavailable"; portal_has ScreenCast || die "ScreenCast portal unavailable"; portal_has Screenshot || die "Screenshot portal unavailable"
+  portal_has ScreenCast || die "ScreenCast portal unavailable"; portal_has Screenshot || die "Screenshot portal unavailable"
+  portal_has RemoteDesktop || warn "RemoteDesktop portal not exposed yet; GNOME Sharing setup runs before consent"
   "$PYTHON" - <<'PY' || die "Python GI/AT-SPI/GStreamer bindings unavailable"
 import gi
 for n,v in (("Gio","2.0"),("Gst","1.0"),("GstVideo","1.0"),("GdkPixbuf","2.0"),("Atspi","2.0")):gi.require_version(n,v)
@@ -406,7 +434,7 @@ RELOAD_REQUIRED=false
 if gnome-extensions info winrects@cua >/dev/null 2>&1 && gnome-extensions info winrects@cua 2>/dev/null | grep -qi 'State: ACTIVE'; then ok "winrects@cua is ACTIVE"; else RELOAD_REQUIRED=true; warn "winrects@cua is installed and will become active after one GNOME sign-out/sign-in"; fi
 
 info "[4/8] Installing GWCU runtime, skill and WORLDLINE"
-FILES=(VERSION README.md agents/openai.yaml scripts/action-span.py scripts/gwcu-exec scripts/app-identity.sh scripts/capture.sh scripts/check-update.sh scripts/computer-use.sh scripts/cua-health.py scripts/diagnose.sh scripts/mcp_client.py scripts/migrate-main.sh scripts/observe.sh scripts/observer.py scripts/portal-control.py scripts/present-window.py scripts/profile.sh scripts/teardown.sh scripts/truths.py scripts/worldline.py scripts/worldline-capture.sh systemd/user/gnome-wayland-computer-use-observer.socket systemd/user/gnome-wayland-computer-use-observer.service)
+FILES=(VERSION README.md agents/openai.yaml scripts/action-span.py scripts/gwcu-exec scripts/app-identity.sh scripts/capture.sh scripts/check-update.sh scripts/computer-use.sh scripts/cua-health.py scripts/diagnose.sh scripts/mcp_client.py scripts/migrate-main.sh scripts/observe.sh scripts/observer.py scripts/portal-control.py scripts/present-window.py scripts/profile.sh scripts/teardown.sh scripts/truths.py scripts/worldline.py scripts/worldline-contract.py scripts/worldline-dependency.sh scripts/worldline-capture.sh systemd/user/gnome-wayland-computer-use-observer.socket systemd/user/gnome-wayland-computer-use-observer.service)
 rm -rf "$TMP/bundle"; mkdir -p "$TMP/bundle"
 for f in "${FILES[@]}"; do get_file "$f" "$TMP/bundle/$f"; done
 get_file SKILL.md "$TMP/bundle/SKILL.md"
@@ -481,6 +509,38 @@ except Exception:print("no")
 PY
 )
   if [ "$TOKEN" != yes ]; then
+    # Step 1: ensure the RemoteDesktop portal interface is on the session bus.
+    # Without it, Cua has no sanctioned input path and consent cannot be established.
+    portal_has RemoteDesktop || {
+      info "RemoteDesktop portal not yet available on the session bus."
+      info "This is usually a GNOME Sharing setting, not a problem with GWCU."
+      info "Trying to enable org.gnome.desktop.remote-desktop via GSettings..."
+      if gsettings set org.gnome.desktop.remote-desktop.rdp enable true 2>/dev/null; then
+        ok "GSettings remote-desktop enable set to true"
+      else
+        warn "Could not set GSettings remote-desktop enable; continuing anyway"
+      fi
+      info "Restarting xdg-desktop-portal-gnome to pick up the change..."
+      systemctl --user restart xdg-desktop-portal-gnome.service >>"$INSTALL_LOG" 2>&1 || true
+      sleep 2
+      if portal_has RemoteDesktop; then
+        ok "RemoteDesktop portal is now available on the session bus"
+      elif guide_remote_desktop_sharing; then
+        ok "Remote Desktop (Screen Sharing) enabled; RemoteDesktop portal is now available"
+      else
+        die "RemoteDesktop portal is still unavailable after the GNOME Sharing flow.
+
+GWCU needs the GNOME 'Remote Desktop' portal interface to deliver local pointer
+and keyboard input through EIS/libei. The Sharing step could not be completed
+from this terminal. Run the installer in a new, visible terminal on the
+logged-in desktop, turn on GNOME Settings -> Sharing -> Remote Desktop
+(Screen Sharing), approve GNOME's control prompt, then rerun ./install.sh.
+
+GWCU installs no RDP/VNC server and no raw-input daemon -- Cua Driver is the only
+actuator, and it uses the compositor-approved portal path just like any other
+native desktop application."
+      fi
+    }
     info "GNOME calls this compositor-approved local input permission 'Remote Desktop'. GWCU installs no RDP/VNC server."
     info "The bootstrap sends no click or key; it performs one pointer move through Cua."
     for n in 3 2 1; do printf '\r[INFO] GNOME permission prompt may appear in %s... ' "$n"; sleep 1; done; printf '\n'
@@ -507,6 +567,7 @@ systemctl --user daemon-reload || $COMPAT || die "user systemd reload failed"
 for u in gnome-wayland-computer-use-observer.socket gnome-wayland-computer-use-observer.service; do systemctl --user reset-failed "$u" 2>/dev/null || true; done
 if ! $COMPAT; then systemctl --user enable --now gnome-wayland-computer-use-observer.socket >>"$INSTALL_LOG" 2>&1 || die "observer socket failed to enable"; fi
 "$PYTHON" "$PRIMARY/scripts/observer.py" self-test >>"$INSTALL_LOG" || die "observer.py self-test failed"
+if ! $COMPAT; then bash "$PRIMARY/scripts/worldline-dependency.sh" ensure >>"$INSTALL_LOG" 2>&1 || die "Standalone WORLDLINE dependency could not be resolved and verified"; fi
 "$PYTHON" "$PRIMARY/scripts/worldline.py" self-test >>"$INSTALL_LOG" || die "worldline.py self-test failed"
 "$PYTHON" "$PRIMARY/scripts/present-window.py" self-test >>"$INSTALL_LOG" || die "presentation gate self-test failed"
 if ! $COMPAT; then
@@ -567,6 +628,15 @@ d={"schema":"gwcu.install-receipt.v1","version":sys.argv[2],"cua_driver":sys.arg
 p.write_text(json.dumps(d,separators=(",",":"))+"\n");os.chmod(p,0o600)
 PY
 ok "Installed state proved; receipt written"
+PENDING_RESTART=$("$PYTHON" - "$DIAG_OUT" <<'PY'
+import json,sys
+try: print("yes" if json.load(open(sys.argv[1])).get("pending_hermes_restart") else "no")
+except Exception: print("no")
+PY
+)
+if [ "$PENDING_RESTART" = yes ]; then
+  info "Next: Hermes daemon sync was deferred while live sessions were active; rerun ./install.sh when they finish."
+fi
 
 printf '\n%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n' "$DIM" "$RESET"
 if $RELOAD_REQUIRED; then printf '%sINSTALL COMPLETE // ONE GNOME RELOAD REQUIRED%s\n' "$BOLD" "$RESET"; printf 'Sign out/in once, rerun ./install.sh, and it will prove exact presentation.\n'; elif $COMPAT; then printf '%sINSTALLED FOR NEXT UBUNTU GNOME SESSION%s\n' "$BOLD" "$RESET"; else printf '%sREADY // PROVED%s\n' "$BOLD" "$RESET"; fi
