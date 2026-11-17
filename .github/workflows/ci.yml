@@ -37,9 +37,12 @@ jobs:
       - name: Truth scope isolation
         run: bash ./tests/truth-scope.sh
       - name: Standalone WORLDLINE test dependency
+        env:
+          WORLDLINE_INTEGRATION_SHA: e0bb49843c399a2d3157f58d8c5eec0e42d29f20
         run: |
-          git clone --quiet https://github.com/ryanraposo/WORLDLINE.git "$RUNNER_TEMP/worldline"
-          git -C "$RUNNER_TEMP/worldline" checkout --quiet 56ca67c
+          git clone --quiet --no-checkout https://github.com/ryanraposo/WORLDLINE.git "$RUNNER_TEMP/worldline"
+          git -C "$RUNNER_TEMP/worldline" fetch --quiet --depth=1 origin "$WORLDLINE_INTEGRATION_SHA"
+          git -C "$RUNNER_TEMP/worldline" checkout --quiet --detach "$WORLDLINE_INTEGRATION_SHA"
           echo "WORLDLINE_SOURCE=$RUNNER_TEMP/worldline" >> "$GITHUB_ENV"
       - name: One-call action spans
         run: bash ./tests/action-span.sh
