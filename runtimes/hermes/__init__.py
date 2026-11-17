@@ -32,7 +32,7 @@ _INPUT_ACTIONS = frozenset({
 # Source of truth for membership: research/hermes-override-cua-wayland.md.
 _FOREGROUND_ACTIONS = frozenset({
     "click", "double_click", "right_click", "middle_click",
-    "drag", "scroll", "type", "key",
+    "drag", "scroll", "type", "key", "set_value",
 })
 _TRUE = frozenset({"on", "yes", "true", "1", "background"})
 _SUBCOMMANDS = (
