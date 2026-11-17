@@ -58,7 +58,38 @@ grep -Fq 'ACTION REQUIRED — SIGN OUT AND BACK IN ONCE' "$ROOT/install.sh" || f
 grep -Fq 'NOT READY' "$ROOT/install.sh" || fail "reload notice does not state that computer use is not ready"
 grep -Fq 'reload_notice "GNOME must load winrects@cua' "$ROOT/install.sh" || fail "winrects reload is not guided"
 grep -Fq 'reload_notice "GNOME must reload your session' "$ROOT/install.sh" || fail "DRM repair reload is not guided"
-pass "canonical skill path and prominent sign-out/in guidance are locked"
+grep -Fq 'RELOAD_NOTICE_SHOWN' "$ROOT/install.sh" || fail "reload notice can be printed twice"
+grep -Fq 'RERUN_COMMAND' "$ROOT/install.sh" || fail "installer has no durable rerun command"
+grep -Fq 'curl -fsSL $BASE_URL/install.sh | bash' "$ROOT/install.sh" || fail "curl-bash install has no durable rerun command"
+grep -Fq 'Log out now so GNOME can load winrects@cua? [Y/n]' "$ROOT/install.sh" || fail "sign-out step is not an informed Y/n choice"
+python3 - "$ROOT/install.sh" <<'PY' || fail "notice still prints a temporary rerun path"
+import pathlib,sys
+text=pathlib.Path(sys.argv[1]).read_text()
+old="rerun=\"cd '$SELF' && ./install.sh\""
+assert old not in text, "notice derives rerun path from $SELF (temporary under curl-bash)"
+PY
+pass "canonical skill path and single, actionable sign-out/in guidance are locked"
+
+# Cua's winrects metadata can lag the distro shell, leaving the extension OUT
+# OF DATE so exact presentation can never be proved. The repair must be
+# idempotent and must back up the original metadata.
+grep -Fq 'winrects-compat.py' "$ROOT/install.sh" || fail "installer does not repair winrects shell compatibility"
+python3 - "$ROOT" <<'PY' || fail "winrects shell-version repair failed"
+import importlib.util, json, pathlib, sys, tempfile
+root = pathlib.Path(sys.argv[1])
+spec = importlib.util.spec_from_file_location("winrects_compat", root / "scripts" / "winrects-compat.py")
+mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
+with tempfile.TemporaryDirectory() as d:
+    p = pathlib.Path(d) / "metadata.json"
+    p.write_text(json.dumps({"uuid":"winrects@cua","shell-version":["45","49"],"version":12}))
+    assert mod.ensure(p, "50") == "patched", "stale shell-version was not repaired"
+    assert "50" in json.loads(p.read_text())["shell-version"], "GNOME 50 not declared"
+    assert p.with_name(p.name + ".gwcu-backup").is_file(), "original metadata not backed up"
+    assert mod.ensure(p, "50") == "current", "repair is not idempotent"
+    assert mod.ensure(p, "51") == "patched", "future shell cannot be repaired"
+print("winrects shell-version repair is idempotent and preserves a backup")
+PY
+pass "winrects@cua shell-version is repaired so sign-out/in can activate it"
 
 cat >"$TMP/presenter.py" <<'PY'
 #!/usr/bin/env python3

@@ -2,7 +2,7 @@
 # uninstall.sh — run the current GWCU teardown, even over older installed copies.
 set -euo pipefail
 NAME="gnome-wayland-computer-use"
-VERSION="2.7.3"
+VERSION="2.7.4"
 BASE_URL="${GWCU_BASE_URL:-https://ryanraposo.github.io/gnome-wayland-computer-use}"
 RELEASE_BASE_URL="${GWCU_RELEASE_URL:-https://github.com/ryanraposo/gnome-wayland-computer-use/releases/download/v$VERSION}"
 PYTHON="${GWCU_SYSTEM_PYTHON:-/usr/bin/python3}"
