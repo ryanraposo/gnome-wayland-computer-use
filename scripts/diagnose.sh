@@ -295,8 +295,8 @@ if isinstance(presentation_capabilities,dict):
     portal_authorization_ok = presentation_capabilities["portal_authorization"] == "available"
     modes=(presentation or {}).get("execution_modes")
     if isinstance(modes,dict):
-        modes["desktop_visual_interaction"]="available" if visual_observation_ok and health_code=="ok" else "unavailable"
-        modes["verified_foreground"]="available" if presentation_capabilities.get("exact_target_binding")=="available" and health_code=="ok" else "unavailable"
+        modes["desktop_visual_interaction"]="available" if visual_observation_ok and health_code=="ok" and portal_authorization_ok else "unavailable"
+        modes["verified_foreground"]="available" if presentation_capabilities.get("exact_target_binding")=="available" and health_code=="ok" and portal_authorization_ok else "unavailable"
 installed_identity={"binary":cua,"version":(health or {}).get("executable_version")}
 doctor_identity={"binary":cua,"version":doctor_version(doctor) or (health or {}).get("reported_version")}
 gateway_identity_rows=[]
