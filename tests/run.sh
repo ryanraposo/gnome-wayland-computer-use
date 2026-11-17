@@ -57,7 +57,7 @@ grep -q 'present-window.py" status' "$installer" || fail "live presentation qual
 grep -q 'enable --now gnome-wayland-computer-use-observer.socket' "$installer" || fail "observer socket not enabled"
 grep -Fq 'worldline-dependency.sh" ensure' "$installer" || fail "WORLDLINE dependency is not resolved before readiness"
 ! grep -Fq 'worldline-pkg' "$installer" || fail "GWCU still vendors WORLDLINE source"
-! grep -Fq 'gnome-wayland-computer-use-worldline.service' "$installer" || fail "GWCU still installs a WORLDLINE service"
+! grep -Fq 'cp "$PRIMARY/systemd/user/gnome-wayland-computer-use-worldline' "$installer" || fail "GWCU still installs a WORLDLINE service"
 grep -Fq 'journalctl --user -u "$service_unit"' "$installer" || fail "daemon failure capsule lacks journal evidence"
 python3 "$presenter" self-test >/dev/null || fail "presentation primitive self-test"
 grep -Fq 'focused' "$presenter" && grep -Fq 'visible' "$presenter" && grep -Fq 'minimized' "$presenter" || fail "presenter does not prove visible focus"
