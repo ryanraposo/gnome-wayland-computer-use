@@ -140,7 +140,7 @@ def worldline_focus_proof(path: Path, target: tuple[int, int], timeout: float) -
     focus = (response.get("values") or {}).get("windows.focus")
     if (not response.get("ok") or not isinstance(focus, dict)
             or focus.get("pid") != pid
-            or focus.get("compositor_id") != window_id
+            or focus.get("cua_window_id") != window_id
             or focus.get("verified") is not True):
         return {"ok": False, "code": "focus_changed_before_dispatch",
                 "revision": response.get("revision"), "focus": focus}
