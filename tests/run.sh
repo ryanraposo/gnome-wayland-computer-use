@@ -72,6 +72,7 @@ grep -Fq 'journalctl --user -u "$service_unit"' "$installer" || fail "daemon fai
 python3 "$presenter" self-test >/dev/null || fail "presentation primitive self-test"
 grep -Fq 'focused' "$presenter" && grep -Fq 'visible' "$presenter" && grep -Fq 'minimized' "$presenter" || fail "presenter does not prove visible focus"
 grep -Fq 'def worldline_focus_proof' "$ROOT/scripts/action-span.py" || fail "action span does not revalidate focus immediately before dispatch"
+grep -Fq '"cua_window_id_provenance"' "$presenter" || fail "presenter does not require WORLDLINE's declared CUA identity bridge"
 grep -Fq '"lifecycle": {"requested": True, "dispatched": True, "acknowledged": not failed, "observed": False}' "$ROOT/scripts/action-span.py" || fail "action span does not distinguish dispatch, acknowledgement and observation"
 grep -Fq '"focus_revalidated"' "$ROOT/scripts/action-span.py" || fail "physical trace omits pre-dispatch focus proof"
 grep -Fq 'pid' "$presenter" && grep -Fq 'window_id' "$presenter" || fail "presenter lacks exact identity"
