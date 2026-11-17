@@ -71,6 +71,7 @@ def exact_window(windows: dict[str, Any], pid: int, window_id: int) -> dict[str,
         if isinstance(item, dict)
         and item.get("pid") == pid
         and item.get("cua_window_id") == window_id
+        and item.get("cua_window_id_source") == "cua-driver-atspi-child-ordinal"
         and item.get("compositor_verified") is True
         and item.get("geometry_source") == "worldline-gnome-shell"
     ]
@@ -198,7 +199,7 @@ def status() -> dict[str, Any]:
 
 def self_test() -> dict[str, Any]:
     sample = {"items": [{
-        "pid": 42, "cua_window_id": 0x12345678, "compositor_id": 7, "compositor_verified": True,
+        "pid": 42, "cua_window_id": 0x12345678, "cua_window_id_source": "cua-driver-atspi-child-ordinal", "compositor_id": 7, "compositor_verified": True,
         "geometry_source": "worldline-gnome-shell",
         "frame": {"x": -20, "y": 0, "width": 800, "height": 600},
         "focused": True, "visible": True, "minimized": False,
