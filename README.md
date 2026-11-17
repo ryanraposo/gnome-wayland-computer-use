@@ -142,7 +142,7 @@ Scope order: `GWCU_SCOPE_ROOT` → Git worktree root → nearest ancestor alread
 curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh | bash
 ```
 
-Run in a new visible desktop terminal. Install [standalone WORLDLINE](https://github.com/ryanraposo/WORLDLINE) first. The installer verifies its SHA-256 release, qualifies Ubuntu 26.04 GNOME Wayland, installs pinned Cua, enables its daemon, establishes portal consent, installs the skill/runtime and Hermes policy, and checks WORLDLINE capabilities. It never installs or enables WinRects; existing installations are disabled and verified inactive. If RemoteDesktop consent is missing, it opens GNOME Settings and waits for your approval. `READY // PROVED` follows only after capability checks succeed.
+Run in a new, visible terminal on the desktop. Install [standalone WORLDLINE](https://github.com/ryanraposo/WORLDLINE) first. The installer verifies its SHA-256 release, qualifies Ubuntu 26.04 GNOME Wayland, installs pinned Cua, enables its daemon, establishes portal consent, installs the skill/runtime and Hermes policy, and checks WORLDLINE capabilities. It never installs or enables WinRects; existing installations are disabled and verified inactive. If RemoteDesktop consent is missing, it opens GNOME Settings and waits for your approval. `READY // PROVED` follows only after capability checks succeed.
 
 ## Update
 
