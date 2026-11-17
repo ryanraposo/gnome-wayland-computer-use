@@ -292,6 +292,7 @@ if isinstance(presentation_capabilities,dict):
     portal_data=(portal_control or {}).get("portal",{})
     restore=(portal_data.get("restore_token") or {}).get("present") is True
     presentation_capabilities["portal_authorization"]="available" if portal_data.get("available") is True and restore else "unavailable"
+    portal_authorization_ok = presentation_capabilities["portal_authorization"] == "available"
     modes=(presentation or {}).get("execution_modes")
     if isinstance(modes,dict):
         modes["desktop_visual_interaction"]="available" if visual_observation_ok and health_code=="ok" else "unavailable"
@@ -313,7 +314,7 @@ if health_rc==0 and identity_ok:cua_status="ready"
 elif health_code in {"failed","identity_split_brain"} or not identity_ok:cua_status="failed"
 else:cua_status="degraded"
 
-ready=host_ok and environment_ok and worldline_ok and presentation_ok and cua_status=="ready" and identity_ok
+ready=host_ok and environment_ok and worldline_ok and presentation_ok and portal_authorization_ok and cua_status=="ready" and identity_ok
 if ready:code="ready";nxt=None
 elif not identity_ok:code="cua_identity_split_brain";nxt={"action":"repair_cua_identity","reason":"installed_hermes_gateway_doctor_must_match"}
 elif not environment_ok:code="desktop_environment_unproved";nxt={"action":"sync_desktop_environment","reason":"shell_systemd_gateway_must_match"}
