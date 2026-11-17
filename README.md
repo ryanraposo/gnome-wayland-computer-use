@@ -101,37 +101,21 @@ The tap serves `skills/computer-use/SKILL.md` (byte-identical to root `SKILL.md`
 
 ## Exact foreground
 
-Foreground is the informed fresh-install default. `/computer-use background on|off|status` changes the standing preference; explicit task intent wins. GWCU does not activate arbitrary windows: exact focus must already be observed or the action is refused.
-
-If a native `computer_use` action does not specify delivery mode, GWCU applies this preference. Action spans use the same setting.
-
-The high-level foreground path is:
+Foreground is the informed default; `/computer-use background on|off|status` changes the standing preference, and explicit task intent wins. GWCU never activates arbitrary windows. Foreground input requires the exact CUA `(pid, window_id)` to map through WORLDLINE's `cua_window_id` to one fresh, compositor-verified, focused and visible window. No proof, no focus-bound input.
 
 ```text
-ACQUIRE    closed local app → Cua launch → bind one exact NEW (pid, window_id)
-DISCOVER   running target → exact (pid, window_id)
+ACQUIRE    Cua launch or discover → bind exact (pid, window_id)
 ADMIT      WORLDLINE exact identity + fresh compositor geometry + already-focused proof
-ACT        Cua mutates that exact target
-REVALIDATE identity when it changes
-COMPLETE   present + verify the final visible result when required
+ACT        Cua mutation
+REVALIDATE before each later foreground mutation
+COMPLETE   verify final visible state when requested
 ```
 
-**No exact `(pid, window_id)` proof, no focus-bound input.** A visible-result request completes only when WORLDLINE verifies the exact target is focused and visible; otherwise GWCU reports that it could not present the result. A background-unavailable fallback may escalate through the same PRESENT gate once.
+A visible-result request is incomplete unless WORLDLINE verifies the exact target is focused and visible. Background-unavailable fallback uses the same admission gate. Cua `set_value` remains available through the semantic background route; foreground delivery is still gated.
 
-GNOME 50+ reports the execution mode rather than silently falling back:
+GNOME 50+ modes: **full foreground** unsupported pending a qualified Cua activation adapter; **verified foreground** requires exact identity + compositor geometry + RemoteDesktop input; **semantic interaction** uses AT-SPI; **desktop visual** is optional ScreenCast/PipeWire + RemoteDesktop; **observe-only** is the safe fallback. Available, unavailable, denied and stale states are explicit. Desktop capture does not gate semantic operation.
 
-| Mode | Admission |
-|---|---|
-| Full foreground | Unsupported until a separately qualified Cua-owned activation route exists. |
-| Verified foreground | Exact WORLDLINE compositor identity, fresh geometry and already-focused visibility. |
-| Semantic interaction | Cua's semantic `set_value` route can continue in background mode without compositor geometry; foreground delivery remains exact-target gated, and awaited spans verify resulting state through WORLDLINE. |
-| Desktop visual interaction | Optional ScreenCast/PipeWire observation plus separately consented RemoteDesktop input. |
-| Observe-only | Always available when mutation prerequisites cannot be proved. |
-
-Unavailable, denied and stale observations are reported as capability states. Desktop capture is optional; it does not gate semantic or verified-foreground operation.
-
-The exhaustive foreground action matrix belongs in `SKILL.md`. The policy plugin gates Hermes actions; local spans cover every Cua tool exposing `delivery_mode`.
-
+The full action matrix and policy rules live in `SKILL.md`. The Hermes plugin gates foreground actions; local action spans revalidate WORLDLINE before dispatch and preserve the newer-revision postcondition fence.
 ## WORLDLINE
 
 WORLDLINE turns repeated observation loops into local predicate-driven continuation:
