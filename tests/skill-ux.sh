@@ -209,5 +209,5 @@ grep -Fq "\"version\": \"${version}\"" "$ROOT/scripts/cua-health.py" || fail "Cu
 grep -Fq "\"version\": \"${version}\"" "$ROOT/scripts/portal-control.py" || fail "portal client version mismatch"
 grep -Fq "\"version\":\"${version}\"" "$ROOT/scripts/computer-use.sh" || fail "window-list client version mismatch"
 grep -Fq "\"version\": \"${version}\"" "$ROOT/scripts/action-span.py" || fail "action-span client version mismatch"
-[ "$version" = 2.7.0 ] || fail "release version is 2.7.0"
+[ "$version" = 2.7.1 ] || fail "release version is 2.7.1"
 pass "release identity is consistent across installer, runtimes and clients"
