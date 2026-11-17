@@ -117,6 +117,33 @@ PY
   ok "Verified GWCU release $VERSION @ ${SOURCE_COMMIT:0:12} (SHA-256 ${SOURCE_SHA256:0:12}…)"
 }
 portal_has(){ gdbus introspect --session --dest org.freedesktop.portal.Desktop --object-path /org/freedesktop/portal/desktop 2>/dev/null | grep -q "interface org.freedesktop.portal.$1"; }
+# Bring GNOME's Remote Desktop (Screen Sharing) toggle into the install flow.
+# The installer opens the Settings panel and waits for the portal; it never
+# clicks or types. The user keeps the consent decision at the desktop.
+guide_remote_desktop_sharing(){
+  if $EXPLICIT_UNATTENDED || [ ! -r /dev/tty ]; then
+    info "Open GNOME Settings -> Sharing -> Remote Desktop (Screen Sharing), turn it on, then rerun ./install.sh."
+    return 1
+  fi
+  info "Sharing flow 1/3: Open GNOME Settings -> Sharing -> Remote Desktop (Screen Sharing)."
+  info "Sharing flow 2/3: Turn on Remote Desktop / Screen Sharing."
+  info "Sharing flow 3/3: Approve GNOME's control prompt when it appears."
+  if command -v gnome-control-center >/dev/null 2>&1; then
+    gnome-control-center sharing >/dev/null 2>&1 </dev/null &
+  else
+    warn "gnome-control-center is unavailable; open the Sharing panel from the desktop."
+  fi
+  local deadline=$(( $(date +%s) + 180 )) reply=""
+  while ! portal_has RemoteDesktop; do
+    [ "$(date +%s)" -lt "$deadline" ] || return 1
+    printf '\r[INFO] Waiting for Remote Desktop (Screen Sharing); Enter when enabled, s to skip: ' >/dev/tty
+    reply=""
+    read -r -t 10 reply </dev/tty || reply=""
+    printf '\n' >/dev/tty
+    case "$reply" in s|S|q|Q) return 1;; esac
+  done
+  return 0
+}
 resolve_cua(){ command -v cua-driver 2>/dev/null || { [ -x "$HOME/.local/bin/cua-driver" ] && printf '%s\n' "$HOME/.local/bin/cua-driver"; }; }
 
 COMPAT=false
@@ -373,7 +400,8 @@ if [ ${#missing[@]} -gt 0 ]; then if $COMPAT; then warn "compat mode: packages m
 if ! $COMPAT; then
   PW=$(pipewire --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1); [ -n "$PW" ] || die "PipeWire unavailable"
   dpkg --compare-versions "$PW" ge 0.3.40 || die "PipeWire 0.3.40+ required"
-  portal_has RemoteDesktop || die "RemoteDesktop portal unavailable"; portal_has ScreenCast || die "ScreenCast portal unavailable"; portal_has Screenshot || die "Screenshot portal unavailable"
+  portal_has ScreenCast || die "ScreenCast portal unavailable"; portal_has Screenshot || die "Screenshot portal unavailable"
+  portal_has RemoteDesktop || warn "RemoteDesktop portal not exposed yet; GNOME Sharing setup runs before consent"
   "$PYTHON" - <<'PY' || die "Python GI/AT-SPI/GStreamer bindings unavailable"
 import gi
 for n,v in (("Gio","2.0"),("Gst","1.0"),("GstVideo","1.0"),("GdkPixbuf","2.0"),("Atspi","2.0")):gi.require_version(n,v)
@@ -496,16 +524,16 @@ PY
       sleep 2
       if portal_has RemoteDesktop; then
         ok "RemoteDesktop portal is now available on the session bus"
+      elif guide_remote_desktop_sharing; then
+        ok "Remote Desktop (Screen Sharing) enabled; RemoteDesktop portal is now available"
       else
-        die "RemoteDesktop portal is still unavailable on the session bus.
+        die "RemoteDesktop portal is still unavailable after the GNOME Sharing flow.
 
 GWCU needs the GNOME 'Remote Desktop' portal interface to deliver local pointer
-and keyboard input through EIS/libei. To resolve:
-
-  1. Open GNOME Settings -> Sharing -> Remote Desktop (Screen Sharing).
-  2. Turn on Remote Desktop / Screen Sharing.
-  3. When GNOME asks for control permission, approve it.
-  4. Re-run this installer: ./install.sh
+and keyboard input through EIS/libei. The Sharing step could not be completed
+from this terminal. Run the installer in a new, visible terminal on the
+logged-in desktop, turn on GNOME Settings -> Sharing -> Remote Desktop
+(Screen Sharing), approve GNOME's control prompt, then rerun ./install.sh.
 
 GWCU installs no RDP/VNC server and no raw-input daemon -- Cua Driver is the only
 actuator, and it uses the compositor-approved portal path just like any other

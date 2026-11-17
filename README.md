@@ -145,6 +145,8 @@ curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh | 
 
 The installer first verifies one commit-addressed SHA-256 release archive, then qualifies Ubuntu 26.04 GNOME Wayland, installs/reuses pinned Cua plus its helper, establishes portal consent, installs the skill/runtime and Hermes policy, synchronizes live desktop environment into the user systemd/DBus activation environment, restarts affected Hermes gateways, resolves WORLDLINE as an independent dependency, repairs older GWCU artifacts, and live-proves readiness. If WORLDLINE is missing, GWCU asks before acquisition and delegates installation to WORLDLINE's own lifecycle manager; it never bundles WORLDLINE source or owns its service. WORLDLINE is currently distributed from a private GitHub repository, so the installing account must have repository access.
 
+Run in a new, visible terminal on the desktop. If the RemoteDesktop portal is missing, the installer opens GNOME Settings -> Sharing -> Remote Desktop (Screen Sharing), waits for you to enable it, then continues with the pointer-only consent handshake. You still approve GNOME's prompt; GWCU never clicks or types.
+
 `READY // PROVED` requires the installed Cua identity, Hermes-selected identity, running gateway backend identity and doctor-reported identity to agree. A split-brain version/path state fails readiness.
 
 If the GNOME helper needs a session reload, the installer asks for one sign-out/sign-in and does not claim fully proved readiness until rerun.
