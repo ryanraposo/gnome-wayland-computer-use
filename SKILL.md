@@ -161,7 +161,7 @@ When background priority is OFF, pre-trace this path before the first mutation:
   → focused=true, visible=true, minimized=false
   → otherwise STOP before Cua input
 
-GWCU does not activate windows. If the intended target is not already focused,
+`focus_app` is not a qualified GNOME 50+ activation route: do not use it as a workaround or treat its return as focus proof. GWCU does not activate windows. If the intended target is not already focused,
 require verified foreground or refuse the mutation. A future activation route
 must be a separately qualified Cua-owned mechanism followed by a fresh
 WORLDLINE focus check.
