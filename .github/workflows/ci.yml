@@ -108,9 +108,9 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v6
-      - name: Fetch paired WORLDLINE published v0.3.0
+      - name: Fetch paired WORLDLINE identity-bridge revision
         env:
-          WORLDLINE_INTEGRATION_SHA: fa22719879d0ed87aec43b69ee3c726408933f8b
+          WORLDLINE_INTEGRATION_SHA: dd11f24b1518cb4b4d6fec5fad97e5b9a417cbac
         run: |
           set -euo pipefail
           git init --quiet "$RUNNER_TEMP/worldline"
@@ -120,6 +120,16 @@ jobs:
           actual_sha="$(git -C "$RUNNER_TEMP/worldline" rev-parse HEAD)"
           test "$actual_sha" = "$WORLDLINE_INTEGRATION_SHA"
           echo "WORLDLINE_SOURCE=$RUNNER_TEMP/worldline" >> "$GITHUB_ENV"
+      - name: Verify WORLDLINE CUA identity bridge schema
+        run: |
+          PYTHONPATH="$RUNNER_TEMP/worldline/src" python3 - <<'PY'
+          from worldline.observe import _windows
+          snapshot = _windows()
+          bridge = (snapshot.get("identity") or {}).get("cua_window_id") or {}
+          assert bridge.get("source") == "cua-driver-atspi-child-ordinal"
+          assert bridge.get("version") == 1
+          print("WORLDLINE exposes versioned CUA window identity mapping")
+          PY
       - name: One-call action spans
         run: bash ./tests/action-span.sh
       - name: WORLDLINE revision runtime
