@@ -92,7 +92,7 @@ def worldline_call(path: Path, payload: dict[str, Any], timeout: float) -> dict[
 
 def exact_target(arguments: dict[str, Any]) -> tuple[int, int] | None:
     pid, window_id = arguments.get("pid"), arguments.get("window_id")
-    if isinstance(pid, int) and not isinstance(pid, bool) and pid > 0 and isinstance(window_id, int) and not isinstance(window_id, bool) and 0 <= window_id <= (1 << 32) - 1:
+    if isinstance(pid, int) and not isinstance(pid, bool) and pid > 0 and isinstance(window_id, int) and not isinstance(window_id, bool) and 0 <= window_id <= (1 << 64) - 1:
         return pid, window_id
     return None
 
