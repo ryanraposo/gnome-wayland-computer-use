@@ -129,6 +129,7 @@ def inspect(pid: int, window_id: int, timeout_ms: int = 700) -> dict[str, Any]:
                     source=snapshot["source"],
                     window={"stable_id": window.get("stable_id"),
                             "cua_window_id": window.get("cua_window_id"),
+                            "cua_window_id_source": window.get("cua_window_id_source"),
                             "compositor_id": window.get("compositor_id"),
                             "title": window.get("title"),
                             "frame": geometry(window),
@@ -165,7 +166,10 @@ def status() -> dict[str, Any]:
     sources = windows.get("sources") if isinstance(windows.get("sources"), dict) else {}
     semantic = (sources.get("semantic") or {}).get("available") is True
     geometry_source = sources.get("geometry") or {}
-    compositor = geometry_source.get("available") is True and geometry_source.get("name") == "worldline-gnome-shell"
+    geometry_available = geometry_source.get("available") is True and geometry_source.get("name") == "worldline-gnome-shell"
+    # CUA's GNOME 50 fallback identity is AT-SPI-derived. Geometry alone
+    # cannot bind its (pid, window_id) to a Mutter window.
+    compositor = geometry_available and semantic
     return envelope(
         True, "capabilities_reported",
         revision=snapshot["revision"],
@@ -174,7 +178,7 @@ def status() -> dict[str, Any]:
         capabilities={
             "window_observation": capability_state(windows.get("available") is True, windows.get("reason")),
             "exact_target_binding": capability_state(compositor, geometry_source.get("reason")),
-            "compositor_geometry": capability_state(compositor, geometry_source.get("reason")),
+            "compositor_geometry": capability_state(geometry_available, geometry_source.get("reason")),
             "semantic_inspection": capability_state(semantic, (sources.get("semantic") or {}).get("reason")),
             "activation": "unsupported",
             "desktop_capture": "unknown",
@@ -220,6 +224,7 @@ def self_test() -> dict[str, Any]:
         "worldline_exact_pid_cua_window_id_binding",
         "focus_visibility_minimized_gate",
         "fresh_compositor_geometry_required",
+        "cua_window_id_provenance_required",
         "no_activation_or_input_surface",
         "semantic_only_cannot_admit_coordinate_input",
     ])
