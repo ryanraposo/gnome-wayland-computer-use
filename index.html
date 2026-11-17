@@ -128,6 +128,7 @@ and move it to Downloads</pre>
   </div>
   <div class="note">Run in a new, visible terminal as the logged-in desktop user. If the Remote Desktop portal is missing, the installer opens GNOME Settings → Sharing → Remote Desktop (Screen Sharing) and waits for you to enable it. You still approve GNOME's “Remote Desktop” prompt for local EIS/libei control; GWCU never clicks or types. Whole-screen observation has its own ScreenCast consent boundary.</div>
   <div class="note">With Hermes, GWCU owns the <code>computer-use</code> skill and its policy plugin wraps Hermes' existing <code>computer_use</code> tool — it does not replace that tool. The default Hermes home is integrated automatically; additional existing profiles are explicit installer choices. Existing skills are archived before replacement and teardown restores them when possible.</div>
+  <div class="note">The pinned Cua daemon is standard: a GWCU-owned <code>systemd --user</code> unit starts <code>cua-driver serve</code> at every GNOME graphical logon and is live-proved by the installer. An upstream or user-owned Cua autostart unit is preserved instead of being displaced by a second daemon.</div>
 </section>
 
 <section id="diagnose">
@@ -144,7 +145,7 @@ and move it to Downloads</pre>
   <div class="command">
     <code>curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/uninstall.sh | bash</code>
   </div>
-  <div class="note">Teardown removes GWCU-owned integration across existing Hermes profiles and transient runtime state while preserving Hermes' built-in <code>computer_use</code> tool, unmanaged components and repo/workspace <code>.gwcu</code>. Cua is preserved by default.</div>
+  <div class="note">Teardown removes GWCU-owned integration across existing Hermes profiles, the GWCU-managed Cua logon daemon unit and transient runtime state while preserving Hermes' built-in <code>computer_use</code> tool, unmanaged components and repo/workspace <code>.gwcu</code>. Upstream/user Cua autostart units are preserved; Cua itself is preserved by default.</div>
 </section>
 </main>
 

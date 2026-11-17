@@ -11,9 +11,10 @@ usage(){ cat <<'HELP'
 Usage: uninstall.sh [--keep-cua|--remove-cua|--purge-cua]
 
 Removes GWCU-managed skills/plugins from the default Hermes home and every
-existing profile, WORLDLINE + observer user services, transient runtime state,
-PATH edits and integration-owned state. Archived pre-GWCU components are
-restored when possible. Hermes' built-in `computer_use` tool/toolset is never
+existing profile, WORLDLINE + observer user services, the GWCU-managed Cua
+logon daemon unit, transient runtime state, PATH edits and integration-owned
+state. Upstream/user Cua autostart entries are preserved. Archived pre-GWCU
+components are restored when possible. Hermes' built-in `computer_use` tool/toolset is never
 removed. Repo/workspace .gwcu files remain local workspace content.
 
 The public uninstaller always uses the current teardown logic, so installations
