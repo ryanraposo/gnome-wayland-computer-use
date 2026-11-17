@@ -259,7 +259,7 @@ if worldline_ok: worldline_state="ready"
 elif worldline_socket: worldline_state="incompatible"
 elif worldline_unit.exists(): worldline_state="unavailable" if worldline_service else "stopped"
 else: worldline_state="missing"
-worldline={"ok":worldline_ok,"state":worldline_state,"service_active":worldline_service,"service_installed":worldline_unit.exists(),"socket":str(pathlib.Path(os.environ.get("WORLDLINE_SOCKET") or os.environ.get("XDG_RUNTIME_DIR",f"/run/user/{os.getuid()}"))/"worldline/worldline.sock")}
+worldline={"ok":worldline_ok,"state":worldline_state,"service_active":worldline_service,"service_installed":worldline_unit.exists(),"socket":str(pathlib.Path(os.environ.get("WORLDLINE_SOCKET") or os.environ.get("XDG_RUNTIME_DIR",f"/tmp/worldline-{os.getuid()}"))/"worldline/worldline.sock")}
 
 winrects_dir=pathlib.Path(os.environ.get("XDG_DATA_HOME",str(pathlib.Path.home()/".local/share")))/"gnome-shell/extensions/winrects@cua"
 winrects_installed=winrects_dir.is_dir(); winrects_active=extension_active("winrects@cua")
