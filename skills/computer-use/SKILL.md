@@ -98,7 +98,7 @@ For web work that does not depend on the user's browser session, use the availab
 
 GNOME Wayland is the supported session. **No X11 or XWayland session is required.** Cua uses GNOME `RemoteDesktop` → EIS/libei for input; GNOME may label this permission **Remote Desktop**. GWCU installs no RDP/VNC server or raw-input daemon. ScreenCast/PipeWire is the separate observation path.
 
-`window_id` is Cua's native window identifier. WORLDLINE binds it to a compositor-verified window by exact `(pid, compositor_id)`; semantic titles and PID alone are never sufficient.
+`window_id` is Cua's native window identifier. WORLDLINE maps it through exact `(pid, cua_window_id)` to a compositor-verified window, retaining Mutter's `compositor_id` as a separate identity; semantic titles and PID alone are never sufficient.
 
 ## Core rule
 
@@ -156,7 +156,7 @@ When background priority is OFF, pre-trace this path before the first mutation:
 
 3 PRESENT / ADMIT
   WORLDLINE fresh window snapshot
-  → exact (pid, compositor_id) resolves exactly once
+  → exact (pid, window_id) maps to one compositor-verified WORLDLINE window
   → compositor geometry is source-verified and fresh
   → focused=true, visible=true, minimized=false
   → otherwise STOP before Cua input
