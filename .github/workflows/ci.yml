@@ -11,7 +11,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  validate:
+  static:
+    name: Static and hermetic validation
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -36,7 +37,25 @@ jobs:
         run: bash ./tests/latency-routing.sh
       - name: Truth scope isolation
         run: bash ./tests/truth-scope.sh
-      - name: Standalone WORLDLINE test dependency
+      - name: Published-main migration
+        run: bash ./tests/main-migration.sh
+      - name: Lifecycle and security seams
+        run: bash ./tests/lifecycle-safety.sh
+      - name: Determinism contract
+        run: bash ./tests/determinism.sh
+      - name: Hermes policy integration
+        run: bash ./tests/hermes.sh
+
+  paired-worldline:
+    name: Paired WORLDLINE runtime validation
+    needs: static
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - name: Fetch paired WORLDLINE PR head
         env:
           WORLDLINE_INTEGRATION_SHA: e0bb49843c399a2d3157f58d8c5eec0e42d29f20
         run: |
@@ -48,13 +67,5 @@ jobs:
         run: bash ./tests/action-span.sh
       - name: WORLDLINE revision runtime
         run: bash ./tests/worldline.sh
-      - name: Published-main migration
-        run: bash ./tests/main-migration.sh
-      - name: Lifecycle and security seams
-        run: bash ./tests/lifecycle-safety.sh
-      - name: Determinism contract
-        run: bash ./tests/determinism.sh
-      - name: Hermes policy integration
-        run: bash ./tests/hermes.sh
       - name: Regression suite
         run: ./tests/run.sh
