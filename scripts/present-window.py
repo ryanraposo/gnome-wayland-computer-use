@@ -161,6 +161,7 @@ def status() -> dict[str, Any]:
     windows = snapshot["windows"]
     items = windows.get("items") if isinstance(windows.get("items"), list) else []
     exact = [item for item in items if isinstance(item, dict)
+             and item.get("cua_window_id_source") == "cua-driver-atspi-child-ordinal"
              and item.get("compositor_verified") is True
              and item.get("geometry_source") == "worldline-gnome-shell"]
     sources = windows.get("sources") if isinstance(windows.get("sources"), dict) else {}
