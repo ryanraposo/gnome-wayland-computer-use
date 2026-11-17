@@ -127,7 +127,7 @@ WORLDLINE turns repeated observation loops into local predicate-driven continuat
 click Save → document.dirty == false → predicate satisfied → continue
 ```
 
-It prefers direct truth from AT-SPI, filesystem/process state, D-Bus, settings, network and task watchers, with ScreenCast/PipeWire visual evidence only when needed. It is socket-activated and read-only.
+It prefers direct truth from AT-SPI, filesystem/process state, D-Bus, settings, network and task watchers, with ScreenCast/PipeWire visual evidence only when needed. It is independently installed and managed, exposes a user-private Unix socket, and remains read-only.
 
 For awaited actions, the runtime seals a WORLDLINE fence after presentation and immediately before Cua mutates the target. Postconditions must then be evidenced in a newer revision: a cached fact that was already true before the action cannot complete the action.
 
