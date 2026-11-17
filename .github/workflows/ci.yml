@@ -57,7 +57,7 @@ jobs:
       - uses: actions/checkout@v6
       - name: Fetch paired WORLDLINE PR head
         env:
-          WORLDLINE_INTEGRATION_SHA: e0bb49843c399a2d3157f58d8c5eec0e42d29f20
+          WORLDLINE_INTEGRATION_SHA: 4a51d417d5d30337bf5190bc9af0a88cceaff077
         run: |
           git clone --quiet --no-checkout https://github.com/ryanraposo/WORLDLINE.git "$RUNNER_TEMP/worldline"
           git -C "$RUNNER_TEMP/worldline" fetch --quiet --depth=1 origin "$WORLDLINE_INTEGRATION_SHA"
