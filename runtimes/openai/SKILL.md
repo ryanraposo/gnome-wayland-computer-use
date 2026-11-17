@@ -390,7 +390,7 @@ python3 "$ROOT/scripts/worldline-contract.py" "$FEATURES_JSON"
 GWCU's installer first reuses a healthy WORLDLINE instance. If the service is
 installed but stopped, it asks WORLDLINE's service manager to start it. If
 WORLDLINE is missing, the installer asks before acquiring it and delegates to
-WORLDLINE's own lifecycle manager. WORLDLINE is a public repository.
+WORLDLINE's own lifecycle manager. The WORLDLINE repository must be public before the public GWCU acquisition path is released.
 
 For unattended acquisition, set `GWCU_WORLDLINE_INSTALL=1` explicitly. The
 read-only GNOME Shell frame extension has a separate consent boundary; use
