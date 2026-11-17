@@ -149,7 +149,7 @@ curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh | 
 
 Run in a new, visible terminal on the desktop. Install and start [standalone WORLDLINE](https://github.com/ryanraposo/WORLDLINE) first. The installer verifies one SHA-256 release archive, qualifies Ubuntu 26.04 GNOME Wayland, installs/reuses pinned Cua, enables its logon daemon, establishes portal consent, installs the skill/runtime and Hermes policy, and live-proves readiness. If the RemoteDesktop portal is missing, it opens GNOME Settings -> Sharing -> Remote Desktop (Screen Sharing) and waits for you; you still approve GNOME's prompt.
 
-If the installer prints `STOP: SIGN OUT / SIGN IN REQUIRED`, follow its steps: save work, sign out of GNOME, sign back in as the same user, rerun the install command. Only `READY // PROVED` means ready.
+If the installer prints `STOP: SIGN OUT / SIGN IN REQUIRED`, answer `Y` at `Log out now? [Y/n]` to end the session, or `n` for manual steps. It repairs stale `winrects@cua` metadata so the reload activates the helper. Sign back in as the same user, rerun the durable command shown, and only accept `READY // PROVED`.
 
 ## Update
 

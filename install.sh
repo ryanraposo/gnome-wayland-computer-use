@@ -3,13 +3,18 @@
 set -euo pipefail
 
 APP_ID="gnome-wayland-computer-use"
-VERSION="2.7.3"
+VERSION="2.7.4"
 # Hermes' builtin computer-use skill lives at this canonical path. A second
 # skill with the same frontmatter name at the root loses the collision, so
 # /computer-use never becomes GWCU's contract. GWCU replaces the builtin in
 # place and retires its own stale root-level copy.
 HERMES_SKILL_REL="autonomous-ai-agents/computer-use"
 HERMES_LEGACY_SKILL_REL="computer-use"
+# The sign-out notice is printed at most once per install. RERUN_COMMAND is a
+# durable command: a verified curl-bash release is extracted under $TMP, which
+# does not survive sign-out, so it must never be offered as the rerun path.
+RELOAD_NOTICE_SHOWN=false
+RERUN_COMMAND=""
 BASE_URL="${GWCU_BASE_URL:-https://ryanraposo.github.io/gnome-wayland-computer-use}"
 RELEASE_BASE_URL="${GWCU_RELEASE_URL:-https://github.com/ryanraposo/gnome-wayland-computer-use/releases/download/v$VERSION}"
 CUA_DRIVER_RS_VERSION="${GWCU_CUA_DRIVER_RS_VERSION:-0.39.0}" # deliberately pinned
@@ -28,12 +33,10 @@ warn(){ printf '%s[WARN]%s %s\n' "$YELLOW" "$RESET" "$*"; }
 error(){ printf '%s[ERROR]%s %s\n' "$RED" "$RESET" "$*" >&2; }
 action(){ printf '%s[ACTION]%s %s\n' "$YELLOW" "$RESET" "$*"; }
 reload_notice(){
-  local reason=$1 rerun
-  if [ -n "$SELF" ] && [ -f "$SELF/install.sh" ]; then
-    rerun="cd '$SELF' && ./install.sh"
-  else
-    rerun="rerun the same install command you used"
-  fi
+  $RELOAD_NOTICE_SHOWN && return 0
+  RELOAD_NOTICE_SHOWN=true
+  local reason=$1 answer=""
+  local rerun="${RERUN_COMMAND:-curl -fsSL $BASE_URL/install.sh | bash}"
   printf '\n'
   printf '┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓\n'
   printf '┃  ACTION REQUIRED — SIGN OUT AND BACK IN ONCE             ┃\n'
@@ -42,12 +45,33 @@ reload_notice(){
   printf '  Until you do this and rerun the installer, computer use\n'
   printf '  is NOT READY — /computer-use cannot prove an exact target.\n\n'
   printf '  1. Save your work and close your applications.\n'
-  printf '  2. Log out: GNOME system menu -> Power -> Log Out\n'
-  printf '     (or: loginctl terminate-session "$XDG_SESSION_ID")\n'
-  printf '  3. Log back in as the SAME user on the SAME desktop.\n'
-  printf '  4. In a new terminal on that desktop, run:\n'
+  printf '  2. Log out and back in as the SAME user on the SAME desktop.\n'
+  printf '  3. In a new terminal on that desktop, run:\n'
   printf '       %s\n' "$rerun"
   printf '     Expected final line: READY // PROVED\n\n'
+  local manual="   Manual logout: GNOME system menu -> Power -> Log Out
+   Terminal logout: loginctl terminate-session \"\$XDG_SESSION_ID\"
+"
+  if $COMPAT || $EXPLICIT_UNATTENDED || [ ! -r /dev/tty ] || [ -z "${XDG_SESSION_ID:-}" ]; then
+    printf '  Log out now? [Y/n]: skipped (non-interactive install)\n'
+    printf '%s' "$manual"
+    return 0
+  fi
+  printf '  Log out now so GNOME can load winrects@cua? [Y/n]: ' >/dev/tty
+  read -r answer </dev/tty || answer=""
+  printf '\n' >/dev/tty
+  case "$answer" in
+    n|N|no|NO|No)
+      printf '  Not logging out. Do it before relying on /computer-use.\n'
+      printf '%s' "$manual"
+      ;;
+    *)
+      info "Logging out this GNOME session now. After sign-in, rerun: $rerun"
+      loginctl terminate-session "$XDG_SESSION_ID" >>"$INSTALL_LOG" 2>&1 || {
+        warn "Could not terminate the session; use GNOME system menu -> Power -> Log Out."
+      }
+      ;;
+  esac
 }
 die(){ error "$*"; [ -n "${INSTALL_LOG:-}" ] && printf '        details: %s\n' "$INSTALL_LOG" >&2; exit 1; }
 needs_session(){ action "$*"; reload_notice "GNOME must reload your session for the change this install just made."; [ -n "${INSTALL_LOG:-}" ] && printf '        details: %s\n' "$INSTALL_LOG" >&2; exit 20; }
@@ -72,6 +96,7 @@ prepare_source(){
       SOURCE_COMMIT="local"
       SOURCE_KIND="local-files"
     fi
+    RERUN_COMMAND="cd '$SELF' && ./install.sh"
     return 0
   fi
 
@@ -144,6 +169,7 @@ assert d.get("commit")==commit
 PY
   SELF="$release_root"
   SOURCE_KIND="verified-release"
+  RERUN_COMMAND="curl -fsSL $BASE_URL/install.sh | bash"
   ok "Verified GWCU release $VERSION @ ${SOURCE_COMMIT:0:12} (SHA-256 ${SOURCE_SHA256:0:12}…)"
 }
 portal_has(){ gdbus introspect --session --dest org.freedesktop.portal.Desktop --object-path /org/freedesktop/portal/desktop 2>/dev/null | grep -q "interface org.freedesktop.portal.$1"; }
@@ -507,12 +533,24 @@ info "[3/8] Installing Cua GNOME Wayland helper"
 CUA_HOME="${CUA_DRIVER_HOME:-$HOME/.cua-driver}"; HELPER="$CUA_HOME/packages/current/wayland-helper"; CUA_HELPER_INSTALLER="$HELPER/install.sh"
 [ -x "$CUA_HELPER_INSTALLER" ] || die "Cua packaged helper missing: packages/current/wayland-helper/install.sh"
 if run_logged "Cua GNOME helper install" "$CUA_HELPER_INSTALLER"; then ok "Cua GNOME helper installed"; else tail -n 20 "$INSTALL_LOG" >&2 || true; die "Cua GNOME helper installation failed"; fi
+# Cua's bundled extension can advertise a shell-version range that predates
+# this distro's GNOME. Repair that one field before asking GNOME to load it,
+# so the guided sign-out/in actually activates winrects@cua.
+if compat_status=$("$PYTHON" "$SELF/scripts/winrects-compat.py" 2>>"$INSTALL_LOG"); then
+  case "$compat_status" in
+    patched) ok "winrects@cua now declares the running GNOME Shell version; original metadata backed up" ;;
+    current|not-installed|no-shell-version) : ;;
+    *) warn "winrects@cua shell-version check returned: $compat_status" ;;
+  esac
+else
+  warn "winrects@cua shell-version repair could not run; GNOME may keep it OUT OF DATE"
+fi
 gnome-extensions enable winrects@cua >>"$INSTALL_LOG" 2>&1 || true
 RELOAD_REQUIRED=false
-if gnome-extensions info winrects@cua >/dev/null 2>&1 && gnome-extensions info winrects@cua 2>/dev/null | grep -qi 'State: ACTIVE'; then ok "winrects@cua is ACTIVE"; else RELOAD_REQUIRED=true; warn "winrects@cua is installed and will become active after one GNOME sign-out/sign-in"; fi
+if gnome-extensions info winrects@cua >/dev/null 2>&1 && gnome-extensions info winrects@cua 2>/dev/null | grep -qi 'State: ACTIVE'; then ok "winrects@cua is ACTIVE"; else RELOAD_REQUIRED=true; warn "winrects@cua is installed but not ACTIVE; a guided sign-out/in is required (details at the end)"; fi
 
 info "[4/8] Installing GWCU runtime, skill and WORLDLINE"
-FILES=(VERSION README.md agents/openai.yaml scripts/action-span.py scripts/cua-autostart.sh scripts/gwcu-exec scripts/app-identity.sh scripts/capture.sh scripts/check-update.sh scripts/computer-use.sh scripts/cua-health.py scripts/diagnose.sh scripts/mcp_client.py scripts/migrate-main.sh scripts/observe.sh scripts/observer.py scripts/portal-control.py scripts/present-window.py scripts/profile.sh scripts/teardown.sh scripts/truths.py scripts/worldline.py scripts/worldline-contract.py scripts/worldline-dependency.sh scripts/worldline-capture.sh systemd/user/gnome-wayland-computer-use-observer.socket systemd/user/gnome-wayland-computer-use-observer.service systemd/user/gnome-wayland-computer-use-cua-driver.service)
+FILES=(VERSION README.md agents/openai.yaml scripts/action-span.py scripts/cua-autostart.sh scripts/gwcu-exec scripts/app-identity.sh scripts/capture.sh scripts/check-update.sh scripts/computer-use.sh scripts/cua-health.py scripts/diagnose.sh scripts/mcp_client.py scripts/migrate-main.sh scripts/observe.sh scripts/observer.py scripts/portal-control.py scripts/present-window.py scripts/profile.sh scripts/teardown.sh scripts/truths.py scripts/worldline.py scripts/worldline-contract.py scripts/worldline-dependency.sh scripts/worldline-capture.sh scripts/winrects-compat.py systemd/user/gnome-wayland-computer-use-observer.socket systemd/user/gnome-wayland-computer-use-observer.service systemd/user/gnome-wayland-computer-use-cua-driver.service)
 rm -rf "$TMP/bundle"; mkdir -p "$TMP/bundle"
 for f in "${FILES[@]}"; do get_file "$f" "$TMP/bundle/$f"; done
 get_file SKILL.md "$TMP/bundle/SKILL.md"
