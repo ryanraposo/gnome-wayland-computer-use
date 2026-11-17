@@ -64,6 +64,8 @@ grep -Fq 'worldline-dependency.sh" ensure' "$installer" || fail "WORLDLINE depen
 grep -Fq '"active": "unknown"' "$ROOT/scripts/portal-control.py" || fail "portal token is incorrectly treated as a live session"
 grep -Fq '"stream_id": "unknown"' "$ROOT/scripts/portal-control.py" || fail "portal stream identity is guessed"
 grep -Fq '"portal_control"' "$diagnose" || fail "doctor omits RemoteDesktop session lifecycle status"
+grep -Fq 'portal_authorization_ok' "$diagnose" || fail "doctor can report ready without persisted portal authorization"
+grep -Fq 'portal_authorization_missing' "$diagnose" || fail "doctor omits the portal authorization failure boundary"
 ! grep -Fq 'worldline-pkg' "$installer" || fail "GWCU still vendors WORLDLINE source"
 ! grep -Fq 'cp "$PRIMARY/systemd/user/gnome-wayland-computer-use-worldline' "$installer" || fail "GWCU still installs a WORLDLINE service"
 grep -Fq 'journalctl --user -u "$service_unit"' "$installer" || fail "daemon failure capsule lacks journal evidence"
