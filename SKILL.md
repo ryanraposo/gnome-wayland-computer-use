@@ -1,7 +1,7 @@
 ---
 name: computer-use
 description: Use for reliable Ubuntu GNOME desktop control with Cua.
-version: 2.5.0
+version: 2.7.0
 author: Ryan Raposo
 license: MIT
 platforms: [linux]
@@ -366,38 +366,49 @@ A task is incomplete when the requested visible result is not actually on the us
 
 `trace` prints the exact default control path. `present` is the deterministic exact-window presentation primitive. `list-windows` is read-only discovery (no presentation gate, works in both background modes). `cursor-color` sets the agent cursor fill color via Cua WinRects helper (default green, visual aid only). Operator forms require the local helper/terminal surface; their absence does not remove ordinary `computer_use` capability.
 
-## WORLDLINE socket lifecycle
+## WORLDLINE installation and lifecycle
 
-The WORLDLINE daemon runs as a systemd socket-activated user service:
+WORLDLINE is an independent product and prerequisite for verified GWCU execution.
+It owns its installation, daemon, service, socket, upgrades and repair. GWCU
+does not bundle WORLDLINE source, install a duplicate daemon, or own its service
+units.
 
-```bash
-# Socket path (canonical)
-$XDG_RUNTIME_DIR/gnome-wayland-computer-use/worldline.sock
+The canonical socket is:
 
-# Service units
-gnome-wayland-computer-use-worldline.socket
-gnome-wayland-computer-use-worldline.service
+```text
+$XDG_RUNTIME_DIR/worldline/worldline.sock
 ```
 
-**Health check RPC:**
+The user service is `worldline.service`. Check real readiness through the
+protocol, not by checking a socket file or systemd state alone:
+
 ```bash
-worldline.py request --json '{"op":"status"}'
+python3 "$ROOT/scripts/worldline.py" request --json '{"op":"features"}'
+python3 "$ROOT/scripts/worldline-contract.py" "$FEATURES_JSON"
 ```
 
-**Recovery commands:**
+GWCU's installer first reuses a healthy WORLDLINE instance. If the service is
+installed but stopped, it asks WORLDLINE's service manager to start it. If
+WORLDLINE is missing, the installer asks before acquiring it and delegates to
+WORLDLINE's own lifecycle manager. The WORLDLINE repository must be public before the public GWCU acquisition path is released.
+
+For unattended acquisition, set `GWCU_WORLDLINE_INSTALL=1` explicitly. The
+read-only GNOME Shell frame extension has a separate consent boundary; use
+`GWCU_WORLDLINE_GRANT_FRAMES=1` only after the user has approved it. Interactive
+installs present WORLDLINE's own permission prompt.
+
+Use WORLDLINE's lifecycle manager for repair, upgrade and uninstall:
+
 ```bash
-systemctl --user restart gnome-wayland-computer-use-worldline.socket gnome-wayland-computer-use-worldline.service
+WORLDLINE_INSTALLER="${XDG_DATA_HOME:-$HOME/.local/share}/worldline/source/scripts/worldline-install.sh"
+"$WORLDLINE_INSTALLER" status --json
+"$WORLDLINE_INSTALLER" start
+"$WORLDLINE_INSTALLER" repair
+"$WORLDLINE_INSTALLER" upgrade
+"$WORLDLINE_INSTALLER" uninstall
 ```
 
-**Log inspection:**
-```bash
-journalctl --user -u gnome-wayland-computer-use-worldline.service -n 50
-```
-
-**Socket activation contract:**
-- Daemon inherits fd 3 from systemd (`LISTEN_FDS=1`, `LISTEN_PID=$$`)
-- `worldline.py listen()` handles this; callers connect to the socket path
-- Socket units are installed and enabled by `install.sh`
-- Daemon idle timeout defaults to 300s; configurable via `GWCU_WORLDLINE_IDLE_SECONDS`
-
+GWCU upgrade and uninstall preserve WORLDLINE. A protocol mismatch or missing
+`receipt` operation fails readiness; GWCU never silently replaces an existing
+WORLDLINE installation.
 Project rationale and installation documentation lives in `README.md`.

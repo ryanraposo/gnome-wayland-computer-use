@@ -3,7 +3,7 @@
 set -euo pipefail
 
 APP_ID="gnome-wayland-computer-use"
-VERSION="2.4.0"
+VERSION="2.7.0"
 BASE_URL="${GWCU_BASE_URL:-https://ryanraposo.github.io/gnome-wayland-computer-use}"
 CUA_DRIVER_RS_VERSION="${GWCU_CUA_DRIVER_RS_VERSION:-0.39.0}" # deliberately pinned
 PYTHON="${GWCU_SYSTEM_PYTHON:-/usr/bin/python3}"
@@ -117,6 +117,33 @@ PY
   ok "Verified GWCU release $VERSION @ ${SOURCE_COMMIT:0:12} (SHA-256 ${SOURCE_SHA256:0:12}…)"
 }
 portal_has(){ gdbus introspect --session --dest org.freedesktop.portal.Desktop --object-path /org/freedesktop/portal/desktop 2>/dev/null | grep -q "interface org.freedesktop.portal.$1"; }
+# Bring GNOME's Remote Desktop (Screen Sharing) toggle into the install flow.
+# The installer opens the Settings panel and waits for the portal; it never
+# clicks or types. The user keeps the consent decision at the desktop.
+guide_remote_desktop_sharing(){
+  if $EXPLICIT_UNATTENDED || [ ! -r /dev/tty ]; then
+    info "Open GNOME Settings -> Sharing -> Remote Desktop (Screen Sharing), turn it on, then rerun ./install.sh."
+    return 1
+  fi
+  info "Sharing flow 1/3: Open GNOME Settings -> Sharing -> Remote Desktop (Screen Sharing)."
+  info "Sharing flow 2/3: Turn on Remote Desktop / Screen Sharing."
+  info "Sharing flow 3/3: Approve GNOME's control prompt when it appears."
+  if command -v gnome-control-center >/dev/null 2>&1; then
+    gnome-control-center sharing >/dev/null 2>&1 </dev/null &
+  else
+    warn "gnome-control-center is unavailable; open the Sharing panel from the desktop."
+  fi
+  local deadline=$(( $(date +%s) + 180 )) reply=""
+  while ! portal_has RemoteDesktop; do
+    [ "$(date +%s)" -lt "$deadline" ] || return 1
+    printf '\r[INFO] Waiting for Remote Desktop (Screen Sharing); Enter when enabled, s to skip: ' >/dev/tty
+    reply=""
+    read -r -t 10 reply </dev/tty || reply=""
+    printf '\n' >/dev/tty
+    case "$reply" in s|S|q|Q) return 1;; esac
+  done
+  return 0
+}
 resolve_cua(){ command -v cua-driver 2>/dev/null || { [ -x "$HOME/.local/bin/cua-driver" ] && printf '%s\n' "$HOME/.local/bin/cua-driver"; }; }
 
 COMPAT=false
@@ -373,7 +400,8 @@ if [ ${#missing[@]} -gt 0 ]; then if $COMPAT; then warn "compat mode: packages m
 if ! $COMPAT; then
   PW=$(pipewire --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1); [ -n "$PW" ] || die "PipeWire unavailable"
   dpkg --compare-versions "$PW" ge 0.3.40 || die "PipeWire 0.3.40+ required"
-  portal_has RemoteDesktop || die "RemoteDesktop portal unavailable"; portal_has ScreenCast || die "ScreenCast portal unavailable"; portal_has Screenshot || die "Screenshot portal unavailable"
+  portal_has ScreenCast || die "ScreenCast portal unavailable"; portal_has Screenshot || die "Screenshot portal unavailable"
+  portal_has RemoteDesktop || warn "RemoteDesktop portal not exposed yet; GNOME Sharing setup runs before consent"
   "$PYTHON" - <<'PY' || die "Python GI/AT-SPI/GStreamer bindings unavailable"
 import gi
 for n,v in (("Gio","2.0"),("Gst","1.0"),("GstVideo","1.0"),("GdkPixbuf","2.0"),("Atspi","2.0")):gi.require_version(n,v)
@@ -405,86 +433,13 @@ gnome-extensions enable winrects@cua >>"$INSTALL_LOG" 2>&1 || true
 RELOAD_REQUIRED=false
 if gnome-extensions info winrects@cua >/dev/null 2>&1 && gnome-extensions info winrects@cua 2>/dev/null | grep -qi 'State: ACTIVE'; then ok "winrects@cua is ACTIVE"; else RELOAD_REQUIRED=true; warn "winrects@cua is installed and will become active after one GNOME sign-out/sign-in"; fi
 
-info "Installing WORLDLINE package (ryanraposo/WORLDLINE)"
-WORLDLINE_CHECKOUT="${GWCU_WORLDLINE_ROOT:-$HOME/repos/WORLDLINE}"
-WORLDLINE_PKG="${XDG_DATA_HOME:-$HOME/.local/share}/gnome-wayland-computer-use/worldline-pkg"
-WORLDLINE_MIN_VERSION="0.3.0"
-WORLDLINE_SOCKET="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/worldline/worldline.sock"
-
-if [ -d "$WORLDLINE_CHECKOUT/src/worldline" ]; then
-  ok "WORLDLINE checkout found at $WORLDLINE_CHECKOUT"
-elif [ -z "${GWCU_WORLDLINE_ROOT:-}" ]; then
-  info "WORLDLINE checkout not found at $WORLDLINE_CHECKOUT; cloning from GitHub"
-  command -v git >/dev/null 2>&1 || die "git is required to clone WORLDLINE"
-  git clone --depth 1 https://github.com/ryanraposo/WORLDLINE.git "$WORLDLINE_CHECKOUT" >>"$INSTALL_LOG" 2>&1 || die "WORLDLINE clone failed"
-  ok "WORLDLINE cloned to $WORLDLINE_CHECKOUT"
-else
-  die "GWCU_WORLDLINE_ROOT points to $WORLDLINE_CHECKOUT but no checkout exists there"
-fi
-
-# Verify WORLDLINE version meets the minimum required by GWCU.
-WORLDLINE_VERSION=$(grep -F '__version__ = ' "$WORLDLINE_CHECKOUT/src/worldline/__init__.py" 2>/dev/null | head -1 | sed "s/.*= *['\"]\([^'\"]*\)['\"].*/\1/" || true)
-if [ -n "$WORLDLINE_VERSION" ]; then
-  WLV_MAJOR=$(printf '%s' "$WORLDLINE_VERSION" | cut -d. -f1)
-  WLV_MINOR=$(printf '%s' "$WORLDLINE_VERSION" | cut -d. -f2)
-  WLV_PATCH=$(printf '%s' "$WORLDLINE_VERSION" | cut -d. -f3)
-  MM_MAJOR=$(printf '%s' "$WORLDLINE_MIN_VERSION" | cut -d. -f1)
-  MM_MINOR=$(printf '%s' "$WORLDLINE_MIN_VERSION" | cut -d. -f2)
-  MM_PATCH=$(printf '%s' "$WORLDLINE_MIN_VERSION" | cut -d. -f3)
-  if { [ "$WLV_MAJOR" -gt "$MM_MAJOR" ] || \
-       { [ "$WLV_MAJOR" -eq "$MM_MAJOR" ] && { [ "$WLV_MINOR" -gt "$MM_MINOR" ] || \
-         { [ "$WLV_MINOR" -eq "$MM_MINOR" ] && [ "$WLV_PATCH" -ge "$MM_PATCH" ]; }; }; }; }; then
-    ok "WORLDLINE version $WORLDLINE_VERSION (>= $WORLDLINE_MIN_VERSION)"
-  else
-    die "WORLDLINE version $WORLDLINE_VERSION is below required $WORLDLINE_MIN_VERSION"
-  fi
-else
-  warn "Could not determine WORLDLINE version; proceeding anyway"
-fi
-
-# Install/update WORLDLINE: venv, pip install -e, systemd user service, start daemon.
-info "Installing WORLDLINE service via update.sh"
-if [ -x "$WORLDLINE_CHECKOUT/update.sh" ]; then
-  if $EXPLICIT_UNATTENDED; then
-    WORLDLINE_GRANT_WINDOW_FRAMES=1 bash -c "cd '$WORLDLINE_CHECKOUT' && bash ./update.sh" >>"$INSTALL_LOG" 2>&1 || die "WORLDLINE update.sh failed"
-  else
-    (cd "$WORLDLINE_CHECKOUT" && bash ./update.sh) >>"$INSTALL_LOG" 2>&1 || die "WORLDLINE update.sh failed"
-  fi
-  ok "WORLDLINE service installed and started"
-else
-  warn "WORLDLINE update.sh not found; skipping service installation"
-fi
-
-# Copy the package into GWCU's install location so the shim can import it.
-mkdir -p "$WORLDLINE_PKG/src"
-rm -rf "$WORLDLINE_PKG/src/worldline"
-cp -a "$WORLDLINE_CHECKOUT/src/worldline" "$WORLDLINE_PKG/src/worldline"
-ok "WORLDLINE package installed to $WORLDLINE_PKG/src/worldline"
-
-# Verify the daemon responds on its socket before marking install complete.
-for _ in $(seq 1 50); do
-  if [ -S "$WORLDLINE_SOCKET" ]; then
-    PYTHONPATH="$WORLDLINE_PKG/src" python3 -c "
-import sys; sys.path.insert(0, '$WORLDLINE_PKG/src')
-from worldline.control import request
-r = request('$WORLDLINE_SOCKET', 'status', {})
-assert r.get('ok'), r
-" 2>/dev/null && break
-  fi
-  sleep 0.1
-done
-if [ ! -S "$WORLDLINE_SOCKET" ]; then
-  warn "WORLDLINE daemon socket did not appear at $WORLDLINE_SOCKET; GWCU will fall back to shim without live daemon"
-else
-  ok "WORLDLINE daemon responding on $WORLDLINE_SOCKET"
-fi
-
 info "[4/8] Installing GWCU runtime, skill and WORLDLINE"
-FILES=(VERSION README.md agents/openai.yaml scripts/action-span.py scripts/app-identity.sh scripts/capture.sh scripts/check-update.sh scripts/computer-use.sh scripts/cua-health.py scripts/diagnose.sh scripts/mcp_client.py scripts/migrate-main.sh scripts/observe.sh scripts/observer.py scripts/portal-control.py scripts/present-window.py scripts/profile.sh scripts/teardown.sh scripts/truths.py scripts/worldline.py scripts/worldline-capture.sh systemd/user/gnome-wayland-computer-use-observer.socket systemd/user/gnome-wayland-computer-use-observer.service systemd/user/gnome-wayland-computer-use-worldline.socket systemd/user/gnome-wayland-computer-use-worldline.service)
+FILES=(VERSION README.md agents/openai.yaml scripts/action-span.py scripts/gwcu-exec scripts/app-identity.sh scripts/capture.sh scripts/check-update.sh scripts/computer-use.sh scripts/cua-health.py scripts/diagnose.sh scripts/mcp_client.py scripts/migrate-main.sh scripts/observe.sh scripts/observer.py scripts/portal-control.py scripts/present-window.py scripts/profile.sh scripts/teardown.sh scripts/truths.py scripts/worldline.py scripts/worldline-contract.py scripts/worldline-dependency.sh scripts/worldline-capture.sh systemd/user/gnome-wayland-computer-use-observer.socket systemd/user/gnome-wayland-computer-use-observer.service)
 rm -rf "$TMP/bundle"; mkdir -p "$TMP/bundle"
 for f in "${FILES[@]}"; do get_file "$f" "$TMP/bundle/$f"; done
 get_file SKILL.md "$TMP/bundle/SKILL.md"
 for f in "$TMP/bundle/scripts"/*.sh "$TMP/bundle/scripts"/*.py; do chmod +x "$f"; done
+chmod +x "$TMP/bundle/scripts/gwcu-exec"
 plugin_name_of(){ awk -F': *' '/^name:[[:space:]]*/{gsub(/^[[:space:]]+|[[:space:]]+$|["'\'']/,"",$2); print $2; exit}' "$1"; }
 manifest_backup(){ local dst=$1 backup; mkdir -p "$BACKUPS"; backup="$BACKUPS/$(date +%s%N)-$(basename "$dst")"; mv "$dst" "$backup"; printf '%s\t%s\n' "$dst" "$backup" >>"$MANIFEST"; }
 install_dir(){ local src=$1 dst=$2; if [ -e "$dst" ] && [ ! -f "$dst/.gnome-wayland-computer-use-managed" ]; then manifest_backup "$dst"; fi; rm -rf "$dst"; mkdir -p "$(dirname "$dst")"; cp -a "$src" "$dst"; : >"$dst/.gnome-wayland-computer-use-managed"; }
@@ -570,16 +525,16 @@ PY
       sleep 2
       if portal_has RemoteDesktop; then
         ok "RemoteDesktop portal is now available on the session bus"
+      elif guide_remote_desktop_sharing; then
+        ok "Remote Desktop (Screen Sharing) enabled; RemoteDesktop portal is now available"
       else
-        die "RemoteDesktop portal is still unavailable on the session bus.
+        die "RemoteDesktop portal is still unavailable after the GNOME Sharing flow.
 
 GWCU needs the GNOME 'Remote Desktop' portal interface to deliver local pointer
-and keyboard input through EIS/libei. To resolve:
-
-  1. Open GNOME Settings -> Sharing -> Remote Desktop (Screen Sharing).
-  2. Turn on Remote Desktop / Screen Sharing.
-  3. When GNOME asks for control permission, approve it.
-  4. Re-run this installer: ./install.sh
+and keyboard input through EIS/libei. The Sharing step could not be completed
+from this terminal. Run the installer in a new, visible terminal on the
+logged-in desktop, turn on GNOME Settings -> Sharing -> Remote Desktop
+(Screen Sharing), approve GNOME's control prompt, then rerun ./install.sh.
 
 GWCU installs no RDP/VNC server and no raw-input daemon -- Cua Driver is the only
 actuator, and it uses the compositor-approved portal path just like any other
@@ -602,16 +557,27 @@ ok "Legacy published-main control plane retired; Cua is the only actuator"
 
 info "[7/8] Enabling and live-proving WORLDLINE + observer + exact presentation"
 UNIT_DIR="$HOME/.config/systemd/user"; mkdir -p "$UNIT_DIR"
-for u in gnome-wayland-computer-use-observer.socket gnome-wayland-computer-use-observer.service gnome-wayland-computer-use-worldline.socket gnome-wayland-computer-use-worldline.service; do cp "$PRIMARY/systemd/user/$u" "$UNIT_DIR/$u"; done
+for u in gnome-wayland-computer-use-observer.socket gnome-wayland-computer-use-observer.service; do cp "$PRIMARY/systemd/user/$u" "$UNIT_DIR/$u"; done
+for u in gnome-wayland-computer-use-worldline.socket gnome-wayland-computer-use-worldline.service; do
+  systemctl --user disable --now "$u" >/dev/null 2>&1 || true
+  if [ -f "$UNIT_DIR/$u" ] && grep -Fq 'gnome-wayland-computer-use/scripts/worldline.py' "$UNIT_DIR/$u"; then rm -f "$UNIT_DIR/$u"; fi
+done
+systemctl --user daemon-reload
 systemctl --user daemon-reload || $COMPAT || die "user systemd reload failed"
-for u in gnome-wayland-computer-use-observer.socket gnome-wayland-computer-use-observer.service gnome-wayland-computer-use-worldline.socket gnome-wayland-computer-use-worldline.service; do systemctl --user reset-failed "$u" 2>/dev/null || true; done
-if ! $COMPAT; then systemctl --user enable --now gnome-wayland-computer-use-observer.socket >>"$INSTALL_LOG" 2>&1 || die "observer socket failed to enable"; systemctl --user enable --now gnome-wayland-computer-use-worldline.socket >>"$INSTALL_LOG" 2>&1 || die "WORLDLINE socket failed to enable"; fi
+for u in gnome-wayland-computer-use-observer.socket gnome-wayland-computer-use-observer.service; do systemctl --user reset-failed "$u" 2>/dev/null || true; done
+if ! $COMPAT; then systemctl --user enable --now gnome-wayland-computer-use-observer.socket >>"$INSTALL_LOG" 2>&1 || die "observer socket failed to enable"; fi
 "$PYTHON" "$PRIMARY/scripts/observer.py" self-test >>"$INSTALL_LOG" || die "observer.py self-test failed"
+if ! $COMPAT; then bash "$PRIMARY/scripts/worldline-dependency.sh" ensure >>"$INSTALL_LOG" 2>&1 || die "Standalone WORLDLINE dependency could not be resolved and verified"; fi
 "$PYTHON" "$PRIMARY/scripts/worldline.py" self-test >>"$INSTALL_LOG" || die "worldline.py self-test failed"
 "$PYTHON" "$PRIMARY/scripts/present-window.py" self-test >>"$INSTALL_LOG" || die "presentation gate self-test failed"
 if ! $COMPAT; then
   ensure_user_daemon observer "ScreenCast observer" gnome-wayland-computer-use-observer.socket gnome-wayland-computer-use-observer.service "$PYTHON" "$PRIMARY/scripts/observer.py" client status || die "ScreenCast observer is not responding"
-  ensure_user_daemon worldline "WORLDLINE" gnome-wayland-computer-use-worldline.socket gnome-wayland-computer-use-worldline.service "$PYTHON" "$PRIMARY/scripts/worldline.py" request --json '{"op":"status"}' || die "WORLDLINE is not responding"
+  WORLDLINE_FEATURES="$STATE/worldline-features.json"
+  "$PYTHON" "$PRIMARY/scripts/worldline.py" request --json '{"op":"features"}' >"$WORLDLINE_FEATURES" 2>>"$INSTALL_LOG" || die "Install and start standalone WORLDLINE first; its private socket is unavailable"
+  # A stale WORLDLINE that answers discovery but lacks `receipt` would install
+  # cleanly and only fail mid-action, so refuse it here.
+  if ! "$PYTHON" "$PRIMARY/scripts/worldline-contract.py" "$WORLDLINE_FEATURES" >>"$INSTALL_LOG" 2>&1
+  then die "Standalone WORLDLINE must advertise the 'receipt' op; update WORLDLINE before installing GWCU"; fi
   if $RELOAD_REQUIRED; then warn "Exact presentation live proof is deferred until GNOME loads winrects@cua"; else "$PYTHON" "$PRIMARY/scripts/present-window.py" status >"$STATE/presentation.json" 2>>"$INSTALL_LOG" || die "Cua GNOME exact-presentation gate unavailable"; fi
 fi
 ok "WORLDLINE + observer protocols proved; presentation gate qualified"
@@ -626,7 +592,7 @@ try:d=json.loads(p.read_text())
 except Exception:d={}
 d["schema"]="gwcu.ownership.v3";d["toolkit_accessibility"]={"previous":sys.argv[2],"changed":sys.argv[3]=="true"}
 u=d.setdefault("upstream",{});c=u.setdefault("cua_driver",{});c["version"]=sys.argv[4];c["owned"]=bool(c.get("provisioned") or c.get("owned"));u.setdefault("winrects",{"owned":False})
-enabled=sys.argv[6]!="true";d["user_units"]={"observer_socket":enabled,"observer_service":enabled,"worldline_socket":enabled,"worldline_service":enabled};d["hermes_plugin"]={"managed":sys.argv[5]=="true","name":"gnome-wayland-computer-use","profiles":int(sys.argv[7])};d["distro_foundation_owned"]=False
+enabled=sys.argv[6]!="true";d["user_units"]={"observer_socket":enabled,"observer_service":enabled};d["hermes_plugin"]={"managed":sys.argv[5]=="true","name":"gnome-wayland-computer-use","profiles":int(sys.argv[7])};d["distro_foundation_owned"]=False
 p.write_text(json.dumps(d,separators=(",",":"))+"\n");os.chmod(p,0o600)
 PY
 DIAG_CODE="compat"
@@ -653,13 +619,24 @@ PY
 fi
 MANAGED_VALUE=$(cat "$PREF" 2>/dev/null || printf unknown); BACKGROUND_VALUE=$(cat "$BACKGROUND_PREF" 2>/dev/null || printf unknown)
 RECEIPT="$STATE/install-receipt.json"
-"$PYTHON" - "$RECEIPT" "$VERSION" "$CUA_DRIVER_RS_VERSION" "$DIAG_CODE" "$RELOAD_REQUIRED" "$HERMES" "$HERMES_POLICY_STATUS" "$MANAGED_VALUE" "$BACKGROUND_VALUE" "$HERMES_TARGET_COUNT" "$SOURCE_KIND" "$SOURCE_COMMIT" "$SOURCE_SHA256" <<'PY'
+"$PYTHON" - "$RECEIPT" "$VERSION" "$CUA_DRIVER_RS_VERSION" "$DIAG_CODE" "$RELOAD_REQUIRED" "$HERMES" "$HERMES_POLICY_STATUS" "$MANAGED_VALUE" "$BACKGROUND_VALUE" "$HERMES_TARGET_COUNT" "$SOURCE_KIND" "$SOURCE_COMMIT" "$SOURCE_SHA256" "${WORLDLINE_FEATURES:-/dev/null}" <<'PY'
 import json,os,pathlib,sys,time
 p=pathlib.Path(sys.argv[1])
-d={"schema":"gwcu.install-receipt.v1","version":sys.argv[2],"cua_driver":sys.argv[3],"diagnosis":sys.argv[4],"reload_required":sys.argv[5]=="true","hermes_detected":sys.argv[6]=="true","hermes_policy":sys.argv[7],"managed_truths":sys.argv[8],"background_priority":sys.argv[9],"hermes_profiles":int(sys.argv[10]),"source":{"kind":sys.argv[11],"commit":sys.argv[12],"sha256":sys.argv[13] or None},"installed_at_unix":int(time.time())}
+try:wf=json.loads(pathlib.Path(sys.argv[14]).read_text())
+except Exception:wf={}
+d={"schema":"gwcu.install-receipt.v1","version":sys.argv[2],"cua_driver":sys.argv[3],"diagnosis":sys.argv[4],"reload_required":sys.argv[5]=="true","hermes_detected":sys.argv[6]=="true","hermes_policy":sys.argv[7],"managed_truths":sys.argv[8],"background_priority":sys.argv[9],"hermes_profiles":int(sys.argv[10]),"source":{"kind":sys.argv[11],"commit":sys.argv[12],"sha256":sys.argv[13] or None},"worldline":{"protocol":wf.get("protocol"),"domain_id":wf.get("domain_id"),"receipt_schema":wf.get("receipt_schema"),"requires":"receipt"},"installed_at_unix":int(time.time())}
 p.write_text(json.dumps(d,separators=(",",":"))+"\n");os.chmod(p,0o600)
 PY
 ok "Installed state proved; receipt written"
+PENDING_RESTART=$("$PYTHON" - "$DIAG_OUT" <<'PY'
+import json,sys
+try: print("yes" if json.load(open(sys.argv[1])).get("pending_hermes_restart") else "no")
+except Exception: print("no")
+PY
+)
+if [ "$PENDING_RESTART" = yes ]; then
+  info "Next: Hermes daemon sync was deferred while live sessions were active; rerun ./install.sh when they finish."
+fi
 
 printf '\n%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n' "$DIM" "$RESET"
 if $RELOAD_REQUIRED; then printf '%sINSTALL COMPLETE // ONE GNOME RELOAD REQUIRED%s\n' "$BOLD" "$RESET"; printf 'Sign out/in once, rerun ./install.sh, and it will prove exact presentation.\n'; elif $COMPAT; then printf '%sINSTALLED FOR NEXT UBUNTU GNOME SESSION%s\n' "$BOLD" "$RESET"; else printf '%sREADY // PROVED%s\n' "$BOLD" "$RESET"; fi

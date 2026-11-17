@@ -2,7 +2,7 @@ name: Validate
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
   workflow_dispatch:
 
@@ -11,7 +11,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  validate:
+  static:
+    name: Static and hermetic validation
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -36,10 +37,6 @@ jobs:
         run: bash ./tests/latency-routing.sh
       - name: Truth scope isolation
         run: bash ./tests/truth-scope.sh
-      - name: One-call action spans
-        run: bash ./tests/action-span.sh
-      - name: WORLDLINE revision runtime
-        run: bash ./tests/worldline.sh
       - name: Published-main migration
         run: bash ./tests/main-migration.sh
       - name: Lifecycle and security seams
@@ -48,5 +45,85 @@ jobs:
         run: bash ./tests/determinism.sh
       - name: Hermes policy integration
         run: bash ./tests/hermes.sh
+
+  worldline-visibility:
+    name: Check paired WORLDLINE availability
+    needs: static
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      contents: read
+    outputs:
+      public: ${{ steps.visibility.outputs.public }}
+    steps:
+      - name: Check repository visibility
+        id: visibility
+        shell: bash
+        run: |
+          set -euo pipefail
+          metadata_file="$RUNNER_TEMP/worldline-repository.json"
+          http_status="$(curl --silent --show-error --retry 2 \
+            --output "$metadata_file" --write-out '%{http_code}' \
+            -H 'Accept: application/vnd.github+json' \
+            https://api.github.com/repos/ryanraposo/WORLDLINE)"
+          case "$http_status" in
+            200)
+              if ! jq -e '
+                .full_name == "ryanraposo/WORLDLINE" and (.private | type == "boolean")
+              ' "$metadata_file" >/dev/null; then
+                echo "::error::GitHub returned unexpected metadata for ryanraposo/WORLDLINE."
+                exit 1
+              fi
+              if jq -e '.private == false' "$metadata_file" >/dev/null; then
+                is_public=true
+              else
+                is_public=false
+              fi
+              ;;
+            404)
+              # GitHub deliberately returns 404 for private repositories to
+              # unauthenticated callers. Treat this as not publicly fetchable.
+              is_public=false
+              ;;
+            *)
+              echo "::error::Could not determine WORLDLINE visibility (GitHub API HTTP $http_status)."
+              cat "$metadata_file"
+              exit 1
+              ;;
+          esac
+          echo "public=$is_public" >> "$GITHUB_OUTPUT"
+          if [ "$is_public" = "true" ]; then
+            echo "WORLDLINE is public; paired runtime validation can run." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::notice::WORLDLINE is not anonymously accessible. Paired runtime validation is intentionally skipped; this is not a passing paired test."
+            echo "WORLDLINE is private or not publicly visible (GitHub API returned HTTP $http_status). Paired runtime validation was intentionally skipped, not passed. Make WORLDLINE public and rerun this workflow." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  paired-worldline:
+    name: Paired WORLDLINE runtime validation
+    needs: [static, worldline-visibility]
+    if: needs.worldline-visibility.outputs.public == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - name: Fetch paired WORLDLINE published v0.3.0
+        env:
+          WORLDLINE_INTEGRATION_SHA: fa22719879d0ed87aec43b69ee3c726408933f8b
+        run: |
+          set -euo pipefail
+          git init --quiet "$RUNNER_TEMP/worldline"
+          git -C "$RUNNER_TEMP/worldline" remote add origin https://github.com/ryanraposo/WORLDLINE.git
+          git -C "$RUNNER_TEMP/worldline" fetch --quiet --depth=1 origin "$WORLDLINE_INTEGRATION_SHA"
+          git -C "$RUNNER_TEMP/worldline" checkout --quiet --detach FETCH_HEAD
+          actual_sha="$(git -C "$RUNNER_TEMP/worldline" rev-parse HEAD)"
+          test "$actual_sha" = "$WORLDLINE_INTEGRATION_SHA"
+          echo "WORLDLINE_SOURCE=$RUNNER_TEMP/worldline" >> "$GITHUB_ENV"
+      - name: One-call action spans
+        run: bash ./tests/action-span.sh
+      - name: WORLDLINE revision runtime
+        run: bash ./tests/worldline.sh
       - name: Regression suite
         run: ./tests/run.sh

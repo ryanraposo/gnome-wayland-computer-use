@@ -62,6 +62,8 @@ python3 - "$ROOT/runtimes/hermes/__init__.py" "$TMP/state" "$TMP/presenter.py" "
 import importlib.util, json, os, pathlib, sys, types
 plugin_path,state,presenter,present_log,resolver=sys.argv[1:]
 os.environ['XDG_STATE_HOME']=state
+os.environ['XDG_SESSION_TYPE']='wayland'
+os.environ['WAYLAND_DISPLAY']='wayland-test'
 os.environ['GWCU_PRESENTER']=presenter
 os.environ['GWCU_APP_RESOLVER']=resolver
 os.environ['PRESENT_LOG']=present_log
