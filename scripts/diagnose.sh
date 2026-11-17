@@ -247,11 +247,19 @@ failing_observation_services=[]
 if not pw:failing_observation_services.append("pipewire.service")
 if not wp:failing_observation_services.append("wireplumber.service")
 
-worldline_socket=active_unit("gnome-wayland-computer-use-worldline.socket")
-worldline_rc,worldline_out,worldline_err=run([sys.executable,worldline_script,"request","--json",'{"op":"status"}'],5)
-try: worldline=json.loads(worldline_out) if worldline_out else None
-except Exception: worldline={"ok":False,"code":"invalid_output","detail":worldline_out[:1024]}
-worldline_ok=worldline_socket and worldline_rc==0 and isinstance(worldline,dict) and bool(worldline.get("ok"))
+worldline_unit=pathlib.Path(os.environ.get("XDG_CONFIG_HOME",str(pathlib.Path.home()/".config")))/"systemd/user/worldline.service"
+worldline_service=active_unit("worldline.service")
+worldline_rc,worldline_out,worldline_err=run([sys.executable,worldline_script,"request","--json",'{"op":"features"}'],5)
+try: worldline_features=json.loads(worldline_out) if worldline_out else None
+except Exception: worldline_features={"ok":False,"code":"invalid_output","detail":worldline_out[:1024]}
+worldline_socket=worldline_rc==0 and isinstance(worldline_features,dict) and bool(worldline_features.get("ok"))
+worldline_receipt=worldline_socket and "receipt" in (worldline_features.get("ops") or [])
+worldline_ok=worldline_receipt
+if worldline_ok: worldline_state="ready"
+elif worldline_socket: worldline_state="incompatible"
+elif worldline_unit.exists(): worldline_state="unavailable" if worldline_service else "stopped"
+else: worldline_state="missing"
+worldline={"ok":worldline_ok,"state":worldline_state,"service_active":worldline_service,"service_installed":worldline_unit.exists(),"socket":str(pathlib.Path(os.environ.get("WORLDLINE_SOCKET") or os.environ.get("XDG_RUNTIME_DIR",f"/run/user/{os.getuid()}"))/"worldline/worldline.sock")}
 
 winrects_dir=pathlib.Path(os.environ.get("XDG_DATA_HOME",str(pathlib.Path.home()/".local/share")))/"gnome-shell/extensions/winrects@cua"
 winrects_installed=winrects_dir.is_dir(); winrects_active=extension_active("winrects@cua")
@@ -297,12 +305,15 @@ elif not environment_ok:code="desktop_environment_unproved";nxt={"action":"sync_
 elif cua_status=="reload_required" and observation_ok and worldline_ok:code="reload_required";nxt={"action":"logout_login","reason":"activate_cua_gnome_helper"}
 elif not host_ok:code="wrong_session";nxt={"action":"start_gnome_wayland_session"}
 elif not presentation_ok and winrects_active:code="presentation_degraded";nxt={"action":"inspect_cua_gnome_helper"}
-elif not worldline_ok:code="worldline_degraded";nxt={"action":"restart_worldline"}
+elif worldline_state=="missing":code="worldline_missing";nxt={"action":"install_worldline"}
+elif worldline_state=="stopped":code="worldline_stopped";nxt={"action":"start_worldline"}
+elif worldline_state=="incompatible":code="worldline_incompatible";nxt={"action":"upgrade_worldline"}
+elif not worldline_ok:code="worldline_degraded";nxt={"action":"inspect_worldline_service"}
 elif failing_observation_services:code="observation_degraded";nxt={"action":"restart_services","services":failing_observation_services}
 elif not observation_ok:code="observation_degraded";nxt={"action":"repair_observation_components","components":[k for k,v in {"screencast_portal":screen,"gstreamer_pipewire":gst_pipewire,"gstreamer_png":gst_png,"observer_socket":observer}.items() if not v]}
 else:code="cua_degraded";nxt={"action":"inspect_cua_health"}
 
-payload={"schema":"gwcu.diagnose.v4","ok":ready,"code":code,"host":{"session":session,"desktop":desktop,"ok":host_ok},"install_repair":repair,"desktop_environment":env_proof,"presentation":{"status":"ready" if presentation_ok else ("reload_required" if winrects_installed and not winrects_active else "degraded"),"exact_target_required":True,"winrects_installed":winrects_installed,"winrects_active":winrects_active,"response":presentation,"stderr":presentation_err[:1024] if presentation_err else None},"observation":{"status":"ready" if observation_ok else "degraded","pipewire":pw,"pipewire_service":pipewire_service,"pipewire_rpc":pipewire_rpc,"wireplumber":wp,"screencast_portal":screen,"screenshot_portal":screenshot,"gstreamer_pipewire":gst_pipewire,"gstreamer_png":gst_png,"observer_socket":observer,"failing_services":failing_observation_services},"worldline":{"status":"ready" if worldline_ok else "degraded","socket":worldline_socket,"response":worldline,"stderr":worldline_err[:1024] if worldline_err else None},"cua":{"status":cua_status,"binary":cua,"health":health,"doctor_exit":doctor_rc,"doctor":doctor,"winrects_installed":winrects_installed,"winrects_active":winrects_active,"identity":{"ok":identity_ok,"installed":installed_identity,"doctor_reported":doctor_identity,"gateways":gateway_identity_rows,"invariant":"installed == hermes_selected == gateway_backend == doctor_reported"}},"next":nxt}
+payload={"schema":"gwcu.diagnose.v4","ok":ready,"code":code,"host":{"session":session,"desktop":desktop,"ok":host_ok},"install_repair":repair,"desktop_environment":env_proof,"presentation":{"status":"ready" if presentation_ok else ("reload_required" if winrects_installed and not winrects_active else "degraded"),"exact_target_required":True,"winrects_installed":winrects_installed,"winrects_active":winrects_active,"response":presentation,"stderr":presentation_err[:1024] if presentation_err else None},"observation":{"status":"ready" if observation_ok else "degraded","pipewire":pw,"pipewire_service":pipewire_service,"pipewire_rpc":pipewire_rpc,"wireplumber":wp,"screencast_portal":screen,"screenshot_portal":screenshot,"gstreamer_pipewire":gst_pipewire,"gstreamer_png":gst_png,"observer_socket":observer,"failing_services":failing_observation_services},"worldline":{"status":worldline_state,"socket":worldline_socket,"receipt":worldline_receipt,"service_active":worldline_service,"service_installed":worldline_unit.exists(),"features":worldline_features,"response":worldline,"stderr":worldline_err[:1024] if worldline_err else None},"cua":{"status":cua_status,"binary":cua,"health":health,"doctor_exit":doctor_rc,"doctor":doctor,"winrects_installed":winrects_installed,"winrects_active":winrects_active,"identity":{"ok":identity_ok,"installed":installed_identity,"doctor_reported":doctor_identity,"gateways":gateway_identity_rows,"invariant":"installed == hermes_selected == gateway_backend == doctor_reported"}},"next":nxt}
 print(json.dumps(payload,separators=(",",":")))
 raise SystemExit(0 if ready else 30)
 PY
