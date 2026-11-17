@@ -111,7 +111,7 @@ jobs:
       - uses: actions/checkout@v6
       - name: Fetch paired WORLDLINE PR head
         env:
-          WORLDLINE_INTEGRATION_SHA: d76b8c288c074881a1bac28e8d72357d5d22b1b5
+          WORLDLINE_INTEGRATION_SHA: 0ae6580a7e165013064ebb946ae6deba5471061f
         run: |
           set -euo pipefail
           git init --quiet "$RUNNER_TEMP/worldline"
