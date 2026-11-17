@@ -20,9 +20,10 @@ Usage: teardown.sh [--force] [--remove-cua] [--purge-cua]
   --remove-cua  also remove Cua Driver when GWCU provisioned it
   --purge-cua   remove/purge Cua even if it predated GWCU
 
-WORLDLINE/observer services and transient runtime state are removed.
-GWCU-managed Hermes skill/plugin integration is removed from the default Hermes
-home and every existing profile. Archived pre-GWCU `computer-use` skills/plugins
+WORLDLINE/observer services, the GWCU-managed Cua logon daemon unit and
+transient runtime state are removed. An upstream/user-owned Cua autostart unit
+is preserved. GWCU-managed Hermes skill/plugin integration is removed from the
+default Hermes home and every existing profile. Archived pre-GWCU `computer-use` skills/plugins
 are restored when their destination is free. The built-in `computer_use` tool is
 untouched. Repo/workspace .gwcu files are preserved.
 HELP
@@ -117,6 +118,17 @@ do
     systemctl --user reset-failed "$unit" 2>/dev/null || true
     if [ -f "$file" ]; then rm -f "$file"; ((removed++)) || true; fi
 done
+
+# The Cua logon daemon unit is GWCU-owned only when it carries our marker.
+# An upstream or user-authored Cua autostart unit is never disabled or deleted.
+CUA_AUTOSTART_UNIT="$HOME/.config/systemd/user/gnome-wayland-computer-use-cua-driver.service"
+if [ -f "$CUA_AUTOSTART_UNIT" ] && grep -Fq '# gnome-wayland-computer-use managed unit' "$CUA_AUTOSTART_UNIT"; then
+    systemctl --user disable --now gnome-wayland-computer-use-cua-driver.service 2>/dev/null || true
+    systemctl --user reset-failed gnome-wayland-computer-use-cua-driver.service 2>/dev/null || true
+    rm -f "$CUA_AUTOSTART_UNIT"; ((removed++)) || true
+elif [ -e "$CUA_AUTOSTART_UNIT" ]; then
+    info "Preserving unmanaged Cua autostart unit: ${CUA_AUTOSTART_UNIT/$HOME/\~}"
+fi
 systemctl --user daemon-reload 2>/dev/null || true
 rm -rf "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/$NAME" 2>/dev/null || true
 

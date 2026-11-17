@@ -28,6 +28,9 @@ grep -q 'Qualified Cua Driver.*already installed' "$installer" || fail "qualifie
 grep -q 'packages/current/wayland-helper' "$installer" || fail "Cua helper boundary missing"
 pass "Cua remains pinned and sole actuator"
 
+bash "$ROOT/tests/cua-autostart.sh" >/dev/null || fail "Cua logon daemon regression"
+pass "Cua logon daemon is owned, standard and reversible"
+
 # Physical regression: /etc/os-release contains NAME=Ubuntu and once clobbered
 # the installer's own NAME, simultaneously breaking Hermes + WORLDLINE paths.
 grep -Fq 'APP_ID="gnome-wayland-computer-use"' "$installer" || fail "installer app identity is not namespaced"

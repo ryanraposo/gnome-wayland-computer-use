@@ -30,12 +30,15 @@ GWCU uses **Cua Driver's MCP/tool surface** for computer use; GWCU itself is not
 | **`SKILL.md`** | Canonical agent behavior contract and `/computer-use` task surface. |
 | **Hermes policy plugin** | Wraps Hermes' built-in `computer_use` tool so saved delivery policy, ACQUIRE, exact foreground admission, and gateway identity are enforced. |
 | **Cua Driver** | Upstream actuator and native/browser UI tool surface. All GWCU desktop GUI input goes through Cua. |
+| **Cua logon daemon** | GWCU systemd unit running pinned `cua-driver serve` at graphical logon. |
 | **Cua GNOME helper** | Presents one exact `(pid, window_id)` and proves focused + visible state. |
 | **GWCU local runtime** | Installer, doctor, action spans, presentation helpers, routing and lifecycle repair. |
 | **WORLDLINE** | Transient revisioned state, invalidation, predicates, waits and conflicts. Read-only: it never injects input. |
 | **`.gwcu`** | Durable low-churn machine/workspace truth such as stable identity, capabilities, calibration and preferences. |
 
 GNOME Wayland uses the `Remote Desktop` portal → EIS/libei for compositor-approved local input. GWCU installs no RDP/VNC server or raw-input daemon. **No X11 or XWayland session is required.**
+
+The Cua daemon is standard: a GWCU-owned `gnome-wayland-computer-use-cua-driver.service` user unit starts the pinned `cua-driver serve` at `graphical-session.target`, live-proved with `cua-driver status`. Enabled upstream/user Cua autostart is preserved, not displaced by a second daemon.
 
 ## Use it
 
@@ -135,7 +138,7 @@ Scope order: `GWCU_SCOPE_ROOT` → Git worktree root → nearest ancestor alread
 curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh | bash
 ```
 
-Run in a new, visible terminal on the desktop. Install and start [standalone WORLDLINE](https://github.com/ryanraposo/WORLDLINE) first. The installer verifies one commit-addressed SHA-256 release archive, qualifies Ubuntu 26.04 GNOME Wayland, installs/reuses pinned Cua plus its helper, establishes portal consent, installs the skill/runtime and Hermes policy, resolves WORLDLINE independently, and live-proves readiness. If the RemoteDesktop portal is missing, it opens GNOME Settings -> Sharing -> Remote Desktop (Screen Sharing) and waits for you to enable it; you still approve GNOME's prompt.
+Run in a new, visible terminal on the desktop. Install and start [standalone WORLDLINE](https://github.com/ryanraposo/WORLDLINE) first. The installer verifies one commit-addressed SHA-256 release archive, qualifies Ubuntu 26.04 GNOME Wayland, installs/reuses pinned Cua plus its helper, enables the Cua logon daemon, establishes portal consent, installs the skill/runtime and Hermes policy, resolves WORLDLINE independently, and live-proves readiness. If the RemoteDesktop portal is missing, it opens GNOME Settings -> Sharing -> Remote Desktop (Screen Sharing) and waits for you to enable it; you still approve GNOME's prompt.
 
 ## Update
 
@@ -164,4 +167,4 @@ If the GNOME helper needs a session reload, the installer asks for one sign-out/
 curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/uninstall.sh | bash
 ```
 
-Public uninstall uses the same verified release source. Teardown removes GWCU-managed integration/transient state, restores archives where possible, preserves workspace `.gwcu`, and leaves built-in `computer_use` alone. Cua is preserved by default; `--remove-cua` removes a GWCU-provisioned copy and `--purge-cua` is explicit full purge.
+Public uninstall uses the same verified release source. Teardown removes GWCU-managed integration/transient state and the GWCU Cua logon unit, restores archives where possible, preserves workspace `.gwcu`, and leaves built-in `computer_use` alone. User-owned Cua autostart is preserved; Cua itself is preserved by default, `--remove-cua` removes a GWCU-provisioned copy and `--purge-cua` is explicit full purge.
