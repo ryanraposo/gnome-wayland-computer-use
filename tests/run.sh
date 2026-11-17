@@ -235,4 +235,32 @@ pass "README is the sole public project documentation surface"
 python3 "$ROOT/tests/mutter-presentation.py" >/dev/null || fail "Mutter presentation regression tests"
 pass "Mutter 50/51 focus and geometry regressions"
 
+# Standalone suites are first-class gates: run them explicitly so a single
+# tests/run.sh invocation covers them instead of silently relying on CI's
+# per-script steps. Deliberately excluded here:
+#   - tests/pages-freshness.sh (fetches the published Pages bootstrap);
+#   - tests/desktop-acceptance.sh, tests/cua-all-actions-manual.sh and the live
+#     mode of calculator-cold.py (manual/live desktop control, explicit opt-in).
+standalone_tests=(
+  release-contract.sh
+  skill-ux.sh
+  foreground-docs.sh
+  latency-routing.sh
+  truth-scope.sh
+  main-migration.sh
+  lifecycle-safety.sh
+  determinism.sh
+  hermes.sh
+  action-span.sh
+  worldline.sh
+)
+for suite in "${standalone_tests[@]}"; do
+  bash "$ROOT/tests/$suite" >"$TMP/$suite.log" 2>&1 || {
+    cat "$TMP/$suite.log" >&2
+    fail "standalone regression failed: $suite"
+  }
+done
+python3 "$ROOT/tests/calculator-cold.py" --self-test >/dev/null || fail "Calculator cold-start session guard"
+pass "standalone suites and Calculator session guard are covered by run.sh"
+
 printf 'ok - regression suite complete (%d checks)\n' "$passed"

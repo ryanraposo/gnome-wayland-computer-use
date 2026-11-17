@@ -2,7 +2,10 @@
 """Live GWCU/Cua regression: closed → launch → bind → present → cursor → 137×42 → 5754.
 
 Headless CI intentionally skips this test. Run it from the real GNOME Wayland
-session with GWCU_LIVE_CALCULATOR=1 after installation.
+session with GWCU_LIVE_CALCULATOR=1 after installation. An already-open
+Calculator is never closed implicitly: the test refuses to proceed and only
+touches an existing session when GWCU_CALCULATOR_CLOSE_EXISTING=1 is set by a
+user who explicitly consents to losing those windows.
 """
 from __future__ import annotations
 
@@ -19,6 +22,26 @@ from mcp_client import recv_for, resolve_driver, send  # noqa: E402
 
 SESSION = "gwcu-calculator-cold"
 PROTOCOL = "2024-11-05"
+CLOSE_EXISTING_ENV = "GWCU_CALCULATOR_CLOSE_EXISTING"
+
+
+def close_existing_calculators(existing: list[dict], tool, *, close_existing: bool) -> None:
+    """Close pre-existing Calculator windows only with explicit consent.
+
+    A cold-start regression must never destroy an unrelated user session as a
+    side effect. Without an opt-in, an already-open Calculator is a refusal,
+    not a precondition the test quietly repairs.
+    """
+    if not existing:
+        return
+    if not close_existing:
+        raise SystemExit(
+            "not ok - Calculator is already open; refusing to close the user's session. "
+            f"Set {CLOSE_EXISTING_ENV}=1 only if you consent to closing those windows."
+        )
+    for row in existing:
+        if isinstance(row.get("pid"), int) and row["pid"] > 0:
+            tool("kill_app", {"pid": row["pid"]})
 
 
 def skip(reason: str) -> int:
@@ -131,10 +154,13 @@ def main() -> int:
         assert isinstance(started_session, dict) and started_session.get("active") is True, started_session
 
         # Establish a genuinely cold start using Cua itself, never a shell kill.
+        # An existing Calculator belongs to the user; only close it after an
+        # explicit opt-in, otherwise refuse instead of destroying their session.
         existing = [row for row in windows(tool("list_windows")) if is_calculator(row)]
-        for row in existing:
-            if isinstance(row.get("pid"), int) and row["pid"] > 0:
-                tool("kill_app", {"pid": row["pid"]})
+        close_existing_calculators(
+            existing, tool,
+            close_existing=os.environ.get(CLOSE_EXISTING_ENV) == "1",
+        )
         deadline = time.monotonic() + 5.0
         while time.monotonic() < deadline:
             if not any(is_calculator(row) for row in windows(tool("list_windows"))):
@@ -252,5 +278,35 @@ def main() -> int:
                 proc.wait(timeout=1)
 
 
+def self_test() -> int:
+    """Offline regression for the existing-session guard (no desktop control)."""
+    calls: list[tuple[str, dict]] = []
+
+    def fake_tool(name: str, args: dict | None = None, timeout: float = 8.0):
+        calls.append((name, args or {}))
+        return {}
+
+    row = {"app_name": "Calculator", "pid": 4242, "window_id": 17}
+
+    close_existing_calculators([], fake_tool, close_existing=False)
+    assert calls == [], "a cold start must not actuate when no window exists"
+
+    try:
+        close_existing_calculators([row], fake_tool, close_existing=False)
+    except SystemExit as exc:
+        assert CLOSE_EXISTING_ENV in str(exc), str(exc)
+    else:
+        raise AssertionError("existing Calculator was closed without explicit opt-in")
+    assert calls == [], "a refusal must not send kill_app to Cua"
+
+    close_existing_calculators([row], fake_tool, close_existing=True)
+    assert calls == [("kill_app", {"pid": 4242})], calls
+
+    print("ok - cold Calculator guard preserves an existing session without explicit opt-in")
+    return 0
+
+
 if __name__ == "__main__":
+    if sys.argv[1:] == ["--self-test"]:
+        raise SystemExit(self_test())
     raise SystemExit(main())

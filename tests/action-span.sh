@@ -1,6 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
-ROOT="$(cd "$(dirname "$0")/.." && pwd)";TMP=$(mktemp -d);trap 'rm -rf "$TMP"' EXIT
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+TMP=$(mktemp -d)
+wpid=""
+cleanup(){
+  # The standalone WORLDLINE daemon is a private test fixture. Reap it on every
+  # exit path: assertion failures, early exits and interrupts must not leave a
+  # detached listener behind holding the temporary socket directory open.
+  if [ -n "$wpid" ]; then
+    kill "$wpid" 2>/dev/null || true
+    wait "$wpid" 2>/dev/null || true
+  fi
+  rm -rf "$TMP"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 export XDG_RUNTIME_DIR="$TMP/runtime"
 mkdir -p "$XDG_RUNTIME_DIR"
 SURFACE="$ROOT/scripts/computer-use.sh";WORLD="$ROOT/scripts/worldline.py"
@@ -198,7 +213,5 @@ d=json.load(open(sys.argv[1]));assert d['ok'] and d['completed']==2;first=d['res
 trace=d['trace'];assert trace['actions'][0]['fence_revision'] is not None;assert trace['actions'][0]['action_revision'] is not None;assert trace['actions'][0]['postcondition_revision'] is not None;assert trace['actions'][0]['postcondition_code']=='ready'
 PY
 pass "one outer call performs Cua action -> WORLDLINE wait -> local continuation"
-kill "$wpid" 2>/dev/null || true
-wait "$wpid" 2>/dev/null || true
 ! grep -Eq 'ydotool|uinput' "$SURFACE" || fail "span surface bypasses Cua authority"
 pass "transaction executor preserves Cua as sole actuator"
