@@ -168,9 +168,14 @@ def status() -> dict[str, Any]:
     semantic = (sources.get("semantic") or {}).get("available") is True
     geometry_source = sources.get("geometry") or {}
     geometry_available = geometry_source.get("available") is True and geometry_source.get("name") == "worldline-gnome-shell"
+    identity = windows.get("identity") or {}
+    cua_identity = identity.get("cua_window_id") or {}
+    cua_mapping = (cua_identity.get("available") is True
+                   and cua_identity.get("source") == "cua-driver-atspi-child-ordinal"
+                   and cua_identity.get("version") == 1)
     # CUA's GNOME 50 fallback identity is AT-SPI-derived. Geometry alone
     # cannot bind its (pid, window_id) to a Mutter window.
-    compositor = geometry_available and semantic
+    compositor = geometry_available and semantic and cua_mapping
     return envelope(
         True, "capabilities_reported",
         revision=snapshot["revision"],
@@ -179,6 +184,7 @@ def status() -> dict[str, Any]:
         capabilities={
             "window_observation": capability_state(windows.get("available") is True, windows.get("reason")),
             "exact_target_binding": capability_state(compositor, geometry_source.get("reason")),
+            "cua_window_id_provenance": capability_state(cua_mapping, cua_identity.get("reason")),
             "compositor_geometry": capability_state(geometry_available, geometry_source.get("reason")),
             "semantic_inspection": capability_state(semantic, (sources.get("semantic") or {}).get("reason")),
             "activation": "unsupported",
@@ -186,6 +192,7 @@ def status() -> dict[str, Any]:
             "remote_desktop_input": "unknown",
             "portal_authorization": "unknown",
         },
+        identity_bridge={"cua_window_id": cua_identity},
         execution_modes={
             "full_foreground": "unsupported",
             "verified_foreground": "available" if compositor else "unavailable",
