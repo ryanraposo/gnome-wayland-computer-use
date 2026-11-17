@@ -142,19 +142,13 @@ Scope order: `GWCU_SCOPE_ROOT` → Git worktree root → nearest ancestor alread
 curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh | bash
 ```
 
-Run in a new, visible terminal on the desktop. Install and start [standalone WORLDLINE](https://github.com/ryanraposo/WORLDLINE) first. The installer verifies one SHA-256 release archive, qualifies Ubuntu 26.04 GNOME Wayland, installs/reuses pinned Cua, enables its logon daemon, establishes portal consent, installs the skill/runtime and Hermes policy, and verifies WORLDLINE observation capabilities. It never installs or enables WinRects. If the RemoteDesktop portal is missing, it opens GNOME Settings -> Sharing -> Remote Desktop (Screen Sharing) and waits for you; you still approve GNOME's prompt.
-
-If a separate system-level repair requires a sign-out/sign-in, the installer explains that requirement. WinRects is not installed, enabled, patched or used. Existing WinRects installations are disabled on the GNOME 50+ path. Accept `READY // PROVED` only after the capability report succeeds.
+Run in a new visible desktop terminal. Install [standalone WORLDLINE](https://github.com/ryanraposo/WORLDLINE) first. The installer verifies its SHA-256 release, qualifies Ubuntu 26.04 GNOME Wayland, installs pinned Cua, enables its daemon, establishes portal consent, installs the skill/runtime and Hermes policy, and checks WORLDLINE capabilities. It never installs or enables WinRects; existing installations are disabled and verified inactive. If RemoteDesktop consent is missing, it opens GNOME Settings and waits for your approval. `READY // PROVED` follows only after capability checks succeed.
 
 ## Update
 
-From an existing checkout after updating WORLDLINE, run `./update.sh`. It fast forwards the branch and reruns the local installer; follow its `Next:` guidance through consent or a GNOME sign-out/sign-in.
+After updating WORLDLINE, run `./update.sh` from an existing checkout and follow its `Next:` guidance. Other runtimes can call `scripts/gwcu-exec` with a JSON action span; it owns admission and Cua delivery, while its redacted trace and WORLDLINE receipts record outcomes.
 
-Other runtimes can call `scripts/gwcu-exec` with a JSON action span on stdin. The executable owns exact foreground admission and Cua action delivery; its redacted trace and WORLDLINE causal receipts describe the outcome without requiring the text of this skill.
-
-`READY // PROVED` requires the installed Cua identity, Hermes-selected identity, running gateway backend identity and doctor-reported identity to agree. A split-brain version/path state fails readiness.
-
-For an existing checkout, `bash install.sh` repairs the observer socket and imports the live desktop environment into systemd and affected Hermes gateways. Check with `bash scripts/computer-use.sh doctor`; `desktop_environment_unproved` and `observation_degraded` name the respective gaps. The live Calculator test proves exact-target admission, an observed result and removal of the agent cursor session.
+`READY // PROVED` requires the installed Cua, Hermes, gateway and doctor identities to agree; split-brain paths fail readiness.
 
 ## Release
 
