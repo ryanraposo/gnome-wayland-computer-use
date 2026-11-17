@@ -109,6 +109,8 @@ grep -Fq 'guide_remote_desktop_sharing()' "$installer" || fail "GNOME Sharing st
 grep -Fq 'gnome-control-center sharing' "$installer" || fail "installer does not open the GNOME Sharing panel"
 grep -Fq 'Sharing flow 1/3: Open GNOME Settings -> Sharing -> Remote Desktop (Screen Sharing).' "$installer" || fail "Sharing flow lost its Settings step"
 ! grep -Fq 'die "RemoteDesktop portal unavailable"' "$installer" || fail "early portal failure bypasses the Sharing flow"
+grep -Fq 'new, visible terminal' "$ROOT/AGENTS.md" || fail "agents are not told to use a visible terminal"
+grep -Fq 'Sharing -> Remote Desktop (Screen Sharing)' "$ROOT/AGENTS.md" || fail "agent guidance lost the Sharing step"
 grep -Fq 'new, visible terminal' "$ROOT/README.md" || fail "install docs lost the visible-terminal instruction"
 grep -Fq 'Sharing -> Remote Desktop (Screen Sharing)' "$ROOT/README.md" || fail "install docs lost the Sharing step"
 pass "GNOME Sharing step and visible terminal are part of the install flow"
