@@ -101,7 +101,7 @@ The tap serves `skills/computer-use/SKILL.md` (byte-identical to root `SKILL.md`
 
 ## Exact foreground
 
-Foreground is the informed default; `/computer-use background on|off|status` changes the standing preference, and explicit task intent wins. GWCU never activates arbitrary windows. Foreground input requires the exact CUA `(pid, window_id)` to map through WORLDLINE's `cua_window_id` to one fresh, compositor-verified, focused and visible window. No proof, no focus-bound input.
+Foreground is the informed default; `/computer-use background on|off|status` changes the standing preference, and explicit task intent wins. If a native `computer_use` action does not specify delivery mode, GWCU applies this preference. GWCU never activates arbitrary windows. Foreground input requires the exact CUA `(pid, window_id)` to map through WORLDLINE's `cua_window_id` to one fresh, compositor-verified, focused and visible window. No proof, no focus-bound input.
 
 ```text
 ACQUIRE    Cua launch or discover → bind exact (pid, window_id)
