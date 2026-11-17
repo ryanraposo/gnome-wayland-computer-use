@@ -21,9 +21,9 @@ Observation is an interrupt, not a ritual RPC. Facts are valid until invalidated
 
 ## What GWCU is
 
-GWCU is an **agent skill with a small enforcement/runtime system around it**. `SKILL.md` owns routing, foreground, acquisition, verification, browser continuity and failure boundaries.
+`SKILL.md` is the canonical agent contract: routing, foreground, acquisition, verification, browser continuity and failure boundaries.
 
-GWCU uses **Cua Driver's MCP/tool surface**; it is not another MCP server. The runtime makes the contract mechanical, not advisory.
+GWCU uses **Cua Driver's MCP/tool surface**; GWCU itself is not another MCP server. The runtime makes the contract mechanical, not advisory.
 
 | Component | Role |
 |---|---|
@@ -73,7 +73,7 @@ shell or CLI state                         → terminal tool
 terminal window as visible desktop UI      → Cua
 ```
 
-Routes can switch mid-task, but once a browser session is targeted its UI mutations stay on Cua so identity, tab state, visibility and completion evidence remain coherent.
+Routes can switch mid-task, but a targeted browser session keeps its UI mutations on Cua so identity, tab state and completion evidence stay coherent.
 
 ## Hermes integration
 
@@ -119,7 +119,7 @@ COMPLETE   present + verify the final visible result when required
 
 **No exact `(pid, window_id)` proof, no focus-bound input.** Visible-result requests end visibly. A background-unavailable fallback may escalate through the same PRESENT gate once.
 
-The exhaustive foreground matrix is in `SKILL.md`. The policy plugin gates Hermes actions; local spans cover every Cua tool with `delivery_mode`.
+The exhaustive foreground action matrix belongs in `SKILL.md`. The policy plugin gates Hermes actions; local spans cover every Cua tool exposing `delivery_mode`.
 
 ## WORLDLINE
 
