@@ -393,6 +393,7 @@ PY
 import json,sys
 m=json.loads(sys.argv[1]); p=json.loads(sys.argv[2]); h=json.loads(sys.argv[3]); w=json.loads(sys.argv[4]); pr=json.loads(sys.argv[5]); background=sys.argv[6]=='on'
 portal=p.get('portal',{}); token=portal.get('restore_token',{}); session=p.get('session',{}); report=h.get('report') or {}; scope=m.get('scope') or {}; modes=pr.get('execution_modes') or {}
+if not (token.get('present') and h.get('identity_ok')): modes["verified_foreground"]="unavailable"
 state=w.get('state') if isinstance(w.get('state'),dict) else w
 print("Computer use")
 print(f"  Cua health: {report.get('overall') or h.get('code','unknown')}")
