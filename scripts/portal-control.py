@@ -125,7 +125,7 @@ def authorize(driver: str, timeout: float) -> tuple[dict, int]:
             "params": {
                 "protocolVersion": PROTOCOL,
                 "capabilities": {},
-                "clientInfo": {"name": "gnome-wayland-computer-use", "version": "2.7.1"},
+                "clientInfo": {"name": "gnome-wayland-computer-use", "version": "2.7.2"},
             },
         })
         init = recv_for(proc, 1, min(timeout, 10.0))
