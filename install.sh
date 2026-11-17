@@ -536,7 +536,10 @@ info "[3/8] Qualifying portal-backed Cua without Shell injection"
 if command -v gnome-extensions >/dev/null 2>&1; then
   if gnome-extensions info winrects@cua >/dev/null 2>&1; then
     gnome-extensions disable winrects@cua >>"$INSTALL_LOG" 2>&1 || die "Could not disable the legacy WinRects extension"
-    ok "Legacy WinRects extension disabled; no Shell helper is used"
+    if gnome-extensions info winrects@cua 2>/dev/null | grep -Eqi 'State: (ACTIVE|ENABLED)'; then
+      die "Legacy WinRects remains active/enabled. Log out of GNOME, sign back in, and rerun the installer before using GWCU."
+    fi
+    ok "Legacy WinRects extension disabled and verified inactive; no Shell helper is used"
   else
     ok "No WinRects extension installed"
   fi
