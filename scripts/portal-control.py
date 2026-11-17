@@ -78,6 +78,21 @@ def base_status(driver: str | None) -> dict:
             "restore_token": {"path": str(token), "present": token.is_file()},
         },
         "cua": {"driver": driver, "present": bool(driver)},
+        "session": {
+            "owner": "cua-driver",
+            "restore_token_persisted": token.is_file(),
+            "active": "unknown",
+            "stream_id": "unknown",
+            "device_capabilities": "unknown_until_cua_health_report",
+            "revocation": "unknown_until_cua_health_report",
+            "reconnection": "delegated_to_cua_driver",
+        },
+        "capabilities": {
+            "remote_desktop_portal": "available" if portal else "unavailable",
+            "pointer_input": "requires_cua_session",
+            "keyboard_input": "requires_cua_session",
+            "per_window_capture": "unsupported_by_portal_control",
+        },
         "integration": integration_checks(),
         "next": None if token.is_file() else {"action": "authorize_remote_desktop"},
     }
@@ -169,6 +184,8 @@ def authorize(driver: str, timeout: float) -> tuple[dict, int]:
             code="authorized",
             handshake={"operation": "move_cursor", "scope": "desktop", "x": x, "y": y, "click": False, "key": False},
             cua_result=structured(move) or None,
+            session={**status.get("session", {}), "handshake_acknowledged": True,
+                     "active": "not_independently_verified"},
             next=None,
         )
         return status, 0

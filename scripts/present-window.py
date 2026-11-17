@@ -1,195 +1,94 @@
 #!/usr/bin/env python3
-"""Attested persistent foreground presentation through Cua's GNOME helper.
+"""Read-only exact-target admission through WORLDLINE.
 
-GWCU supports Ubuntu GNOME Wayland as a product target, so foreground control
-must be stronger than generic Wayland's best-effort focus semantics. Cua's
-bundled ``winrects@cua`` extension runs inside GNOME Shell and exposes the exact
-stable-sequence window ids that Cua uses. This helper:
-
-1. attests that ``org.cua.WinRects`` is owned by this user's real GNOME Shell;
-2. resolves an exact window by (pid, window_id) -- never by title;
-3. asks the Cua helper to activate it; and
-4. proves GNOME reports that same window focused, visible, and not minimized.
-
-No input is injected here. This is the presentation gate that makes subsequent
-Cua foreground input target-addressable and visibly deterministic.
+GWCU never activates a window. WORLDLINE supplies compositor observations;
+CUA remains the sole actuator. This gate admits focus-sensitive input only
+when the requested (pid, window_id) is uniquely bound and already focused.
 """
 from __future__ import annotations
 
 import argparse
 import json
-import math
 import os
-import pathlib
-import re
-import stat
 import subprocess
 import sys
 import time
+from pathlib import Path
 from typing import Any
 
-SCHEMA = "gwcu.presentation.v1"
-DEST = "org.cua.WinRects"
-PATH = "/org/cua/WinRects"
-IFACE = "org.cua.WinRects"
-DBUS_DEST = "org.freedesktop.DBus"
-DBUS_PATH = "/org/freedesktop/DBus"
-DBUS_IFACE = "org.freedesktop.DBus"
-MIN_API = 8
-MAX_WINDOW_ID = (1 << 32) - 1
-
-
-def compact(value: Any) -> str:
-    return json.dumps(value, separators=(",", ":"), ensure_ascii=True)
+SCHEMA = "gwcu.presentation.v2"
+MAX_WINDOW_ID = (1 << 64) - 1
+MAX_OBSERVATION_AGE = 2.5
 
 
 def envelope(ok: bool, code: str, **extra: Any) -> dict[str, Any]:
-    out: dict[str, Any] = {"schema": SCHEMA, "ok": ok, "code": code}
-    out.update({k: v for k, v in extra.items() if v is not None})
-    return out
+    return {"schema": SCHEMA, "ok": ok, "code": code, **extra}
 
 
-def run(argv: list[str], timeout: float = 1.0) -> tuple[int, str, str]:
+def worldline_query(timeout: float = 7.0) -> dict[str, Any]:
+    client = Path(__file__).resolve().with_name("worldline.py")
+    payload = json.dumps({"op": "query", "paths": ["windows"], "fresh": True},
+                         separators=(",", ":"))
     try:
-        p = subprocess.run(
-            argv,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=timeout,
+        proc = subprocess.run(
+            [sys.executable, str(client), "request", "--json", payload],
+            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, text=True, encoding="utf-8",
+            errors="replace", timeout=max(1.0, min(float(timeout), 7.0)),
         )
-        return p.returncode, p.stdout.strip(), p.stderr.strip()
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        return 127, "", str(exc)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise RuntimeError(f"WORLDLINE query failed: {exc}") from exc
+    try:
+        result = json.loads(proc.stdout.strip()) if proc.stdout.strip() else {}
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("WORLDLINE returned invalid JSON") from exc
+    if proc.returncode != 0 or result.get("ok") is not True:
+        raise RuntimeError(str(result.get("detail") or result.get("code") or proc.stderr[:512]))
+    values = result.get("values")
+    windows = values.get("windows") if isinstance(values, dict) else None
+    fact = (result.get("facts") or {}).get("windows")
+    evidence = fact.get("evidence") if isinstance(fact, dict) else None
+    if not isinstance(windows, dict) or not isinstance(evidence, dict):
+        raise RuntimeError("WORLDLINE did not return a versioned windows observation")
+    observed_at = evidence.get("observed_at")
+    expires_at = evidence.get("expires_at")
+    if (not isinstance(observed_at, (int, float))
+            or not isinstance(expires_at, (int, float))
+            or time.time() - observed_at > MAX_OBSERVATION_AGE
+            or expires_at < time.time()):
+        raise RuntimeError("WORLDLINE window observation is stale")
+    return {"windows": windows, "revision": result.get("revision"),
+            "observed_at": observed_at, "expires_at": expires_at,
+            "source": evidence.get("source")}
 
 
-def gdbus(dest: str, method: str, *args: str, timeout: float = 1.0) -> str:
-    rc, out, err = run(
-        [
-            "gdbus",
-            "call",
-            "--session",
-            "--dest",
-            dest,
-            "--object-path",
-            DBUS_PATH if dest == DBUS_DEST else PATH,
-            "--method",
-            method,
-            *args,
-        ],
-        timeout,
-    )
-    if rc != 0:
-        raise RuntimeError(err or out or f"gdbus {method} failed")
-    return out
-
-
-def quoted(raw: str) -> str | None:
-    match = re.search(r"'([^']+)'", raw)
-    return match.group(1) if match else None
-
-
-def first_u32(raw: str) -> int | None:
-    payload = raw.split("uint32", 1)[1] if "uint32" in raw else raw
-    match = re.search(r"\b(\d+)\b", payload)
-    if not match:
+def exact_window(windows: dict[str, Any], pid: int, window_id: int) -> dict[str, Any] | None:
+    items = windows.get("items")
+    if not isinstance(items, list):
         return None
-    value = int(match.group(1))
-    return value if 0 <= value <= MAX_WINDOW_ID else None
-
-
-def parse_rects(raw: str) -> list[dict[str, Any]]:
-    start = raw.find("[")
-    end = raw.rfind("]")
-    if start < 0 or end < start:
-        raise ValueError("GetRects returned no JSON array")
-    value = json.loads(raw[start : end + 1])
-    if not isinstance(value, list):
-        raise ValueError("GetRects payload is not an array")
-    return [item for item in value if isinstance(item, dict)]
-
-
-def trusted_shell_owner() -> tuple[str, int]:
-    if not shutil_which("gdbus"):
-        raise RuntimeError("gdbus is unavailable")
-
-    owner = quoted(
-        gdbus(DBUS_DEST, f"{DBUS_IFACE}.GetNameOwner", DEST)
-    )
-    if not owner or not owner.startswith(":"):
-        raise RuntimeError("Cua GNOME helper has no immutable bus owner")
-
-    pid = first_u32(
-        gdbus(DBUS_DEST, f"{DBUS_IFACE}.GetConnectionUnixProcessID", owner)
-    )
-    uid = first_u32(
-        gdbus(DBUS_DEST, f"{DBUS_IFACE}.GetConnectionUnixUser", owner)
-    )
-    if pid is None or uid != os.getuid():
-        raise RuntimeError("Cua GNOME helper owner identity is invalid")
-
-    proc = pathlib.Path(f"/proc/{pid}")
-    try:
-        comm = (proc / "comm").read_text().strip()
-        exe = (proc / "exe").resolve(strict=True)
-        exe_stat = exe.stat()
-    except OSError as exc:
-        raise RuntimeError(f"cannot attest GNOME Shell owner: {exc}") from exc
-    if comm != "gnome-shell" or exe.name != "gnome-shell":
-        raise RuntimeError("Cua helper is not hosted by gnome-shell")
-    if exe_stat.st_uid != 0 or stat.S_IMODE(exe_stat.st_mode) & 0o022:
-        raise RuntimeError("gnome-shell executable trust check failed")
-
-    version = first_u32(gdbus(owner, f"{IFACE}.GetVersion"))
-    if version is None or version < MIN_API:
-        raise RuntimeError(
-            f"Cua GNOME helper API {version!r} is below required {MIN_API}"
-        )
-    return owner, version
-
-
-def shutil_which(name: str) -> str | None:
-    # Keep startup tiny and dependency-free without importing shutil solely for
-    # a single PATH lookup.
-    for directory in os.environ.get("PATH", "").split(os.pathsep):
-        candidate = pathlib.Path(directory or ".") / name
-        if candidate.is_file() and os.access(candidate, os.X_OK):
-            return str(candidate)
-    return None
-
-
-def rects(owner: str) -> list[dict[str, Any]]:
-    return parse_rects(gdbus(owner, f"{IFACE}.GetRects"))
-
-
-def exact_window(
-    windows: list[dict[str, Any]], pid: int, window_id: int
-) -> dict[str, Any] | None:
     matches = [
-        item
-        for item in windows
-        if item.get("pid") == pid and item.get("id") == window_id
+        item for item in items
+        if isinstance(item, dict)
+        and item.get("pid") == pid
+        and item.get("cua_window_id") == window_id
+        and item.get("cua_window_id_source") == "cua-driver-atspi-child-ordinal"
+        and item.get("compositor_verified") is True
+        and item.get("geometry_source") == "worldline-gnome-shell"
     ]
     return matches[0] if len(matches) == 1 else None
 
 
-
-def geometry(window: dict[str, Any]) -> tuple[float, float, float, float] | None:
-    """Geometry is live compositor evidence, never an enduring window identity."""
-    values = [window.get(key) for key in ("x", "y", "w", "h")]
-    if any(
-        isinstance(value, bool)
-        or not isinstance(value, (int, float))
-        or not math.isfinite(value)
-        for value in values
-    ):
+def geometry(window: dict[str, Any]) -> dict[str, Any] | None:
+    frame = window.get("frame")
+    if not isinstance(frame, dict):
+        return None
+    keys = ("x", "y", "width", "height")
+    values = [frame.get(key) for key in keys]
+    if any(type(value) is not int for value in values):
         return None
     if values[2] <= 0 or values[3] <= 0:
         return None
-    return tuple(values)
+    return {key: frame[key] for key in keys}
 
 
 def presented(window: dict[str, Any] | None) -> bool:
@@ -197,154 +96,146 @@ def presented(window: dict[str, Any] | None) -> bool:
         window is not None
         and window.get("focused") is True
         and window.get("visible") is True
-        and window.get("minimized") is not True
+        and window.get("minimized") is False
         and geometry(window) is not None
     )
 
 
-def present(pid: int, window_id: int, timeout_ms: int) -> dict[str, Any]:
+def inspect(pid: int, window_id: int, timeout_ms: int = 700) -> dict[str, Any]:
     if pid <= 0 or not 0 <= window_id <= MAX_WINDOW_ID:
         return envelope(False, "invalid_target", pid=pid, window_id=window_id)
     try:
-        owner, version = trusted_shell_owner()
-        before = exact_window(rects(owner), pid, window_id)
-        if before is None:
-            return envelope(
-                False,
-                "target_not_exact",
-                pid=pid,
-                window_id=window_id,
-                helper_api=version,
-            )
-
-        accepted = gdbus(
-            owner,
-            f"{IFACE}.Activate",
-            str(window_id),
-            timeout=max(1.0, timeout_ms / 1000 + 0.5),
-        ).lstrip().startswith("(true,")
-        if not accepted:
-            return envelope(
-                False,
-                "activation_refused",
-                pid=pid,
-                window_id=window_id,
-                helper_api=version,
-            )
-
-        deadline = time.monotonic() + max(0.1, min(timeout_ms, 3000) / 1000)
-        last = before
-        previous_geometry = None
-        while True:
-            current = exact_window(rects(owner), pid, window_id)
-            if current is not None:
-                last = current
-            if presented(current):
-                fresh_geometry = geometry(current)
-                # A second compositor read prevents treating pre-relocation or
-                # in-flight maximize geometry as safe for coordinate actions.
-                if previous_geometry == fresh_geometry:
-                    return envelope(
-                        True,
-                        "presented",
-                        pid=pid,
-                        window_id=window_id,
-                        helper_api=version,
-                        observed_at_monotonic_ns=time.monotonic_ns(),
-                        window={
-                            key: current.get(key)
-                            for key in (
-                                "title", "x", "y", "w", "h",
-                                "focused", "visible", "minimized", "stacking",
-                                "monitor", "workspace",
-                            )
-                        },
-                    )
-                previous_geometry = fresh_geometry
-            else:
-                previous_geometry = None
-            if time.monotonic() >= deadline:
-                return envelope(
-                    False,
-                    "geometry_not_stable" if presented(last) else "focus_not_proved",
-                    pid=pid,
-                    window_id=window_id,
-                    helper_api=version,
-                    window=last,
-                )
-            time.sleep(0.025)
+        snapshot = worldline_query(max(1.0, min(timeout_ms / 1000.0 + 1.0, 7.0)))
     except Exception as exc:
-        return envelope(
-            False,
-            "helper_unavailable",
-            pid=pid,
-            window_id=window_id,
-            detail=str(exc),
-        )
+        return envelope(False, "worldline_unavailable", detail=str(exc),
+                        pid=pid, window_id=window_id)
+    windows = snapshot["windows"]
+    window = exact_window(windows, pid, window_id)
+    if window is None:
+        return envelope(False, "target_not_exact",
+                        detail="WORLDLINE did not bind this CUA window_id to exactly one compositor-verified window",
+                        pid=pid, window_id=window_id, revision=snapshot["revision"])
+    if not presented(window):
+        return envelope(False, "target_not_verified_foreground",
+                        detail="GWCU does not activate windows; focus, visibility and stable geometry must already be observed",
+                        pid=pid, window_id=window_id, revision=snapshot["revision"],
+                        observed={"focused": window.get("focused"),
+                                  "visible": window.get("visible"),
+                                  "minimized": window.get("minimized"),
+                                  "geometry": geometry(window)})
+    return envelope(True, "verified_foreground", mode="verified_foreground",
+                    pid=pid, window_id=window_id, revision=snapshot["revision"],
+                    observed_at=snapshot["observed_at"],
+                    source=snapshot["source"],
+                    window={"stable_id": window.get("stable_id"),
+                            "cua_window_id": window.get("cua_window_id"),
+                            "cua_window_id_source": window.get("cua_window_id_source"),
+                            "compositor_id": window.get("compositor_id"),
+                            "title": window.get("title"),
+                            "frame": geometry(window),
+                            "monitor": (window.get("geometry") or {}).get("monitor"),
+                            "scale": (window.get("geometry") or {}).get("scale"),
+                            "focused": True, "visible": True, "minimized": False})
 
 
-def verify(pid: int, window_id: int) -> dict[str, Any]:
-    try:
-        owner, version = trusted_shell_owner()
-        current = exact_window(rects(owner), pid, window_id)
-        if current is None:
-            return envelope(
-                False,
-                "target_not_exact",
-                pid=pid,
-                window_id=window_id,
-                helper_api=version,
-            )
-        good = presented(current)
-        return envelope(
-            good,
-            "presented" if good else "not_presented",
-            pid=pid,
-            window_id=window_id,
-            helper_api=version,
-            window=current,
-        )
-    except Exception as exc:
-        return envelope(False, "helper_unavailable", detail=str(exc))
+def capability_state(available: bool, reason: Any = None) -> str:
+    if available:
+        return "available"
+    detail = str(reason or "").casefold()
+    if "permission" in detail or "denied" in detail or "not authorized" in detail:
+        return "denied"
+    if "stale" in detail:
+        return "stale"
+    return "unavailable"
 
 
 def status() -> dict[str, Any]:
     try:
-        owner, version = trusted_shell_owner()
-        windows = rects(owner)
-        return envelope(
-            True,
-            "ready",
-            helper_api=version,
-            windows=len(windows),
-            focused=sum(1 for item in windows if item.get("focused") is True),
-        )
+        snapshot = worldline_query()
     except Exception as exc:
-        return envelope(False, "helper_unavailable", detail=str(exc))
+        state = "stale" if "stale" in str(exc).casefold() else "unavailable"
+        return envelope(False, "worldline_unavailable", detail=str(exc),
+                        capabilities={"window_observation": state,
+                                      "exact_target_binding": state,
+                                      "activation": "unsupported"})
+    windows = snapshot["windows"]
+    items = windows.get("items") if isinstance(windows.get("items"), list) else []
+    exact = [item for item in items if isinstance(item, dict)
+             and item.get("cua_window_id_source") == "cua-driver-atspi-child-ordinal"
+             and item.get("compositor_verified") is True
+             and item.get("geometry_source") == "worldline-gnome-shell"]
+    sources = windows.get("sources") if isinstance(windows.get("sources"), dict) else {}
+    semantic = (sources.get("semantic") or {}).get("available") is True
+    geometry_source = sources.get("geometry") or {}
+    geometry_available = geometry_source.get("available") is True and geometry_source.get("name") == "worldline-gnome-shell"
+    identity = windows.get("identity") or {}
+    cua_identity = identity.get("cua_window_id") or {}
+    cua_mapping = (cua_identity.get("available") is True
+                   and cua_identity.get("source") == "cua-driver-atspi-child-ordinal"
+                   and cua_identity.get("version") == 1)
+    # CUA's GNOME 50 fallback identity is AT-SPI-derived. Geometry alone
+    # cannot bind its (pid, window_id) to a Mutter window.
+    compositor = geometry_available and semantic and cua_mapping
+    return envelope(
+        True, "capabilities_reported",
+        revision=snapshot["revision"],
+        observed_at=snapshot["observed_at"],
+        mode="verified_foreground" if compositor else ("semantic_interaction" if semantic else "observe_only"),
+        capabilities={
+            "window_observation": capability_state(windows.get("available") is True, windows.get("reason")),
+            "exact_target_binding": capability_state(compositor, geometry_source.get("reason")),
+            "cua_window_id_provenance": capability_state(cua_mapping, cua_identity.get("reason")),
+            "compositor_geometry": capability_state(geometry_available, geometry_source.get("reason")),
+            "semantic_inspection": capability_state(semantic, (sources.get("semantic") or {}).get("reason")),
+            "activation": "unsupported",
+            "desktop_capture": "unknown",
+            "remote_desktop_input": "unknown",
+            "portal_authorization": "unknown",
+        },
+        identity_bridge={"cua_window_id": cua_identity},
+        execution_modes={
+            "full_foreground": "unsupported",
+            "verified_foreground": "available" if compositor else "unavailable",
+            "semantic_interaction": "available" if semantic else "unavailable",
+            "desktop_visual_interaction": "unknown",
+            "observe_only": "available",
+        },
+        windows={"count": windows.get("count", len(items)),
+                 "verified": len(exact),
+                 "semantic_only": (windows.get("counts") or {}).get("semantic_only", 0),
+                 "geometry_only": (windows.get("counts") or {}).get("geometry_only", 0)},
+        focus=windows.get("focus"),
+        sources=sources,
+    )
 
 
 def self_test() -> dict[str, Any]:
-    sample = "('[{\"id\":42,\"pid\":7,\"focused\":true,\"visible\":true,\"minimized\":false}]',)"
-    parsed = parse_rects(sample)
-    assert exact_window(parsed, 7, 42) is not None
-    assert exact_window(parsed, 7, 43) is None
-    assert first_u32("(uint32 8,)") == 8
-    assert quoted("(':1.77',)") == ":1.77"
-    assert geometry({"x": -100, "y": 0, "w": 1920, "h": 1080}) == (-100, 0, 1920, 1080)
-    assert geometry({"x": 0, "y": 0, "w": 0, "h": 100}) is None
-    assert geometry({"x": 0, "y": 0, "w": float("nan"), "h": 100}) is None
-    assert presented(parsed[0]) is False  # no trustworthy geometry
-    return envelope(
-        True,
-        "ok",
-        checks=[
-            "exact_pid_window_identity",
-            "gvariant_scalar_parsing",
-            "focused_visible_postcondition",
-            "valid_geometry_and_stable_two_sample_presentation",
-            "immutable_dbus_owner_contract",
-        ],
-    )
+    sample = {"items": [{
+        "pid": 42, "cua_window_id": 0x12345678, "cua_window_id_source": "cua-driver-atspi-child-ordinal", "compositor_id": 7, "compositor_verified": True,
+        "geometry_source": "worldline-gnome-shell",
+        "frame": {"x": -20, "y": 0, "width": 800, "height": 600},
+        "focused": True, "visible": True, "minimized": False,
+    }]}
+    row = exact_window(sample, 42, 0x12345678)
+    assert row is not None and presented(row)
+    assert exact_window(sample, 42, 7) is None
+    assert exact_window(sample, 99, 0x12345678) is None
+    assert geometry({**row, "frame": {"x": 0, "y": 0, "width": 0, "height": 10}}) is None
+    assert not presented({**row, "focused": False})
+    assert not presented({**row, "visible": False})
+    assert not presented({**row, "minimized": True})
+    # Semantic-only or inferred frames can never satisfy exact-target binding.
+    assert exact_window(sample, 42, 0x12345678) is row
+    unverified = {**sample, "items": [{**row, "compositor_verified": False}]}
+    assert exact_window(unverified, 42, 0x12345678) is None
+    return envelope(True, "ok", checks=[
+        "worldline_exact_pid_cua_window_id_binding",
+        "focus_visibility_minimized_gate",
+        "fresh_compositor_geometry_required",
+        "cua_window_id_provenance_required",
+        "no_activation_or_input_surface",
+        "semantic_only_cannot_admit_coordinate_input",
+    ])
 
 
 def main() -> int:
@@ -356,19 +247,16 @@ def main() -> int:
         p = sub.add_parser(name)
         p.add_argument("--pid", type=int, required=True)
         p.add_argument("--window-id", type=int, required=True)
-        if name == "present":
-            p.add_argument("--timeout-ms", type=int, default=700)
+        p.add_argument("--timeout-ms", type=int, default=700,
+                       help="bounded caller budget; observation remains read-only")
     args = parser.parse_args()
-
     if args.command == "status":
         result = status()
     elif args.command == "self-test":
         result = self_test()
-    elif args.command == "verify":
-        result = verify(args.pid, args.window_id)
     else:
-        result = present(args.pid, args.window_id, args.timeout_ms)
-    print(compact(result))
+        result = inspect(args.pid, args.window_id, args.timeout_ms)
+    print(json.dumps(result, separators=(",", ":"), ensure_ascii=False))
     return 0 if result.get("ok") else 30
 
 

@@ -57,7 +57,7 @@ reload_notice(){
     printf '%s' "$manual"
     return 0
   fi
-  printf '  Log out now so GNOME can load winrects@cua? [Y/n]: ' >/dev/tty
+  printf '  Log out now to apply the desktop session change? [Y/n]: ' >/dev/tty
   read -r answer </dev/tty || answer=""
   printf '\n' >/dev/tty
   case "$answer" in
@@ -529,28 +529,25 @@ fi
 "$CUA" --version 2>/dev/null | grep -Fq "$CUA_DRIVER_RS_VERSION" || die "Expected Cua $CUA_DRIVER_RS_VERSION"
 write_cua_ownership "$CUA_INSTALLED_BY_GWCU" "$CUA_DRIVER_RS_VERSION"
 
-info "[3/8] Installing Cua GNOME Wayland helper"
-CUA_HOME="${CUA_DRIVER_HOME:-$HOME/.cua-driver}"; HELPER="$CUA_HOME/packages/current/wayland-helper"; CUA_HELPER_INSTALLER="$HELPER/install.sh"
-[ -x "$CUA_HELPER_INSTALLER" ] || die "Cua packaged helper missing: packages/current/wayland-helper/install.sh"
-if run_logged "Cua GNOME helper install" "$CUA_HELPER_INSTALLER"; then ok "Cua GNOME helper installed"; else tail -n 20 "$INSTALL_LOG" >&2 || true; die "Cua GNOME helper installation failed"; fi
-# Cua's bundled extension can advertise a shell-version range that predates
-# this distro's GNOME. Repair that one field before asking GNOME to load it,
-# so the guided sign-out/in actually activates winrects@cua.
-if compat_status=$("$PYTHON" "$SELF/scripts/winrects-compat.py" 2>>"$INSTALL_LOG"); then
-  case "$compat_status" in
-    patched) ok "winrects@cua now declares the running GNOME Shell version; original metadata backed up" ;;
-    current|not-installed|no-shell-version) : ;;
-    *) warn "winrects@cua shell-version check returned: $compat_status" ;;
-  esac
-else
-  warn "winrects@cua shell-version repair could not run; GNOME may keep it OUT OF DATE"
+info "[3/8] Qualifying portal-backed Cua without Shell injection"
+# GNOME 50+ must not load Cua's legacy WinRects Shell extension. Older
+# installs may already have it enabled; disable it, but never install,
+# patch, force-enable, or replace it with another Shell helper.
+if command -v gnome-extensions >/dev/null 2>&1; then
+  if gnome-extensions info winrects@cua >/dev/null 2>&1; then
+    gnome-extensions disable winrects@cua >>"$INSTALL_LOG" 2>&1 || die "Could not disable the legacy WinRects extension"
+    if gnome-extensions info winrects@cua 2>/dev/null | grep -Eqi 'State: (ACTIVE|ENABLED)'; then
+      die "Legacy WinRects remains active/enabled. Log out of GNOME, sign back in, and rerun the installer before using GWCU."
+    fi
+    ok "Legacy WinRects extension disabled and verified inactive; no Shell helper is used"
+  else
+    ok "No WinRects extension installed"
+  fi
 fi
-gnome-extensions enable winrects@cua >>"$INSTALL_LOG" 2>&1 || true
 RELOAD_REQUIRED=false
-if gnome-extensions info winrects@cua >/dev/null 2>&1 && gnome-extensions info winrects@cua 2>/dev/null | grep -qi 'State: ACTIVE'; then ok "winrects@cua is ACTIVE"; else RELOAD_REQUIRED=true; warn "winrects@cua is installed but not ACTIVE; a guided sign-out/in is required (details at the end)"; fi
 
 info "[4/8] Installing GWCU runtime, skill and WORLDLINE"
-FILES=(VERSION README.md agents/openai.yaml scripts/action-span.py scripts/cua-autostart.sh scripts/gwcu-exec scripts/app-identity.sh scripts/capture.sh scripts/check-update.sh scripts/computer-use.sh scripts/cua-health.py scripts/diagnose.sh scripts/mcp_client.py scripts/migrate-main.sh scripts/observe.sh scripts/observer.py scripts/portal-control.py scripts/present-window.py scripts/profile.sh scripts/teardown.sh scripts/truths.py scripts/worldline.py scripts/worldline-contract.py scripts/worldline-dependency.sh scripts/worldline-capture.sh scripts/winrects-compat.py systemd/user/gnome-wayland-computer-use-observer.socket systemd/user/gnome-wayland-computer-use-observer.service systemd/user/gnome-wayland-computer-use-cua-driver.service)
+FILES=(VERSION README.md agents/openai.yaml scripts/action-span.py scripts/cua-autostart.sh scripts/gwcu-exec scripts/app-identity.sh scripts/capture.sh scripts/check-update.sh scripts/computer-use.sh scripts/cua-health.py scripts/diagnose.sh scripts/mcp_client.py scripts/migrate-main.sh scripts/observe.sh scripts/observer.py scripts/portal-control.py scripts/present-window.py scripts/profile.sh scripts/teardown.sh scripts/truths.py scripts/worldline.py scripts/worldline-contract.py scripts/worldline-dependency.sh scripts/worldline-capture.sh systemd/user/gnome-wayland-computer-use-observer.socket systemd/user/gnome-wayland-computer-use-observer.service systemd/user/gnome-wayland-computer-use-cua-driver.service)
 rm -rf "$TMP/bundle"; mkdir -p "$TMP/bundle"
 for f in "${FILES[@]}"; do get_file "$f" "$TMP/bundle/$f"; done
 get_file SKILL.md "$TMP/bundle/SKILL.md"
@@ -611,7 +608,7 @@ if $HERMES; then
   for target in "${HERMES_TARGET_HOMES[@]}"; do install_hermes_target "$target"; done
   HERMES_POLICY_STATUS="enabled:$HERMES_TARGET_COUNT"
 fi
-ok "Installed action-span.py + exact presentation gate + WORLDLINE runtime + skill"
+ok "Installed action-span.py + WORLDLINE exact-target admission + runtime + skill"
 
 info "[5/8] Configuring preferences and RemoteDesktop consent"
 PREF="$STATE/managed-truths"; if [ ! -s "$PREF" ]; then value=on; if ! $EXPLICIT_UNATTENDED && [ -r /dev/tty ]; then printf 'Enable managed .gwcu local truths? Git scopes add /.gwcu to .gitignore before storing machine/workspace facts [Y/n]: ' >/dev/tty; read -r reply </dev/tty || reply=""; [[ "$reply" =~ ^[nN] ]] && value=off; fi; printf '%s\n' "$value" >"$PREF"; chmod 600 "$PREF"; fi
@@ -625,8 +622,8 @@ if [ ! -s "$BACKGROUND_PREF" ]; then
     printf '  Background: keeps your current window in front where Cua supports it.\n' >/dev/tty
     printf '  Visible-result requests still finish visibly.\n' >/dev/tty
     printf '  Change later: /computer-use background on|off|status  (bare command toggles)\n' >/dev/tty
-    printf '  Default visible takeover is faster and deterministic; background is less disruptive where supported.\n\n' >/dev/tty
-    printf 'Use exact visible takeover as your default? [Y/n]: ' >/dev/tty
+    printf '  Verified foreground is predictable when the target is already focused; background is less disruptive where supported.\n\n' >/dev/tty
+    printf 'Use verified foreground as your default? [Y/n]: ' >/dev/tty
     read -r reply </dev/tty || reply=""
     [[ "$reply" =~ ^[nN] ]] && background=on
   fi
@@ -688,7 +685,7 @@ verify_args=(--verify --state "$STATE"); $COMPAT && verify_args+=(--compat)
 systemctl --user daemon-reload 2>/dev/null || true
 ok "Legacy published-main control plane retired; Cua is the only actuator"
 
-info "[7/8] Enabling and live-proving WORLDLINE + observer + exact presentation"
+info "[7/8] Enabling and live-proving WORLDLINE + observer + capability admission"
 UNIT_DIR="$HOME/.config/systemd/user"; mkdir -p "$UNIT_DIR"
 for u in gnome-wayland-computer-use-observer.socket gnome-wayland-computer-use-observer.service; do cp "$PRIMARY/systemd/user/$u" "$UNIT_DIR/$u"; done
 for u in gnome-wayland-computer-use-worldline.socket gnome-wayland-computer-use-worldline.service; do
@@ -712,16 +709,16 @@ if ! $COMPAT; then bash "$PRIMARY/scripts/worldline-dependency.sh" ensure >>"$IN
 "$PYTHON" "$PRIMARY/scripts/worldline.py" self-test >>"$INSTALL_LOG" || die "worldline.py self-test failed"
 "$PYTHON" "$PRIMARY/scripts/present-window.py" self-test >>"$INSTALL_LOG" || die "presentation gate self-test failed"
 if ! $COMPAT; then
-  ensure_user_daemon observer "ScreenCast observer" gnome-wayland-computer-use-observer.socket gnome-wayland-computer-use-observer.service "$PYTHON" "$PRIMARY/scripts/observer.py" client status || die "ScreenCast observer is not responding"
+  if ! ensure_user_daemon observer "ScreenCast observer" gnome-wayland-computer-use-observer.socket gnome-wayland-computer-use-observer.service "$PYTHON" "$PRIMARY/scripts/observer.py" client status; then warn "ScreenCast observer unavailable; semantic and compositor observation remain independently usable"; fi
   WORLDLINE_FEATURES="$STATE/worldline-features.json"
   "$PYTHON" "$PRIMARY/scripts/worldline.py" request --json '{"op":"features"}' >"$WORLDLINE_FEATURES" 2>>"$INSTALL_LOG" || die "Install and start standalone WORLDLINE first; its private socket is unavailable"
   # A stale WORLDLINE that answers discovery but lacks `receipt` would install
   # cleanly and only fail mid-action, so refuse it here.
   if ! "$PYTHON" "$PRIMARY/scripts/worldline-contract.py" "$WORLDLINE_FEATURES" >>"$INSTALL_LOG" 2>&1
   then die "Standalone WORLDLINE must advertise the 'receipt' op; update WORLDLINE before installing GWCU"; fi
-  if $RELOAD_REQUIRED; then warn "Exact presentation live proof is deferred until GNOME loads winrects@cua"; else "$PYTHON" "$PRIMARY/scripts/present-window.py" status >"$STATE/presentation.json" 2>>"$INSTALL_LOG" || die "Cua GNOME exact-presentation gate unavailable"; fi
+  "$PYTHON" "$PRIMARY/scripts/present-window.py" status >"$STATE/presentation.json" 2>>"$INSTALL_LOG" || die "WORLDLINE window capability report unavailable"
 fi
-ok "WORLDLINE + observer protocols proved; presentation gate qualified"
+ok "WORLDLINE + observer protocols proved; capability-aware admission installed"
 
 info "[8/8] Proving the complete installed state"
 PREV_ACCESS=$(gsettings get org.gnome.desktop.interface toolkit-accessibility 2>/dev/null || printf unknown); ACCESS_CHANGED=false
@@ -732,7 +729,7 @@ p=pathlib.Path(sys.argv[1])
 try:d=json.loads(p.read_text())
 except Exception:d={}
 d["schema"]="gwcu.ownership.v3";d["toolkit_accessibility"]={"previous":sys.argv[2],"changed":sys.argv[3]=="true"}
-u=d.setdefault("upstream",{});c=u.setdefault("cua_driver",{});c["version"]=sys.argv[4];c["owned"]=bool(c.get("provisioned") or c.get("owned"));u.setdefault("winrects",{"owned":False})
+u=d.setdefault("upstream",{});c=u.setdefault("cua_driver",{});c["version"]=sys.argv[4];c["owned"]=bool(c.get("provisioned") or c.get("owned"))
 c["autostart"]={"unit":sys.argv[8],"state":sys.argv[9],"running":sys.argv[10]=="true"}
 enabled=sys.argv[6]!="true";d["user_units"]={"observer_socket":enabled,"observer_service":enabled};d["hermes_plugin"]={"managed":sys.argv[5]=="true","name":"gnome-wayland-computer-use","profiles":int(sys.argv[7])};d["distro_foundation_owned"]=False
 p.write_text(json.dumps(d,separators=(",",":"))+"\n");os.chmod(p,0o600)
@@ -751,7 +748,7 @@ try:print(json.load(open(sys.argv[1])).get("code","invalid"))
 except Exception:print("invalid")
 PY
 )
-  case "$DIAG_CODE" in ready) :;; reload_required) RELOAD_REQUIRED=true;; *) "$PYTHON" - "$DIAG_OUT" <<'PY' >&2 || true
+  case "$DIAG_CODE" in ready) :;; *) "$PYTHON" - "$DIAG_OUT" <<'PY' >&2 || true
 import json,sys
 try:
  d=json.load(open(sys.argv[1]));print("Installed-state proof failed:");print("  host:",d.get("host",{}).get("ok"));print("  observation:",d.get("observation",{}).get("status"));print("  presentation:",d.get("presentation",{}).get("status"));print("  WORLDLINE:",d.get("worldline",{}).get("status"));print("  Cua:",d.get("cua",{}).get("status"));print("  next:",(d.get("next") or {}).get("action"))
@@ -785,7 +782,7 @@ if $RELOAD_REQUIRED; then printf '%sSTOP: SIGN OUT / SIGN IN REQUIRED%s\n' "$BOL
 printf '  Source:          %s @ %s\n' "$SOURCE_KIND" "${SOURCE_COMMIT:0:12}"
 printf '  Cua Driver:      %s\n' "$CUA_DRIVER_RS_VERSION"
 printf '  Cua logon:       %s\n' "$CUA_AUTOSTART_LABEL"
-printf '  Visible takeover:%s\n' "$([ "$RELOAD_REQUIRED" = true ] && printf ' pending GNOME reload' || { [ "$COMPAT" = true ] && printf ' installed' || printf ' proved'; })"
+printf '  Foreground admission:%s\n' "$([ "$RELOAD_REQUIRED" = true ] && printf ' pending GNOME reload' || { [ "$COMPAT" = true ] && printf ' installed' || printf ' proved'; })"
 printf '  WORLDLINE:       %s\n' "$([ "$COMPAT" = true ] && printf installed || printf ready)"
 printf '  Observation:     %s\n' "$([ "$COMPAT" = true ] && printf installed || printf ready)"
 printf '  .gwcu truths:    %s\n' "$MANAGED_VALUE"; printf '  Background pref: %s\n' "$BACKGROUND_VALUE"
@@ -800,9 +797,6 @@ if $HERMES; then
   printf '\n/computer-use loads in a NEW Hermes session. Restart the gateway if this\n'
   printf 'install changed a running one, then open a fresh session.\n'
   printf 'Check: hermes gateway status\n'
-fi
-if $RELOAD_REQUIRED; then
-  reload_notice "GNOME must load winrects@cua before exact window presentation can be proved."
 fi
 if [ "$PENDING_RESTART" = yes ]; then
   printf '\n%sHERMES RESTART REQUIRED%s\n' "$BOLD" "$RESET"

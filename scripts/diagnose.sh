@@ -18,13 +18,14 @@ PYTHON="${GWCU_SYSTEM_PYTHON:-${GNOME_WAYLAND_SYSTEM_PYTHON:-/usr/bin/python3}}"
 HEALTH="$ROOT/scripts/cua-health.py"
 WORLDLINE="$ROOT/scripts/worldline.py"
 PRESENTER="$ROOT/scripts/present-window.py"
+PORTAL_CONTROL="$ROOT/scripts/portal-control.py"
 
 set +e
 OUTPUT=$(
-"$PYTHON" - "$HEALTH" "$WORLDLINE" "$PRESENTER" "$INSTALL_REPAIR" <<'PY'
+"$PYTHON" - "$HEALTH" "$WORLDLINE" "$PRESENTER" "$PORTAL_CONTROL" "$INSTALL_REPAIR" <<'PY'
 import json, os, pathlib, re, shlex, shutil, stat, subprocess, sys, time
-health_script,worldline_script,presenter_script=sys.argv[1:4]
-install_repair_requested=sys.argv[4]=="true"
+health_script,worldline_script,presenter_script,portal_script=sys.argv[1:5]
+install_repair_requested=sys.argv[5]=="true"
 SEMVER=re.compile(r"\b(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)\b")
 ENV_KEYS=("DISPLAY","WAYLAND_DISPLAY","XDG_SESSION_TYPE","XDG_CURRENT_DESKTOP","XDG_RUNTIME_DIR")
 GATEWAY_MARKERS=("hermes gateway run","gateway.run","gateway/run.py","hermes-gateway")
@@ -244,7 +245,8 @@ gst_pipewire=run(["gst-inspect-1.0","pipewiresrc"],3)[0]==0 if shutil.which("gst
 gst_png=run(["gst-inspect-1.0","pngenc"],3)[0]==0 if shutil.which("gst-inspect-1.0") else False
 screen=portal("ScreenCast"); screenshot=portal("Screenshot")
 observer=active_unit("gnome-wayland-computer-use-observer.socket")
-observation_ok=all((pw,wp,gst_pipewire,gst_png,screen,observer))
+visual_observation_ok=all((pw,wp,gst_pipewire,gst_png,screen,observer))
+observation_ok=visual_observation_ok
 failing_observation_services=[]
 if not pw:failing_observation_services.append("pipewire.service")
 if not wp:failing_observation_services.append("wireplumber.service")
@@ -263,12 +265,14 @@ elif worldline_unit.exists(): worldline_state="unavailable" if worldline_service
 else: worldline_state="missing"
 worldline={"ok":worldline_ok,"state":worldline_state,"service_active":worldline_service,"service_installed":worldline_unit.exists(),"socket":str(pathlib.Path(os.environ.get("WORLDLINE_SOCKET") or os.environ.get("XDG_RUNTIME_DIR",f"/tmp/worldline-{os.getuid()}"))/"worldline/worldline.sock")}
 
-winrects_dir=pathlib.Path(os.environ.get("XDG_DATA_HOME",str(pathlib.Path.home()/".local/share")))/"gnome-shell/extensions/winrects@cua"
-winrects_installed=winrects_dir.is_dir(); winrects_active=extension_active("winrects@cua")
-presentation_rc,presentation_out,presentation_err=run([sys.executable,presenter_script,"status"],5) if winrects_active else (30,"","")
+presentation_rc,presentation_out,presentation_err=run([sys.executable,presenter_script,"status"],8)
 try: presentation=json.loads(presentation_out) if presentation_out else None
 except Exception: presentation={"ok":False,"code":"invalid_output","detail":presentation_out[:1024]}
-presentation_ok=winrects_active and presentation_rc==0 and isinstance(presentation,dict) and bool(presentation.get("ok"))
+presentation_ok=presentation_rc==0 and isinstance(presentation,dict) and bool(presentation.get("ok"))
+presentation_capabilities=(presentation or {}).get("capabilities",{})
+portal_rc,portal_out,portal_err=run([sys.executable,portal_script,"--status"],8)
+try: portal_control=json.loads(portal_out) if portal_out else None
+except Exception: portal_control={"ok":False,"code":"invalid_output","detail":portal_out[:1024]}
 
 health=None;health_rc=50;doctor=None;doctor_rc=127
 if cua:
@@ -282,6 +286,17 @@ if cua:
         except Exception:doctor={"raw":out[:4096]}
 
 health_code=(health or {}).get("code","unavailable")
+if isinstance(presentation_capabilities,dict):
+    presentation_capabilities["desktop_capture"]="available" if visual_observation_ok else "unavailable"
+    presentation_capabilities["remote_desktop_input"]="available" if health_code=="ok" else "unknown"
+    portal_data=(portal_control or {}).get("portal",{})
+    restore=(portal_data.get("restore_token") or {}).get("present") is True
+    presentation_capabilities["portal_authorization"]="available" if portal_data.get("available") is True and restore else "unavailable"
+    portal_authorization_ok = presentation_capabilities["portal_authorization"] == "available"
+    modes=(presentation or {}).get("execution_modes")
+    if isinstance(modes,dict):
+        modes["desktop_visual_interaction"]="available" if visual_observation_ok and health_code=="ok" and portal_authorization_ok else "unavailable"
+        modes["verified_foreground"]="available" if presentation_capabilities.get("exact_target_binding")=="available" and health_code=="ok" and portal_authorization_ok else "unavailable"
 installed_identity={"binary":cua,"version":(health or {}).get("executable_version")}
 doctor_identity={"binary":cua,"version":doctor_version(doctor) or (health or {}).get("reported_version")}
 gateway_identity_rows=[]
@@ -295,27 +310,24 @@ for gateway in gateways:
     row["matches_installed"]=same_identity(installed_identity,selected) and same_identity(installed_identity,backend)
     gateway_identity_rows.append(row);identity_ok=identity_ok and row["matches_installed"] and row["environment_ok"]
 
-if winrects_installed and not winrects_active and host_ok:cua_status="reload_required"
-elif health_rc==0 and winrects_active and identity_ok:cua_status="ready"
+if health_rc==0 and identity_ok:cua_status="ready"
 elif health_code in {"failed","identity_split_brain"} or not identity_ok:cua_status="failed"
 else:cua_status="degraded"
 
-ready=host_ok and environment_ok and observation_ok and worldline_ok and presentation_ok and cua_status=="ready" and identity_ok
+ready=host_ok and environment_ok and worldline_ok and presentation_ok and portal_authorization_ok and cua_status=="ready" and identity_ok
 if ready:code="ready";nxt=None
 elif not identity_ok:code="cua_identity_split_brain";nxt={"action":"repair_cua_identity","reason":"installed_hermes_gateway_doctor_must_match"}
 elif not environment_ok:code="desktop_environment_unproved";nxt={"action":"sync_desktop_environment","reason":"shell_systemd_gateway_must_match"}
-elif cua_status=="reload_required" and observation_ok and worldline_ok:code="reload_required";nxt={"action":"logout_login","reason":"activate_cua_gnome_helper"}
 elif not host_ok:code="wrong_session";nxt={"action":"start_gnome_wayland_session"}
-elif not presentation_ok and winrects_active:code="presentation_degraded";nxt={"action":"inspect_cua_gnome_helper"}
+elif not portal_authorization_ok:code="portal_authorization_missing";nxt={"action":"complete_remote_desktop_consent"}
+elif not presentation_ok:code="presentation_degraded";nxt={"action":"inspect_worldline_window_observation"}
 elif worldline_state=="missing":code="worldline_missing";nxt={"action":"install_worldline"}
 elif worldline_state=="stopped":code="worldline_stopped";nxt={"action":"start_worldline"}
 elif worldline_state=="incompatible":code="worldline_incompatible";nxt={"action":"upgrade_worldline"}
 elif not worldline_ok:code="worldline_degraded";nxt={"action":"inspect_worldline_service"}
-elif failing_observation_services:code="observation_degraded";nxt={"action":"restart_services","services":failing_observation_services}
-elif not observation_ok:code="observation_degraded";nxt={"action":"repair_observation_components","components":[k for k,v in {"screencast_portal":screen,"gstreamer_pipewire":gst_pipewire,"gstreamer_png":gst_png,"observer_socket":observer}.items() if not v]}
 else:code="cua_degraded";nxt={"action":"inspect_cua_health"}
 
-payload={"schema":"gwcu.diagnose.v4","ok":ready,"code":code,"pending_hermes_restart":bool(repair.get("pending_hermes_restart")),"host":{"session":session,"desktop":desktop,"ok":host_ok},"install_repair":repair,"desktop_environment":env_proof,"presentation":{"status":"ready" if presentation_ok else ("reload_required" if winrects_installed and not winrects_active else "degraded"),"exact_target_required":True,"winrects_installed":winrects_installed,"winrects_active":winrects_active,"response":presentation,"stderr":presentation_err[:1024] if presentation_err else None},"observation":{"status":"ready" if observation_ok else "degraded","pipewire":pw,"pipewire_service":pipewire_service,"pipewire_rpc":pipewire_rpc,"wireplumber":wp,"screencast_portal":screen,"screenshot_portal":screenshot,"gstreamer_pipewire":gst_pipewire,"gstreamer_png":gst_png,"observer_socket":observer,"failing_services":failing_observation_services},"worldline":{"status":worldline_state,"socket":worldline_socket,"receipt":worldline_receipt,"service_active":worldline_service,"service_installed":worldline_unit.exists(),"features":worldline_features,"response":worldline,"stderr":worldline_err[:1024] if worldline_err else None},"cua":{"status":cua_status,"binary":cua,"health":health,"doctor_exit":doctor_rc,"doctor":doctor,"winrects_installed":winrects_installed,"winrects_active":winrects_active,"identity":{"ok":identity_ok,"installed":installed_identity,"doctor_reported":doctor_identity,"gateways":gateway_identity_rows,"invariant":"installed == hermes_selected == gateway_backend == doctor_reported"}},"next":nxt}
+payload={"schema":"gwcu.diagnose.v4","ok":ready,"code":code,"pending_hermes_restart":bool(repair.get("pending_hermes_restart")),"host":{"session":session,"desktop":desktop,"ok":host_ok},"install_repair":repair,"desktop_environment":env_proof,"presentation":{"status":"capabilities_reported" if presentation_ok else "degraded","activation":"unsupported","response":presentation,"capabilities":presentation_capabilities,"stderr":presentation_err[:1024] if presentation_err else None},"portal_control":{"status":portal_control,"exit_code":portal_rc,"stderr":portal_err[:1024] if portal_err else None},"observation":{"status":"ready" if visual_observation_ok else "optional_degraded","required_for_readiness":False,"pipewire":pw,"pipewire_service":pipewire_service,"pipewire_rpc":pipewire_rpc,"wireplumber":wp,"screencast_portal":screen,"screenshot_portal":screenshot,"gstreamer_pipewire":gst_pipewire,"gstreamer_png":gst_png,"observer_socket":observer,"failing_services":failing_observation_services},"worldline":{"status":worldline_state,"socket":worldline_socket,"receipt":worldline_receipt,"service_active":worldline_service,"service_installed":worldline_unit.exists(),"features":worldline_features,"response":worldline,"stderr":worldline_err[:1024] if worldline_err else None},"cua":{"status":cua_status,"binary":cua,"health":health,"doctor_exit":doctor_rc,"doctor":doctor,"identity":{"ok":identity_ok,"installed":installed_identity,"doctor_reported":doctor_identity,"gateways":gateway_identity_rows,"invariant":"installed == hermes_selected == gateway_backend == doctor_reported"}},"next":nxt}
 print(json.dumps(payload,separators=(",",":")))
 raise SystemExit(0 if ready else 30)
 PY

@@ -4,7 +4,7 @@ The installed skill owns ``/computer-use`` task dispatch. This plugin is enabled
 by the installer and makes three policies mechanical instead of advisory:
 
 * direct native ``computer_use`` input inherits GWCU's saved delivery mode;
-* foreground input is admitted only after exact Cua/GNOME presentation proof;
+* foreground input is admitted only after fresh WORLDLINE exact-identity and focus proof;
 * closed local apps are ACQUIREd through Cua ``launch_app`` and bound to the
   exact newly-created ``(pid, window_id)`` before later discovery/input.
 
@@ -24,7 +24,7 @@ from pathlib import Path
 
 _INPUT_ACTIONS = frozenset({
     "click", "double_click", "right_click", "middle_click",
-    "drag", "scroll", "type", "key",
+    "drag", "scroll", "type", "key", "set_value",
 })
 # Every Cua/Hermes computer_use action that may carry delivery_mode.
 # Kept in sync with Cua's tools/list schema: any tool exposing delivery_mode
@@ -40,7 +40,6 @@ _SUBCOMMANDS = (
     "trace",
     "present",
     "list-windows",
-    "cursor-color",
     "background",
     "managed",
     "truths",
@@ -85,7 +84,7 @@ def _exact_target(call: dict) -> tuple[int, int] | None:
         and pid > 0
         and isinstance(window_id, int)
         and not isinstance(window_id, bool)
-        and 0 <= window_id <= (1 << 32) - 1
+        and 0 <= window_id <= (1 << 64) - 1
     ):
         return pid, window_id
     return None

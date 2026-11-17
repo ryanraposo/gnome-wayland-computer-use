@@ -25,8 +25,10 @@ grep -q 'CUA_DRIVER_RS_VERSION="${GWCU_CUA_DRIVER_RS_VERSION:-0.39.0}"' "$instal
 grep -q 'CUA_DRIVER_RS_NO_MODIFY_PATH=1' "$installer" || fail "Cua PATH ownership missing"
 grep -q 'https://cua.ai/driver/install.sh' "$installer" || fail "official Cua installer missing"
 grep -q 'Qualified Cua Driver.*already installed' "$installer" || fail "qualified Cua is not reused"
-grep -q 'packages/current/wayland-helper' "$installer" || fail "Cua helper boundary missing"
-pass "Cua remains pinned and sole actuator"
+! grep -Eq 'wayland-helper/install.sh|winrects-compat.py|gnome-extensions enable winrects@cua' "$installer" || fail "installer still installs or enables WinRects"
+grep -Fq 'gnome-extensions disable winrects@cua' "$installer" || fail "legacy WinRects extension is not disabled"
+! grep -Fq "org.cua.WinRects" "$ROOT/scripts/present-window.py" || fail "presenter still depends on WinRects"
+pass "Cua remains pinned and sole actuator; WORLDLINE owns read-only exact-window admission"
 
 bash "$ROOT/tests/cua-autostart.sh" >/dev/null || fail "Cua logon daemon regression"
 pass "Cua logon daemon is owned, standard and reversible"
@@ -59,11 +61,20 @@ grep -q 'present-window.py" status' "$installer" || fail "live presentation qual
 ! grep -q 'enable --now gnome-wayland-computer-use-worldline.socket' "$installer" || fail "GWCU still owns a WORLDLINE socket unit"
 grep -q 'enable --now gnome-wayland-computer-use-observer.socket' "$installer" || fail "observer socket not enabled"
 grep -Fq 'worldline-dependency.sh" ensure' "$installer" || fail "WORLDLINE dependency is not resolved before readiness"
+grep -Fq '"active": "unknown"' "$ROOT/scripts/portal-control.py" || fail "portal token is incorrectly treated as a live session"
+grep -Fq '"stream_id": "unknown"' "$ROOT/scripts/portal-control.py" || fail "portal stream identity is guessed"
+grep -Fq '"portal_control"' "$diagnose" || fail "doctor omits RemoteDesktop session lifecycle status"
+grep -Fq 'portal_authorization_ok' "$diagnose" || fail "doctor can report ready without persisted portal authorization"
+grep -Fq 'portal_authorization_missing' "$diagnose" || fail "doctor omits the portal authorization failure boundary"
 ! grep -Fq 'worldline-pkg' "$installer" || fail "GWCU still vendors WORLDLINE source"
 ! grep -Fq 'cp "$PRIMARY/systemd/user/gnome-wayland-computer-use-worldline' "$installer" || fail "GWCU still installs a WORLDLINE service"
 grep -Fq 'journalctl --user -u "$service_unit"' "$installer" || fail "daemon failure capsule lacks journal evidence"
 python3 "$presenter" self-test >/dev/null || fail "presentation primitive self-test"
 grep -Fq 'focused' "$presenter" && grep -Fq 'visible' "$presenter" && grep -Fq 'minimized' "$presenter" || fail "presenter does not prove visible focus"
+grep -Fq 'def worldline_focus_proof' "$ROOT/scripts/action-span.py" || fail "action span does not revalidate focus immediately before dispatch"
+grep -Fq '"cua_window_id_provenance"' "$presenter" || fail "presenter does not require WORLDLINE's declared CUA identity bridge"
+grep -Fq '"lifecycle": {"requested": True, "dispatched": True, "acknowledged": not failed, "observed": False}' "$ROOT/scripts/action-span.py" || fail "action span does not distinguish dispatch, acknowledgement and observation"
+grep -Fq '"focus_revalidated"' "$ROOT/scripts/action-span.py" || fail "physical trace omits pre-dispatch focus proof"
 grep -Fq 'pid' "$presenter" && grep -Fq 'window_id' "$presenter" || fail "presenter lacks exact identity"
 pass "standalone WORLDLINE dependency, observer and exact presentation are verified"
 
@@ -97,7 +108,7 @@ grep -q 'plugins disable "$NAME"' "$teardown" || fail "Hermes teardown disable m
 pass "Hermes policy installation is automatic and reversible"
 
 grep -q 'Enable managed .gwcu local truths?' "$installer" || fail "managed truth prompt missing"
-grep -q 'Default visible takeover is faster and deterministic' "$installer" || fail "default control preference not explained"
+grep -q 'Verified foreground is predictable when the target is already focused' "$installer" || fail "default control preference not explained"
 grep -q 'GWCU_TRUTHS=off' "$installer" || fail "truth override missing"
 grep -q 'SCHEMA = "gwcu.truths.v1"' "$truths" || fail "truth schema missing"
 grep -q 'nearest_existing' "$truths" || fail "non-Git scope lookup missing"
@@ -223,5 +234,33 @@ pass "README is the sole public project documentation surface"
 "$ROOT/scripts/present-window.py" self-test >/dev/null || fail "presentation geometry self-test"
 python3 "$ROOT/tests/mutter-presentation.py" >/dev/null || fail "Mutter presentation regression tests"
 pass "Mutter 50/51 focus and geometry regressions"
+
+# Standalone suites are first-class gates: run them explicitly so a single
+# tests/run.sh invocation covers them instead of silently relying on CI's
+# per-script steps. Deliberately excluded here:
+#   - tests/pages-freshness.sh (fetches the published Pages bootstrap);
+#   - tests/desktop-acceptance.sh, tests/cua-all-actions-manual.sh and the live
+#     mode of calculator-cold.py (manual/live desktop control, explicit opt-in).
+standalone_tests=(
+  release-contract.sh
+  skill-ux.sh
+  foreground-docs.sh
+  latency-routing.sh
+  truth-scope.sh
+  main-migration.sh
+  lifecycle-safety.sh
+  determinism.sh
+  hermes.sh
+  action-span.sh
+  worldline.sh
+)
+for suite in "${standalone_tests[@]}"; do
+  bash "$ROOT/tests/$suite" >"$TMP/$suite.log" 2>&1 || {
+    cat "$TMP/$suite.log" >&2
+    fail "standalone regression failed: $suite"
+  }
+done
+python3 "$ROOT/tests/calculator-cold.py" --self-test >/dev/null || fail "Calculator cold-start session guard"
+pass "standalone suites and Calculator session guard are covered by run.sh"
 
 printf 'ok - regression suite complete (%d checks)\n' "$passed"

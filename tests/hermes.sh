@@ -52,44 +52,31 @@ grep -Fq 'HERMES_SKILL_REL="autonomous-ai-agents/computer-use"' "$ROOT/install.s
 grep -Fq 'legacy-computer-use-' "$ROOT/install.sh" || fail "installer does not retire the stale root-level computer-use skill"
 grep -Fq 'HSKILL="$HERMES_ACTIVE_HOME/skills/$HERMES_SKILL_REL"' "$ROOT/install.sh" || fail "installer writes the skill somewhere other than the canonical path"
 
-# A required GNOME sign-out/in must be impossible to miss and must be actionable.
-grep -Fq 'reload_notice()' "$ROOT/install.sh" || fail "installer has no guided reload notice"
-grep -Fq 'ACTION REQUIRED — SIGN OUT AND BACK IN ONCE' "$ROOT/install.sh" || fail "reload notice is not prominent"
-grep -Fq 'NOT READY' "$ROOT/install.sh" || fail "reload notice does not state that computer use is not ready"
-grep -Fq 'reload_notice "GNOME must load winrects@cua' "$ROOT/install.sh" || fail "winrects reload is not guided"
+# GNOME 50+ must never install, patch, enable or depend on WinRects.
+! grep -Eq 'wayland-helper/install.sh|winrects-compat.py|gnome-extensions enable winrects@cua' "$ROOT/install.sh" || fail "installer still installs or enables WinRects"
+grep -Fq 'gnome-extensions disable winrects@cua' "$ROOT/install.sh" || fail "installer does not disable an existing legacy extension"
+grep -Fq 'State: (ACTIVE|ENABLED)' "$ROOT/install.sh" || fail "installer does not verify legacy extension is inactive"
+grep -Fq 'WORLDLINE exact-target admission' "$ROOT/install.sh" || fail "installer does not install the WORLDLINE admission path"
 grep -Fq 'reload_notice "GNOME must reload your session' "$ROOT/install.sh" || fail "DRM repair reload is not guided"
 grep -Fq 'RELOAD_NOTICE_SHOWN' "$ROOT/install.sh" || fail "reload notice can be printed twice"
 grep -Fq 'RERUN_COMMAND' "$ROOT/install.sh" || fail "installer has no durable rerun command"
 grep -Fq 'curl -fsSL $BASE_URL/install.sh | bash' "$ROOT/install.sh" || fail "curl-bash install has no durable rerun command"
-grep -Fq 'Log out now so GNOME can load winrects@cua? [Y/n]' "$ROOT/install.sh" || fail "sign-out step is not an informed Y/n choice"
-python3 - "$ROOT/install.sh" <<'PY' || fail "notice still prints a temporary rerun path"
+python3 - "$ROOT/scripts/present-window.py" <<'PY' || fail "presenter exposes an activation path"
 import pathlib,sys
-text=pathlib.Path(sys.argv[1]).read_text()
-old="rerun=\"cd '$SELF' && ./install.sh\""
-assert old not in text, "notice derives rerun path from $SELF (temporary under curl-bash)"
+source=pathlib.Path(sys.argv[1]).read_text()
+assert "org.cua.WinRects" not in source
+assert ".Activate(" not in source
+assert "def worldline_query" in source
+assert "compositor_verified" in source
+assert "target_not_verified_foreground" in source
+plugin=pathlib.Path(sys.argv[1]).parents[1] / "runtimes" / "hermes" / "__init__.py"
+policy=plugin.read_text()
+gate=policy.split("_FOREGROUND_ACTIONS = frozenset({",1)[1].split("})",1)[0]
+assert '"set_value"' in gate, "foreground semantic AX mutation bypasses exact-target admission"
+assert '("launch_app", "set_value")' in policy, "semantic set_value action was removed"
+print("WORLDLINE admission is read-only; semantic AX mutations remain available in background mode and gated in foreground")
 PY
-pass "canonical skill path and single, actionable sign-out/in guidance are locked"
-
-# Cua's winrects metadata can lag the distro shell, leaving the extension OUT
-# OF DATE so exact presentation can never be proved. The repair must be
-# idempotent and must back up the original metadata.
-grep -Fq 'winrects-compat.py' "$ROOT/install.sh" || fail "installer does not repair winrects shell compatibility"
-python3 - "$ROOT" <<'PY' || fail "winrects shell-version repair failed"
-import importlib.util, json, pathlib, sys, tempfile
-root = pathlib.Path(sys.argv[1])
-spec = importlib.util.spec_from_file_location("winrects_compat", root / "scripts" / "winrects-compat.py")
-mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
-with tempfile.TemporaryDirectory() as d:
-    p = pathlib.Path(d) / "metadata.json"
-    p.write_text(json.dumps({"uuid":"winrects@cua","shell-version":["45","49"],"version":12}))
-    assert mod.ensure(p, "50") == "patched", "stale shell-version was not repaired"
-    assert "50" in json.loads(p.read_text())["shell-version"], "GNOME 50 not declared"
-    assert p.with_name(p.name + ".gwcu-backup").is_file(), "original metadata not backed up"
-    assert mod.ensure(p, "50") == "current", "repair is not idempotent"
-    assert mod.ensure(p, "51") == "patched", "future shell cannot be repaired"
-print("winrects shell-version repair is idempotent and preserves a backup")
-PY
-pass "winrects@cua shell-version is repaired so sign-out/in can activate it"
+pass "GNOME 50+ installer is WinRects-independent and keeps a read-only exact-target gate"
 
 cat >"$TMP/presenter.py" <<'PY'
 #!/usr/bin/env python3

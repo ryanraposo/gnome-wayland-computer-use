@@ -297,7 +297,7 @@ rm -f \
     "$STATE/screencast-restore-token" \
     "$STATE/profile.json" "$STATE/ownership.json" \
     "$STATE/cua-doctor.json" "$STATE/cua-doctor.stderr" "$STATE/cua-health.json" \
-    "$STATE/cua-winrects-managed" "$STATE/video-group-added" \
+    "$STATE/video-group-added" \
     "$STATE/managed-truths" "$STATE/managed-agents" "$STATE/portal-control.json"
 rmdir "$STATE" 2>/dev/null || true
 
@@ -307,5 +307,5 @@ info "GWCU-managed Hermes skill/plugin integration was removed across existing p
 info "Hermes' built-in computer_use tool/toolset was untouched."
 info "Ubuntu PipeWire/portal packages and GNOME portal permission state were preserved."
 info "Repo/workspace .gwcu files and their .gitignore protection were preserved as local workspace content."
-if ! $REMOVE_CUA; then info "Cua Driver and Cua WinRects were preserved."; fi
+if ! $REMOVE_CUA; then info "Cua Driver was preserved."; fi
 printf '\n'
