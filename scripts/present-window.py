@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 SCHEMA = "gwcu.presentation.v2"
-MAX_WINDOW_ID = (1 << 32) - 1
+MAX_WINDOW_ID = (1 << 64) - 1
 MAX_OBSERVATION_AGE = 2.5
 
 
@@ -70,7 +70,7 @@ def exact_window(windows: dict[str, Any], pid: int, window_id: int) -> dict[str,
         item for item in items
         if isinstance(item, dict)
         and item.get("pid") == pid
-        and item.get("compositor_id") == window_id
+        and item.get("cua_window_id") == window_id
         and item.get("compositor_verified") is True
         and item.get("geometry_source") == "worldline-gnome-shell"
     ]
@@ -112,7 +112,7 @@ def inspect(pid: int, window_id: int) -> dict[str, Any]:
     window = exact_window(windows, pid, window_id)
     if window is None:
         return envelope(False, "target_not_exact",
-                        detail="WORLDLINE did not identify exactly one compositor-verified window",
+                        detail="WORLDLINE did not bind this CUA window_id to exactly one compositor-verified window",
                         pid=pid, window_id=window_id, revision=snapshot["revision"])
     if not presented(window):
         return envelope(False, "target_not_verified_foreground",
@@ -127,6 +127,8 @@ def inspect(pid: int, window_id: int) -> dict[str, Any]:
                     observed_at=snapshot["observed_at"],
                     source=snapshot["source"],
                     window={"stable_id": window.get("stable_id"),
+                            "cua_window_id": window.get("cua_window_id"),
+                            "compositor_id": window.get("compositor_id"),
                             "title": window.get("title"),
                             "frame": geometry(window),
                             "monitor": (window.get("geometry") or {}).get("monitor"),
@@ -196,25 +198,25 @@ def status() -> dict[str, Any]:
 
 def self_test() -> dict[str, Any]:
     sample = {"items": [{
-        "pid": 42, "compositor_id": 7, "compositor_verified": True,
+        "pid": 42, "cua_window_id": 0x12345678, "compositor_id": 7, "compositor_verified": True,
         "geometry_source": "worldline-gnome-shell",
         "frame": {"x": -20, "y": 0, "width": 800, "height": 600},
         "focused": True, "visible": True, "minimized": False,
     }]}
-    row = exact_window(sample, 42, 7)
+    row = exact_window(sample, 42, 0x12345678)
     assert row is not None and presented(row)
-    assert exact_window(sample, 42, 8) is None
-    assert exact_window(sample, 99, 7) is None
+    assert exact_window(sample, 42, 7) is None
+    assert exact_window(sample, 99, 0x12345678) is None
     assert geometry({**row, "frame": {"x": 0, "y": 0, "width": 0, "height": 10}}) is None
     assert not presented({**row, "focused": False})
     assert not presented({**row, "visible": False})
     assert not presented({**row, "minimized": True})
     # Semantic-only or inferred frames can never satisfy exact-target binding.
-    assert exact_window(sample, 42, 7) is row
+    assert exact_window(sample, 42, 0x12345678) is row
     unverified = {**sample, "items": [{**row, "compositor_verified": False}]}
-    assert exact_window(unverified, 42, 7) is None
+    assert exact_window(unverified, 42, 0x12345678) is None
     return envelope(True, "ok", checks=[
-        "worldline_exact_pid_compositor_id_binding",
+        "worldline_exact_pid_cua_window_id_binding",
         "focus_visibility_minimized_gate",
         "fresh_compositor_geometry_required",
         "no_activation_or_input_surface",
