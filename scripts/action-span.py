@@ -132,20 +132,35 @@ def worldline_focus_proof(path: Path, target: tuple[int, int], timeout: float) -
     pid, window_id = target
     try:
         response = worldline_call(
-            path, {"op": "query", "paths": ["windows.focus"], "fresh": True},
+            path, {"op": "query", "paths": ["windows"], "fresh": True},
             max(1.0, min(timeout, 4.0)),
         )
     except Exception as exc:
         return {"ok": False, "code": "worldline_focus_unavailable", "detail": str(exc)}
-    focus = (response.get("values") or {}).get("windows.focus")
-    if (not response.get("ok") or not isinstance(focus, dict)
-            or focus.get("pid") != pid
-            or focus.get("cua_window_id") != window_id
-            or focus.get("verified") is not True):
+    windows = (response.get("values") or {}).get("windows")
+    items = windows.get("items") if isinstance(windows, dict) else None
+    matches = [
+        item for item in items or []
+        if isinstance(item, dict)
+        and item.get("pid") == pid
+        and item.get("cua_window_id") == window_id
+        and item.get("compositor_verified") is True
+        and item.get("geometry_source") == "worldline-gnome-shell"
+        and item.get("focused") is True
+        and item.get("visible") is True
+        and item.get("minimized") is False
+    ]
+    if not response.get("ok") or len(matches) != 1:
         return {"ok": False, "code": "focus_changed_before_dispatch",
-                "revision": response.get("revision"), "focus": focus}
+                "revision": response.get("revision"), "matches": len(matches)}
+    focus = matches[0]
     return {"ok": True, "code": "focus_revalidated",
-            "revision": response.get("revision"), "focus": focus}
+            "revision": response.get("revision"),
+            "focus": {"stable_id": focus.get("stable_id"),
+                      "compositor_id": focus.get("compositor_id"),
+                      "cua_window_id": focus.get("cua_window_id"),
+                      "pid": focus.get("pid"), "focused": True,
+                      "visible": True, "minimized": False}}
 
 
 def structured(response: dict[str, Any]) -> dict[str, Any] | None:
