@@ -1,0 +1,78 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Build and publish tagged release
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Verify tag and release identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(tr -d '[:space:]' < VERSION)"
+          if [ "$tag" != "$version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match VERSION $version"
+            exit 1
+          fi
+          git fetch --quiet origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::tagged commit is not on main; promote it before releasing"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_ENV"
+
+      - name: Build from the exact tagged commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$(git rev-parse "$GITHUB_SHA")"
+          bash scripts/build-release.sh "$RUNNER_TEMP/gwcu-release"
+          python3 - "$RUNNER_TEMP/gwcu-release/gwcu-$version.json" "$GITHUB_SHA" "$version" <<'PY'
+          import json, pathlib, sys
+          d = json.loads(pathlib.Path(sys.argv[1]).read_text())
+          assert d["schema"] == "gwcu.release.v1"
+          assert d["version"] == sys.argv[3], (d["version"], sys.argv[3])
+          assert d["commit"] == sys.argv[2], (d["commit"], sys.argv[2])
+          assert len(d["sha256"]) == 64 and d["bytes"] > 0
+          PY
+
+      - name: Publish assets to the GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          assets=("$RUNNER_TEMP/gwcu-release/gwcu-$version.json" "$RUNNER_TEMP/gwcu-release/gwcu-$version.tar.gz")
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "${assets[@]}" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" --title "GWCU $version" --generate-notes "${assets[@]}"
+          fi
+
+      - name: Verify published manifest over HTTPS
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="https://github.com/ryanraposo/gnome-wayland-computer-use/releases/download/$GITHUB_REF_NAME/gwcu-$version.json"
+          curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL --retry 3 --max-time 60 "$url" -o "$RUNNER_TEMP/published.json"
+          python3 - "$RUNNER_TEMP/published.json" "$RUNNER_TEMP/gwcu-release/gwcu-$version.json" <<'PY'
+          import json, pathlib, sys
+          published = json.loads(pathlib.Path(sys.argv[1]).read_text())
+          expected = json.loads(pathlib.Path(sys.argv[2]).read_text())
+          assert published == expected, (published, expected)
+          PY
