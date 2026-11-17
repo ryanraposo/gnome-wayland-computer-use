@@ -55,6 +55,7 @@ grep -Fq 'HSKILL="$HERMES_ACTIVE_HOME/skills/$HERMES_SKILL_REL"' "$ROOT/install.
 # GNOME 50+ must never install, patch, enable or depend on WinRects.
 ! grep -Eq 'wayland-helper/install.sh|winrects-compat.py|gnome-extensions enable winrects@cua' "$ROOT/install.sh" || fail "installer still installs or enables WinRects"
 grep -Fq 'gnome-extensions disable winrects@cua' "$ROOT/install.sh" || fail "installer does not disable an existing legacy extension"
+grep -Fq 'State: (ACTIVE|ENABLED)' "$ROOT/install.sh" || fail "installer does not verify legacy extension is inactive"
 grep -Fq 'WORLDLINE exact-target admission' "$ROOT/install.sh" || fail "installer does not install the WORLDLINE admission path"
 grep -Fq 'reload_notice "GNOME must reload your session' "$ROOT/install.sh" || fail "DRM repair reload is not guided"
 grep -Fq 'RELOAD_NOTICE_SHOWN' "$ROOT/install.sh" || fail "reload notice can be printed twice"
