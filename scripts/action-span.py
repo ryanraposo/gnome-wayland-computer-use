@@ -144,6 +144,7 @@ def worldline_focus_proof(path: Path, target: tuple[int, int], timeout: float) -
         if isinstance(item, dict)
         and item.get("pid") == pid
         and item.get("cua_window_id") == window_id
+        and item.get("cua_window_id_source") == "cua-driver-atspi-child-ordinal"
         and item.get("compositor_verified") is True
         and item.get("geometry_source") == "worldline-gnome-shell"
         and item.get("focused") is True
