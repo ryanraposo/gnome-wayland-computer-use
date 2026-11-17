@@ -11,7 +11,29 @@ export PYTHONPATH="$WORLDLINE_SOURCE/src"
 export WORLDLINE_SOCKET="$TMP/runtime/worldline.sock"
 python3 - "$WORLDLINE_SOCKET" <<'PY' >/dev/null 2>&1 & wpid=$!
 import asyncio,sys
+import worldline.current as current
 from worldline.daemon import WorldlineDaemon
+observe_real=current.observe
+def observe_for_test(names,full=False):
+    result=observe_real(names,full=full)
+    if "windows" in names:
+        result["windows"]={
+            "available":True,"count":1,"geometry_source":"worldline-gnome-shell",
+            "items":[{
+                "pid":4242,"cua_window_id":77,
+                "cua_window_id_source":"cua-driver-atspi-child-ordinal",
+                "compositor_id":12,"compositor_stable_id":"mutter:4242:12",
+                "stable_id":"window:4242:17","compositor_verified":True,
+                "geometry_source":"worldline-gnome-shell",
+                "frame":{"x":0,"y":0,"width":100,"height":100},
+                "focused":True,"visible":True,"minimized":False,
+            }],
+            "by_id":{},"focus":{"pid":4242,"cua_window_id":77,"compositor_id":12,"verified":True},
+            "sources":{"geometry":{"available":True,"name":"worldline-gnome-shell"},
+                       "semantic":{"available":True}},
+        }
+    return result
+current.observe=observe_for_test
 async def main():
     daemon=WorldlineDaemon()
     server=await asyncio.start_unix_server(daemon.handle,path=sys.argv[1])
@@ -92,7 +114,7 @@ set -e
 [ "$invalid_rc" -eq 2 ] || fail "malformed span did not fail as invalid_request"
 cmp -s "$TRACE_FILE" "$TMP/trace-before-invalid.json" || fail "invalid syntax overwrote the last meaningful physical trace"
 [ "$(wc -l <"$TMP/present")" -eq 3 ] || fail "each foreground mutation was not presentation-gated"
-pass "default OFF is exact visible takeover before every Cua mutation"
+pass "default OFF is verified foreground before every Cua mutation"
 
 : >"$TMP/calls";REQ_NO_TARGET='{"schema":"gwcu.action-span.request.v1","actions":[{"name":"click","arguments":{"x":10,"y":20}}]}'
 set +e;FAKE_CUA_LOG="$TMP/calls" XDG_STATE_HOME="$TMP/state" bash "$SURFACE" span --driver "$TMP/fake-cua" --presenter "$TMP/fake-presenter" --actions-json "$REQ_NO_TARGET" >"$TMP/no-target.json";rc=$?;set -e
@@ -154,8 +176,8 @@ import json,sys
 d=json.load(open(sys.argv[1]));assert d['ok'];assert d['results'][0]['control']['fallback'];assert d['control']['runtime_overrides'][0]['reason']=='cua_background_unavailable';assert d['control']['runtime_notice'];assert len(d['control']['presentations'])==1
 PY
 grep -q '"delivery_mode":"background"' "$TMP/calls" && grep -q '"delivery_mode":"foreground"' "$TMP/calls" || fail "Cua fallback did not change delivery mode"
-[ "$(wc -l <"$TMP/present")" -eq 1 ] || fail "foreground fallback skipped exact presentation"
-pass "background-unavailable falls forward only after exact visible takeover"
+[ "$(wc -l <"$TMP/present")" -eq 1 ] || fail "foreground fallback skipped exact WORLDLINE admission"
+pass "background-unavailable falls forward only after verified foreground"
 
 : >"$TMP/calls"
 XDG_RUNTIME_DIR="$TMP/runtime" python3 "$WORLD" request --json '{"op":"event","event":{"source":"test-ui","facts":{"ui.dialog":"ready"}}}' >/dev/null
