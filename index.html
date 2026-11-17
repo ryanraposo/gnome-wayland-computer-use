@@ -129,19 +129,19 @@ and move it to Downloads</pre>
     </button>
   </div>
   <div class="guided" id="sign-in">
-    <b>ONE SIGN-OUT / SIGN-IN MAY BE REQUIRED</b>
+    <b>CAPABILITIES ARE VERIFIED BEFORE READY</b>
     <ol>
-      <li>Watch for <code>STOP: SIGN OUT / SIGN IN REQUIRED</code> and save your work.</li>
-      <li>Sign out of GNOME: system menu → Power → Log Out.</li>
+      <li>If a system-level repair requires sign-out, save your work.</li>
+      <li>Sign out of GNOME only when the installer explicitly requests it.</li>
       <li>Sign back in as the same user on the same desktop.</li>
       <li>Open a new, visible terminal there and rerun the same install command.</li>
     </ol>
-    <div class="end">Until you do this and rerun, computer use is <strong>NOT READY</strong>. The installer ends with <code>READY // PROVED</code> when it is.</div>
+    <div class="end">The installer ends with <code>READY // PROVED</code> only after WORLDLINE observation and Cua portal capabilities are checked.</div>
   </div>
   <div class="note">Run in a new, visible terminal as the logged-in desktop user. If the Remote Desktop portal is missing, the installer opens GNOME Settings → Sharing → Remote Desktop (Screen Sharing) and waits for you to enable it. You still approve GNOME's “Remote Desktop” prompt for local EIS/libei control; GWCU never clicks or types. Whole-screen observation has its own ScreenCast consent boundary.</div>
   <div class="note">With Hermes, GWCU owns the <code>computer-use</code> skill and its policy plugin wraps Hermes' existing <code>computer_use</code> tool — it does not replace that tool. The default Hermes home is integrated automatically; additional existing profiles are explicit installer choices. Existing skills are archived before replacement and teardown restores them when possible.</div>
   <div class="note">The pinned Cua daemon is standard: a GWCU-owned <code>systemd --user</code> unit starts <code>cua-driver serve</code> at every GNOME graphical logon and is live-proved by the installer. An upstream or user-owned Cua autostart unit is preserved instead of being displaced by a second daemon.</div>
-  <div class="note">If GNOME must load the <code>winrects@cua</code> helper, the installer repairs its shell-version metadata and asks <code>Log out now? [Y/n]</code>. Answer <code>Y</code> to end the session, or <code>n</code> for manual steps. It prints a durable rerun command — never a temporary path — so sign-out/in cannot lose it. Only <code>READY // PROVED</code> means ready.</div>
+  <div class="note">GNOME 50+ runs without the <code>winrects@cua</code> Shell extension. Existing installations are disabled; the installer never installs, patches or enables it. WORLDLINE supplies read-only compositor observations, while Cua remains the only actuator. A target that is not already verified as focused is not admitted for foreground mutation.</div>
 </section>
 
 <section id="diagnose">

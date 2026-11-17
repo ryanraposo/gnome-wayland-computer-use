@@ -138,8 +138,8 @@ pass "agent routing, browser continuity and exact foreground are constitutionall
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 SURFACE="$ROOT/scripts/computer-use.sh"
 XDG_STATE_HOME="$TMP/state" "$SURFACE" background status >"$TMP/default"
-grep -q 'Background computer use: OFF' "$TMP/default" || fail "background default is not visible takeover"
-grep -q 'EXACT VISIBLE TAKEOVER' "$TMP/default" || fail "default takeover contract missing"
+grep -q 'Background computer use: OFF' "$TMP/default" || fail "background default is not verified foreground"
+grep -q 'VERIFIED FOREGROUND' "$TMP/default" || fail "default takeover contract missing"
 XDG_STATE_HOME="$TMP/state" "$SURFACE" trace >"$TMP/trace"
 for stage in DISCOVER PRESENT ACT REVALIDATE 'COMPLETE VISIBLY'; do grep -Fq "$stage" "$TMP/trace" || fail "trace lost stage: $stage"; done
 grep -Fq 'otherwise STOP before input' "$ROOT/SKILL.md" || fail "pre-actuation failure boundary missing"
@@ -147,8 +147,8 @@ XDG_STATE_HOME="$TMP/state" "$SURFACE" background >"$TMP/on"
 grep -q 'Background computer use: ON' "$TMP/on" || fail "bare background command did not toggle on"
 XDG_STATE_HOME="$TMP/state" "$SURFACE" background >"$TMP/off"
 grep -q 'Background computer use: OFF' "$TMP/off" || fail "bare background command did not toggle off"
-grep -q 'Default visible takeover is faster and deterministic' "$ROOT/install.sh" || fail "installer control explanation missing"
-grep -Fq 'Use exact visible takeover as your default? [Y/n]' "$ROOT/install.sh" || fail "installer does not ask the informed foreground-default choice"
+grep -q 'Verified foreground is predictable when the target is already focused' "$ROOT/install.sh" || fail "installer control explanation missing"
+grep -Fq 'Use verified foreground as your default? [Y/n]' "$ROOT/install.sh" || fail "installer does not ask the informed foreground-default choice"
 grep -Fq '/computer-use background on|off|status' "$ROOT/install.sh" || fail "installer does not teach later preference switching"
 grep -Fq 'If a native `computer_use` action does not specify delivery mode, GWCU applies this preference.' "$ROOT/README.md" || fail "README does not explain preference application"
 pass "default control path is visible, informed, switchable and deterministic"
@@ -187,13 +187,7 @@ grep -q '"found": 1' "$TMP/list_on" || fail "list-windows --json lost returned w
 grep -q '"on_screen_only":true' "$TMP/cua.log" || fail "list-windows did not forward --on-screen-only"
 grep -q '"pid":4242' "$TMP/cua.log" || fail "list-windows did not forward --pid"
 if CUA_DRIVER_BIN="$TMP/bin/cua-driver" XDG_STATE_HOME="$TMP/state" "$SURFACE" list-windows --pid nope >/dev/null 2>&1; then fail "list-windows accepted invalid pid"; fi
-PATH="$TMP/bin:$PATH" GDBUS_TEST_LOG="$TMP/gdbus.log" XDG_STATE_HOME="$TMP/state" "$SURFACE" cursor-color >"$TMP/cursor"
-grep -q 'Set agent cursor color to #00FF00' "$TMP/cursor" || fail "cursor-color default green"
-PATH="$TMP/bin:$PATH" GDBUS_TEST_LOG="$TMP/gdbus.log" XDG_STATE_HOME="$TMP/state" "$SURFACE" cursor-color "#FF0000" >"$TMP/cursor2"
-grep -q 'Set agent cursor color to #FF0000' "$TMP/cursor2" || fail "cursor-color accepts custom hex"
-grep -q '#FF0000' "$TMP/gdbus.log" || fail "cursor-color did not reach WinRects helper"
-if PATH="$TMP/bin:$PATH" GDBUS_TEST_LOG="$TMP/gdbus.log" XDG_STATE_HOME="$TMP/state" "$SURFACE" cursor-color '#GG0000' >/dev/null 2>&1; then fail "cursor-color accepted invalid hex"; fi
-pass "list-windows and cursor-color operator surfaces work hermetically"
+pass "list-windows operator surface remains read-only and hermetic"
 
 grep -q '^## Maintaining this repository$' "$ROOT/AGENTS.md" || fail "repository guide lost maintenance routing"
 grep -q 'Persistent machine/user truth never belongs in AGENTS.md' "$ROOT/AGENTS.md" || fail "AGENTS permits machine truth"

@@ -44,7 +44,7 @@ pass "little-guy landing page stays current and accessible"
 grep -Fq 'Use **Cua Driver for desktop actuation**' "$ROOT/SKILL.md" || fail "skill lost Cua desktop actuation path"
 grep -Fq 'Do not split the same browser session across Cua and a separate browser-automation actuator mid-task.' "$ROOT/SKILL.md" || fail "browser session can split across actuator planes"
 grep -q 'Never answer a Cua refusal with raw pointer/keyboard injection' "$ROOT/SKILL.md" || fail "refusal boundary missing"
-grep -Fq 'No exact `(pid, window_id)` proof, no focus-bound input.' "$ROOT/README.md" || fail "README lost exact presentation invariant"
+grep -Fq 'WORLDLINE exact identity + fresh compositor geometry + already-focused proof' "$ROOT/README.md" || fail "README lost WORLDLINE foreground admission invariant"
 grep -Fq 'exact_target_required_for_foreground' "$ROOT/scripts/action-span.py" || fail "action-span no longer fails closed"
 pass "one exact desktop actuation path remains across native and user-browser work"
 

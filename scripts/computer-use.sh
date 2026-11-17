@@ -55,19 +55,16 @@ usage() {
       Show the last redacted physical span, then the canonical foreground path.
 
   /computer-use present --pid PID --window-id ID
-      Persistently focus + raise one exact Cua/GNOME window and prove it.
+      Verify one exact WORLDLINE window is already focused, visible and stable.
+      This is read-only; GWCU does not activate windows.
 
   /computer-use list-windows [--on-screen-only] [--pid PID] [--json|--table|--raw]
       List top-level windows with exact (pid, window_id), geometry, and focus state.
       Read-only discovery; no presentation gate; works in both background modes.
       Output: table by default, --json for pretty JSON, --raw for the MCP exchange.
 
-  /computer-use cursor-color [#RRGGBB]
-      Set the agent cursor fill color via Cua WinRects helper (default #00FF00 green).
-      Visual aid only; works in both background modes; requires winrects@cua v8+.
-
   /computer-use background [on|off|status]
-      Set background priority. Default OFF = exact visible takeover.
+      Set background priority. Default OFF = verified foreground when target is already focused.
 
   /computer-use managed [on|off|status]
       Control repo/workspace-local .gwcu persistence.
@@ -124,8 +121,8 @@ show_background() {
         printf '  fallback: explicit foreground only when Cua reports background unavailable\n'
     else
         printf 'Background computer use: OFF\n'
-        printf '  priority: EXACT VISIBLE TAKEOVER\n'
-        printf '  gate: exact (pid, window_id) -> attested Cua GNOME helper -> focused+visible proof\n'
+        printf '  priority: VERIFIED FOREGROUND\n'
+        printf '  gate: exact (pid, window_id) -> fresh WORLDLINE compositor proof -> focused+visible\n'
         printf '  input: Cua foreground delivery only after that gate succeeds\n'
         printf '  completion: re-present + verify exact target; leave it visible\n'
     fi
@@ -188,7 +185,7 @@ Canonical foreground path (background priority OFF)
      No title-only actuation. Ambiguity is resolved before input.
 
   3. PRESENT
-     GWCU calls Cua's installed GNOME Shell helper for that stable window id.
+     GWCU reads WORLDLINE's exact compositor observation for that stable window id; it never activates the window.
      GNOME must report that exact pid/window_id focused, visible, and not minimized.
      Failure here is terminal for the action: no global input is sent.
 
@@ -210,7 +207,7 @@ Typed Chromium/Electron route
   -> fresh semantic snapshot -> typed mutation -> fresh snapshot -> PRESENT/verify.
   Typed browser success never substitutes for native visible presentation.
 
-Background priority ON is the explicit opt-out from persistent takeover for
+Background priority ON is the explicit opt-out from verified foreground delivery for
 ordinary work. A user-visible result still ends at step 6.
 TRACE
 }
@@ -379,18 +376,6 @@ else:
             print(f"{pid:>6} {wid:>8} {x:>6} {y:>6} {width:>6} {height:>6} {str(focused):>7} {str(visible):>7} {str(minimized):>9} {str(z):>4} {title}")
 PY
         ;;
-    cursor-color)
-        [ "$#" -le 1 ] || { printf 'cursor-color accepts at most one #RRGGBB value\n' >&2; exit 2; }
-        color="${1:-#00FF00}"
-        case "$color" in
-            \#*) : ;;
-            *) color="#$color" ;;
-        esac
-        [[ "$color" =~ ^#[0-9A-Fa-f]{6}$ ]] || { printf 'cursor-color expects #RRGGBB\n' >&2; exit 2; }
-        command -v gdbus >/dev/null 2>&1 || die "gdbus not found"
-        gdbus call --session --dest org.cua.WinRects --object-path /org/cua/WinRects --method org.cua.WinRects.SetCursorColor "$color"
-        printf 'Set agent cursor color to %s\n' "$color"
-        ;;
     status)
         managed=$("$PROFILE" managed status --machine)
         background=$(background_value)
@@ -403,7 +388,7 @@ PY
         [ -n "$portal" ] || portal='{"schema":"gwcu.portal-control.v1","ok":false,"code":"unavailable"}'
         [ -n "$health" ] || health='{"schema":"gwcu.cua-health.v2","ok":false,"code":"unavailable"}'
         [ -n "$worldline" ] || worldline='{"schema":"gwcu.worldline.v1","ok":false,"code":"unavailable"}'
-        [ -n "$presentation" ] || presentation='{"schema":"gwcu.presentation.v1","ok":false,"code":"unavailable"}'
+        [ -n "$presentation" ] || presentation='{"schema":"gwcu.presentation.v2","ok":false,"code":"unavailable"}'
         "$PYTHON" - "$managed" "$portal" "$health" "$worldline" "$presentation" "$background" <<'PY'
 import json,sys
 m=json.loads(sys.argv[1]); p=json.loads(sys.argv[2]); h=json.loads(sys.argv[3]); w=json.loads(sys.argv[4]); pr=json.loads(sys.argv[5]); background=sys.argv[6]=='on'
@@ -412,15 +397,15 @@ state=w.get('state') if isinstance(w.get('state'),dict) else w
 print("Computer use")
 print(f"  Cua health: {report.get('overall') or h.get('code','unknown')}")
 print(f"  Cua identity: {'proved' if h.get('identity_ok') else 'unproved'} ({h.get('binary') or '-'})")
-print(f"  exact presentation: {pr.get('code','unavailable')} (helper API {pr.get('helper_api','?')})")
+print(f"  exact presentation: {pr.get('code','unavailable')} (WORLDLINE revision {pr.get('revision','?')})")
 print(f"  WORLDLINE: {w.get('code','ready') if w.get('ok') else w.get('code','unavailable')}")
 if isinstance(state,dict) and state.get('revision') is not None: print(f"  WORLDLINE revision: {state.get('revision')}")
-print(f"  control priority: {'background' if background else 'exact visible takeover'}")
+print(f"  control priority: {'background' if background else 'verified foreground'}")
 print(f"  RemoteDesktop portal: {'available' if portal.get('available') else 'unavailable'}")
 print(f"  RemoteDesktop restore token: {'present' if token.get('present') else 'not established'}")
 print(f"  managed .gwcu: {'on' if m.get('managed_truths') else 'off'}")
 if scope.get('path'): print(f"  truth file: {scope['path']}")
-print("  default foreground: ACQUIRE if closed -> exact target -> Cua GNOME presentation gate -> Cua input -> visible proof")
+print("  default foreground: ACQUIRE if closed -> exact target -> WORLDLINE exact-target admission -> Cua input -> visible proof")
 print("  runtime truth: AT-SPI/direct oracles -> WORLDLINE")
 print("  visual escalation: XDG ScreenCast -> PipeWire observer -> WORLDLINE")
 PY

@@ -31,7 +31,7 @@ GWCU uses **Cua Driver's MCP/tool surface**; GWCU itself is not another MCP serv
 | **Hermes policy plugin** | Wraps Hermes' built-in `computer_use` tool so saved delivery policy, ACQUIRE, exact foreground admission, and gateway identity are enforced. |
 | **Cua Driver** | Upstream actuator and native/browser UI tool surface. All GWCU desktop GUI input goes through Cua. |
 | **Cua logon daemon** | GWCU systemd unit running pinned `cua-driver serve` at graphical logon. |
-| **Cua GNOME helper** | Presents one exact `(pid, window_id)` and proves focused + visible state. |
+| **WORLDLINE window observations** | Supplies fresh compositor-verified identity, geometry, focus, visibility and lifecycle facts. It never activates or injects input. |
 | **GWCU local runtime** | Installer, doctor, action spans, presentation helpers, routing and lifecycle repair. |
 | **WORLDLINE** | Transient revisioned state, invalidation, predicates, waits and conflicts. Read-only: it never injects input. |
 | **`.gwcu`** | Durable low-churn machine/workspace truth such as stable identity, capabilities, calibration and preferences. |
@@ -48,7 +48,6 @@ The Cua logon daemon is a GWCU user unit starting pinned `cua-driver serve` at `
 /computer-use trace
 /computer-use present --pid PID --window-id ID
 /computer-use list-windows [--on-screen-only] [--pid PID] [--json|--table|--raw]
-/computer-use cursor-color [#RRGGBB]
 /computer-use background [on|off|status]
 /computer-use managed [on|off|status]
 /computer-use truths
@@ -98,11 +97,11 @@ hermes skills tap add ryanraposo/gnome-wayland-computer-use
 hermes skills install ryanraposo/gnome-wayland-computer-use/computer-use
 ```
 
-The tap serves `skills/computer-use/SKILL.md` (byte-identical to root `SKILL.md`); it does not replace the installer, which still supplies the plugin, Cua logon daemon, helper, consent and WORLDLINE.
+The tap serves `skills/computer-use/SKILL.md` (byte-identical to root `SKILL.md`); it does not replace the installer, which still supplies the plugin, Cua logon daemon, portal consent and WORLDLINE.
 
 ## Exact foreground
 
-Foreground is the informed fresh-install default. `/computer-use background on|off|status` changes the standing preference; explicit task intent wins.
+Foreground is the informed fresh-install default. `/computer-use background on|off|status` changes the standing preference; explicit task intent wins. GWCU does not activate arbitrary windows: exact focus must already be observed or the action is refused.
 
 If a native `computer_use` action does not specify delivery mode, GWCU applies this preference. Action spans use the same setting.
 
@@ -111,13 +110,25 @@ The high-level foreground path is:
 ```text
 ACQUIRE    closed local app → Cua launch → bind one exact NEW (pid, window_id)
 DISCOVER   running target → exact (pid, window_id)
-PRESENT    Cua GNOME helper → focused + visible + not minimized proof
+ADMIT      WORLDLINE exact identity + fresh compositor geometry + already-focused proof
 ACT        Cua mutates that exact target
 REVALIDATE identity when it changes
 COMPLETE   present + verify the final visible result when required
 ```
 
-**No exact `(pid, window_id)` proof, no focus-bound input.** Visible-result requests end visibly. A background-unavailable fallback may escalate through the same PRESENT gate once.
+**No exact `(pid, window_id)` proof, no focus-bound input.** A visible-result request completes only when WORLDLINE verifies the exact target is focused and visible; otherwise GWCU reports that it could not present the result. A background-unavailable fallback may escalate through the same PRESENT gate once.
+
+GNOME 50+ reports the execution mode rather than silently falling back:
+
+| Mode | Admission |
+|---|---|
+| Full foreground | Unsupported until a separately qualified Cua-owned activation route exists. |
+| Verified foreground | Exact WORLDLINE compositor identity, fresh geometry and already-focused visibility. |
+| Semantic interaction | Cua's semantic `set_value` route can continue in background mode without compositor geometry; foreground delivery remains exact-target gated, and awaited spans verify resulting state through WORLDLINE. |
+| Desktop visual interaction | Optional ScreenCast/PipeWire observation plus separately consented RemoteDesktop input. |
+| Observe-only | Always available when mutation prerequisites cannot be proved. |
+
+Unavailable, denied and stale observations are reported as capability states. Desktop capture is optional; it does not gate semantic or verified-foreground operation.
 
 The exhaustive foreground action matrix belongs in `SKILL.md`. The policy plugin gates Hermes actions; local spans cover every Cua tool exposing `delivery_mode`.
 
@@ -147,9 +158,9 @@ Scope order: `GWCU_SCOPE_ROOT` → Git worktree root → nearest ancestor alread
 curl -fsSL https://ryanraposo.github.io/gnome-wayland-computer-use/install.sh | bash
 ```
 
-Run in a new, visible terminal on the desktop. Install and start [standalone WORLDLINE](https://github.com/ryanraposo/WORLDLINE) first. The installer verifies one SHA-256 release archive, qualifies Ubuntu 26.04 GNOME Wayland, installs/reuses pinned Cua, enables its logon daemon, establishes portal consent, installs the skill/runtime and Hermes policy, and live-proves readiness. If the RemoteDesktop portal is missing, it opens GNOME Settings -> Sharing -> Remote Desktop (Screen Sharing) and waits for you; you still approve GNOME's prompt.
+Run in a new, visible terminal on the desktop. Install and start [standalone WORLDLINE](https://github.com/ryanraposo/WORLDLINE) first. The installer verifies one SHA-256 release archive, qualifies Ubuntu 26.04 GNOME Wayland, installs/reuses pinned Cua, enables its logon daemon, establishes portal consent, installs the skill/runtime and Hermes policy, and verifies WORLDLINE observation capabilities. It never installs or enables WinRects. If the RemoteDesktop portal is missing, it opens GNOME Settings -> Sharing -> Remote Desktop (Screen Sharing) and waits for you; you still approve GNOME's prompt.
 
-If the installer prints `STOP: SIGN OUT / SIGN IN REQUIRED`, answer `Y` at `Log out now? [Y/n]` to end the session, or `n` for manual steps. It repairs stale `winrects@cua` metadata so the reload activates the helper. Sign back in as the same user, rerun the durable command shown, and only accept `READY // PROVED`.
+If a separate system-level repair requires a sign-out/sign-in, the installer explains that requirement. WinRects is not installed, enabled, patched or used. Existing WinRects installations are disabled on the GNOME 50+ path. Accept `READY // PROVED` only after the capability report succeeds.
 
 ## Update
 
@@ -159,7 +170,7 @@ Other runtimes can call `scripts/gwcu-exec` with a JSON action span on stdin. Th
 
 `READY // PROVED` requires the installed Cua identity, Hermes-selected identity, running gateway backend identity and doctor-reported identity to agree. A split-brain version/path state fails readiness.
 
-For an existing checkout, `bash install.sh` repairs the observer socket and imports the live desktop environment into systemd and affected Hermes gateways. Check with `bash scripts/computer-use.sh doctor`; `desktop_environment_unproved` and `observation_degraded` name the respective gaps. The live Calculator test proves exact presentation, an observed result and removal of the agent cursor session.
+For an existing checkout, `bash install.sh` repairs the observer socket and imports the live desktop environment into systemd and affected Hermes gateways. Check with `bash scripts/computer-use.sh doctor`; `desktop_environment_unproved` and `observation_degraded` name the respective gaps. The live Calculator test proves exact-target admission, an observed result and removal of the agent cursor session.
 
 ## Release
 

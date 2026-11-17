@@ -23,7 +23,7 @@ Use **Cua Driver for desktop actuation**. WORLDLINE tracks transient revisioned 
 
 `/computer-use <task>` is the primary user-facing entry point. Everything after `/computer-use` is normal task text unless the first token is one of these reserved operator subcommands:
 
-`status`, `trace`, `present`, `list-windows`, `cursor-color`, `background`, `managed`, `truths`, `consent`, `doctor`, and `help`.
+`status`, `trace`, `present`, `list-windows`, `background`, `managed`, `truths`, `consent`, `doctor`, and `help`.
 
 For a reserved form, your first tool call MUST execute the installed operator surface once; return its result without reinterpretation. These operator/helper surfaces use the terminal tool when it is available; ordinary desktop control does not require terminal access.
 
@@ -32,7 +32,6 @@ For a reserved form, your first tool call MUST execute the installed operator su
 /computer-use trace
 /computer-use present --pid PID --window-id ID
 /computer-use list-windows [--on-screen-only] [--pid PID]
-/computer-use cursor-color [#RRGGBB]
 /computer-use background [on|off|status]
 /computer-use managed [on|off|status]
 /computer-use truths
@@ -99,7 +98,7 @@ For web work that does not depend on the user's browser session, use the availab
 
 GNOME Wayland is the supported session. **No X11 or XWayland session is required.** Cua uses GNOME `RemoteDesktop` → EIS/libei for input; GNOME may label this permission **Remote Desktop**. GWCU installs no RDP/VNC server or raw-input daemon. ScreenCast/PipeWire is the separate observation path.
 
-Cua's installed `winrects@cua` GNOME Shell helper is part of the supported control plane. Its stable window id is the `window_id` used for exact presentation.
+`window_id` is Cua's native window identifier. WORLDLINE binds it to a compositor-verified window by exact `(pid, compositor_id)`; semantic titles and PID alone are never sufficient.
 
 ## Core rule
 
@@ -108,6 +107,7 @@ Cua's installed `winrects@cua` GNOME Shell helper is part of the supported contr
 ```text
 model decides
 → exact target is established
+→ WORLDLINE verifies already-focused presentation
 → local transaction runs
 → Cua acts
 → WORLDLINE watches postconditions
@@ -116,22 +116,22 @@ model decides
 
 ## Control priority
 
-`/computer-use background` controls the **standing delivery preference**. The installer explains this choice and asks once on a fresh install; exact visible takeover remains the default.
+`/computer-use background` controls the **standing delivery preference**. The installer explains this choice and asks once on a fresh install; verified foreground remains the default.
 
-- OFF is the default: **exact visible takeover**. GWCU may bring the exact target to the front while acting.
+- OFF is the default: **verified foreground**. GWCU admits input only when the exact target is already focused and visible; it does not activate or raise windows.
 - ON explicitly prefers background delivery where Cua supports it, helping the user keep working in the current foreground window.
 - `/computer-use background on` prefers background work.
-- `/computer-use background off` restores exact visible takeover.
+- `/computer-use background off` restores verified-foreground admission.
 - `/computer-use background status` reports the current preference; bare `/computer-use background` toggles it.
 - Explicit user foreground/background wording wins over the standing preference.
-- A requested visible result always finishes with exact visible presentation, even when intermediate work is background.
+- A requested visible result finishes with a fresh WORLDLINE check that the exact target is focused and visible. If that cannot be proved, report the limitation instead of claiming visible completion.
 - Cua runtime truth remains authoritative.
 
 The standing preference applies to otherwise-unspecified Cua native input and GWCU action spans. It is a default, not a task classifier.
 
 There is deliberately **no floating confidence threshold**. Missing foreground words do not imply background intent. Legacy `foreground_confidence` remains parse-compatible and non-authoritative.
 
-The default foreground path is not “send `delivery_mode:foreground` and hope.” Cua documents foreground delivery as action-scoped activation which may restore the prior frontmost window. GWCU therefore makes persistent presentation a separate admission gate.
+The default foreground path is not “send `delivery_mode:foreground` and hope.” GWCU admits foreground mutation only after WORLDLINE proves exact identity, fresh compositor geometry and already-focused visibility. GWCU never activates windows.
 
 ### Exact default trace
 
@@ -149,22 +149,27 @@ When background priority is OFF, pre-trace this path before the first mutation:
 
 2 DISCOVER
   for an already-running target, Cua list_windows
-  → exact intended (pid, window_id)
+  → candidate (pid, window_id)
+  → WORLDLINE binds the same compositor id exactly once
   → no title-only actuation
   after ACQUIRE, use discovery only to revalidate the bound identity
 
-3 PRESENT
-  Cua GNOME presentation gate
-  → attested org.cua.WinRects owner
-  → exact stable-sequence id + pid exists exactly once
-  → Activate(window_id)
-  → GNOME reports that exact window focused=true, visible=true, minimized=false
-  → otherwise STOP before input
+3 PRESENT / ADMIT
+  WORLDLINE fresh window snapshot
+  → exact (pid, compositor_id) resolves exactly once
+  → compositor geometry is source-verified and fresh
+  → focused=true, visible=true, minimized=false
+  → otherwise STOP before Cua input
+
+GWCU does not activate windows. If the intended target is not already focused,
+require verified foreground or refuse the mutation. A future activation route
+must be a separately qualified Cua-owned mechanism followed by a fresh
+WORLDLINE focus check.
 
 4 ACT
   computer_use mutation against the same pid + window_id
   → delivery_mode="foreground"
-  → because the exact target was already frontmost, action-scoped restore returns to it
+  → target remains focus-bound; GWCU does not request activation
 
 5 REVALIDATE
   if an action creates/closes/replaces the native target
@@ -173,7 +178,7 @@ When background priority is OFF, pre-trace this path before the first mutation:
 
 6 COMPLETE VISIBLY
   if visible_required
-  → present the final exact target again
+  → re-read WORLDLINE and verify the exact target is still focused + visible
   → verify focused+visible
   → verify requested app/page state
   → leave it on screen
@@ -196,9 +201,9 @@ Treat foreground as a delivery/presentation contract. Cover each surface accordi
 | Pointer input | `click`, `double_click`, `right_click`, `middle_click`, `drag`, `scroll` | Exact `(pid, window_id)` → PRESENT → `delivery_mode="foreground"` → act on that same target. |
 | Text / keyboard input | `type`, `key` | Same exact-target PRESENT gate before foreground delivery. Lower-level Cua span tools may expose the equivalent operations as `type_text`, `press_key`, or `hotkey`. |
 | Closed local app | `launch_app` | ACQUIRE through Cua, bind exactly one new `(pid, window_id)`, then PRESENT before later foreground input. Launch itself is acquisition, not `delivery_mode` input. |
-| Persistent presentation | `/computer-use present` / `present-window.py` | Persistently focus + raise one exact native target and prove `focused=true`, `visible=true`, `minimized=false`. A raw `focus_app`/raise request is not a substitute for this proof when persistent foreground is required. |
+| Verified foreground | `/computer-use present` / `present-window.py` | Read-only WORLDLINE check of exact identity, fresh compositor geometry and already-focused + visible state. It never activates or raises a window. |
 | Exact-bound browser mutation | `cua_browser_state` + `cua_browser_*` | Bind exact native `(pid, window_id)` first. PRESENT that native target for foreground/visible work. Typed page success alone never proves visibility. |
-| Direct AX value mutation | `set_value` | Semantic mutation without foreground delivery semantics. It does not substitute for PRESENT when the result must be visible. |
+| Direct AX value mutation | `set_value` | Semantic interaction can use Cua's accessibility path in background mode without compositor geometry. If foreground delivery is requested, it passes the exact WORLDLINE identity/focus gate. Use an awaited span to verify the resulting state independently. |
 | Observation / waits | `capture`, `wait`, `list_apps`, `list_windows` | Read/discovery only. No foreground delivery, and no persistent-presentation proof by themselves. |
 
 For the direct Hermes surface, the mechanically gated native foreground set is exactly the plugin's `_INPUT_ACTIONS`: `click`, `double_click`, `right_click`, `middle_click`, `drag`, `scroll`, `type`, and `key`. If one of those is sent with foreground delivery, missing exact identity or failed PRESENT stops the action before Cua input.
@@ -212,7 +217,7 @@ Foreground input and persistent presentation are different properties. `delivery
 For `visible_required` work:
 
 1. ACQUIRE a closed local app through Cua, or resolve an already-running exact native target;
-2. present it through `present-window.py` / the policy shim;
+2. verify it through `present-window.py` / the policy shim; if it is not already focused, stop rather than guessing activation;
 3. perform Cua work;
 4. re-resolve if native identity changes;
 5. present the final exact target again;
@@ -333,14 +338,14 @@ A failed ACQUIRE is an actuation boundary. Do not launch the app with terminal c
 
 When operating a specific user browser session, keep its mutations on Cua; switching actuator planes invalidates the target and evidence assumptions already established for that session.
 
-A foreground presentation failure is an actuation boundary: do not send the input. Re-resolve exact identity or report the failure. A background→foreground retry is legal only after Cua explicitly says background delivery is unavailable and the exact presentation gate succeeds.
+A failed or unavailable WORLDLINE foreground proof is an actuation boundary: do not send the input. Re-resolve exact identity or report the failure. A background→foreground retry is legal only after Cua explicitly says background delivery is unavailable and the exact presentation gate succeeds.
 
 ## Completion proof
 
 ```text
 direct oracle / WORLDLINE predicate
 → exact Cua target truth
-→ focused+visible presentation proof when foreground/visible
+→ WORLDLINE exact identity + fresh focused/visible proof when foreground/visible
 → semantic/page verification
 → pixels only when direct proof is insufficient
 ```
@@ -355,7 +360,6 @@ A task is incomplete when the requested visible result is not actually on the us
 /computer-use trace
 /computer-use present --pid PID --window-id ID
 /computer-use list-windows [--on-screen-only] [--pid PID]
-/computer-use cursor-color [#RRGGBB]
 /computer-use background [on|off|status]
 /computer-use managed [on|off|status]
 /computer-use truths
@@ -364,7 +368,7 @@ A task is incomplete when the requested visible result is not actually on the us
 /computer-use help
 ```
 
-`trace` prints the exact default control path. `present` is the deterministic exact-window presentation primitive. `list-windows` is read-only discovery (no presentation gate, works in both background modes). `cursor-color` sets the agent cursor fill color via Cua WinRects helper (default green, visual aid only). Operator forms require the local helper/terminal surface; their absence does not remove ordinary `computer_use` capability.
+`trace` prints the exact default control path. `present` is a read-only WORLDLINE admission check for one exact, already-focused window. `list-windows` is read-only discovery. Operator forms require the local helper/terminal surface; their absence does not remove ordinary `computer_use` capability.
 
 ## WORLDLINE installation and lifecycle
 

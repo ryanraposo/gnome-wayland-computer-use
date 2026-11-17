@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Execute a Cua/WORLDLINE transaction behind one model/tool boundary.
 
-On supported GNOME, foreground input is admitted only after the exact
-(pid, window_id) is persistently presented through Cua's attested GNOME helper.
-No presentation proof means no input.
+On GNOME 50+, foreground input is admitted only after WORLDLINE freshly
+binds the exact (pid, window_id) to a compositor-verified, already-focused
+window. No independent focus proof means no input.
 """
 from __future__ import annotations
 
@@ -67,7 +67,7 @@ def resolve_control(control: dict[str, Any]) -> dict[str, Any]:
         "standing_preference": preference,
         "preference_source": source,
         "visible_required": visible_required,
-        "foreground_contract": "exact_pid_window -> cua_gnome_present -> focused_visible_proof -> cua_input" if mode == "foreground" else "exact_target_background_where_supported",
+        "foreground_contract": "exact_pid_window -> WORLDLINE_focus_proof -> Cua_input" if mode == "foreground" else "exact_target_background_where_supported",
         "legacy_foreground_confidence": legacy_confidence,
         "legacy_confidence_authoritative": False,
         "contradicts_preference": contradicts,
@@ -126,6 +126,26 @@ def present_exact(path: Path, target: tuple[int, int], timeout: float) -> dict[s
             or value["window"].get("minimized") is True):
         value = {"ok": False, "code": "presentation_identity_mismatch"}
     return value
+
+
+def worldline_focus_proof(path: Path, target: tuple[int, int], timeout: float) -> dict[str, Any]:
+    pid, window_id = target
+    try:
+        response = worldline_call(
+            path, {"op": "query", "paths": ["windows.focus"], "fresh": True},
+            max(1.0, min(timeout, 4.0)),
+        )
+    except Exception as exc:
+        return {"ok": False, "code": "worldline_focus_unavailable", "detail": str(exc)}
+    focus = (response.get("values") or {}).get("windows.focus")
+    if (not response.get("ok") or not isinstance(focus, dict)
+            or focus.get("pid") != pid
+            or focus.get("compositor_id") != window_id
+            or focus.get("verified") is not True):
+        return {"ok": False, "code": "focus_changed_before_dispatch",
+                "revision": response.get("revision"), "focus": focus}
+    return {"ok": True, "code": "focus_revalidated",
+            "revision": response.get("revision"), "focus": focus}
 
 
 def structured(response: dict[str, Any]) -> dict[str, Any] | None:
@@ -255,6 +275,7 @@ def physical_trace(ok: bool, code: str, requested: int, completed: int, results:
             "reason": item.get("reason"),
             "ok": raw_result.get("ok"),
             "code": raw_result.get("code"),
+            "focus_revalidated": (item.get("pre_dispatch_focus") or {}).get("ok"),
         })
 
     safe_actions = []
@@ -277,6 +298,7 @@ def physical_trace(ok: bool, code: str, requested: int, completed: int, results:
             "postcondition_revision": wait.get("revision"),
             "postcondition_code": wait.get("code"),
             "outcome": causal.get("outcome", "unverified"),
+            "lifecycle": item.get("lifecycle"),
             "observation_source": (causal.get("observation") or {}).get("evidence", {}).get("source"),
         })
 
@@ -471,6 +493,10 @@ def run(driver: str, request: dict[str, Any], timeout: float, worldline_path: Pa
                 presentations.append({"index": index, "target": {"pid": target[0], "window_id": target[1]}, "result": presentation})
                 if not presentation.get("ok"):
                     return fail_boundary(control, presentations, requested, completed, results, "presentation_not_proved", index=index, name=action["name"], detail=compact(presentation), revision=last_revision)
+                focus_proof = worldline_focus_proof(worldline_path, target, min(timeout, 3))
+                presentations[-1]["pre_dispatch_focus"] = focus_proof
+                if not focus_proof.get("ok"):
+                    return fail_boundary(control, presentations, requested, completed, results, "focus_changed_before_dispatch", index=index, name=action["name"], detail=compact(focus_proof), revision=last_revision)
 
             try:
                 fence_result = worldline_call(worldline_path, {"op": "fence", "trigger": f"before:{action['name']}"}, 3)
@@ -492,6 +518,10 @@ def run(driver: str, request: dict[str, Any], timeout: float, worldline_path: Pa
                 presentations.append({"index": index, "target": {"pid": target[0], "window_id": target[1]}, "reason": "background_fallback", "result": presentation})
                 if not presentation.get("ok"):
                     return fail_boundary(control, presentations, requested, completed, results, "presentation_not_proved_for_fallback", index=index, name=action["name"], detail=compact(presentation), revision=last_revision)
+                focus_proof = worldline_focus_proof(worldline_path, target, min(timeout, 3))
+                presentations[-1]["pre_dispatch_focus"] = focus_proof
+                if not focus_proof.get("ok"):
+                    return fail_boundary(control, presentations, requested, completed, results, "focus_changed_before_dispatch", index=index, name=action["name"], detail=compact(focus_proof), revision=last_revision)
                 overrides.append({"index": index, "from": "background", "to": "foreground", "reason": "cua_background_unavailable"})
                 arguments["delivery_mode"] = "foreground"
                 try:
@@ -507,7 +537,7 @@ def run(driver: str, request: dict[str, Any], timeout: float, worldline_path: Pa
 
             result = normalize_result(response)
             failed, reason = boundary(response)
-            record = {"index": index, "name": action["name"], "result": result, "control": {"requested": control["mode"], "delivery_mode_supported": supports_delivery, "applied": arguments.get("delivery_mode") if supports_delivery else "driver_default", "fallback": fallback, "presentation": presentation}}
+            record = {"index": index, "name": action["name"], "result": result, "control": {"requested": control["mode"], "delivery_mode_supported": supports_delivery, "applied": arguments.get("delivery_mode") if supports_delivery else "driver_default", "fallback": fallback, "presentation": presentation}, "lifecycle": {"requested": True, "dispatched": True, "acknowledged": not failed, "observed": False}}
             if fence_result is not None:
                 record["worldline_fence"] = fence_result
             results.append(record)
@@ -567,6 +597,7 @@ def run(driver: str, request: dict[str, Any], timeout: float, worldline_path: Pa
                         "action_ok": True,
                         "predicate": witness_spec}, 3)
                     record["outcome"] = record["causal_receipt"].get("outcome", "unverified")
+                    record["lifecycle"]["observed"] = record["outcome"] == "verified"
                 except Exception as exc:
                     return fail_boundary(control, presentations, requested, completed, results,
                                          "worldline_receipt_failed", index=index,
