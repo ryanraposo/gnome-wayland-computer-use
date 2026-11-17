@@ -142,7 +142,7 @@ grep -q 'Background computer use: OFF' "$TMP/default" || fail "background defaul
 grep -q 'VERIFIED FOREGROUND' "$TMP/default" || fail "default takeover contract missing"
 XDG_STATE_HOME="$TMP/state" "$SURFACE" trace >"$TMP/trace"
 for stage in DISCOVER PRESENT ACT REVALIDATE 'COMPLETE VISIBLY'; do grep -Fq "$stage" "$TMP/trace" || fail "trace lost stage: $stage"; done
-grep -Fq 'otherwise STOP before input' "$ROOT/SKILL.md" || fail "pre-actuation failure boundary missing"
+grep -Fq 'otherwise STOP before Cua input' "$ROOT/SKILL.md" || fail "pre-actuation failure boundary missing"
 XDG_STATE_HOME="$TMP/state" "$SURFACE" background >"$TMP/on"
 grep -q 'Background computer use: ON' "$TMP/on" || fail "bare background command did not toggle on"
 XDG_STATE_HOME="$TMP/state" "$SURFACE" background >"$TMP/off"
